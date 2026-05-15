@@ -18,7 +18,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
       <div className="text-center mb-8">
         <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Review</p>
         <h2 className="font-display text-4xl font-bold">
-          How's this one?
+          How&apos;s this one?
         </h2>
         <p className="mt-2 opacity-60 text-sm">Photo {photoIndex + 1} of {totalPhotos}</p>
       </div>

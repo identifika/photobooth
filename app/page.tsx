@@ -3,10 +3,11 @@ import { useState } from 'react';
 import FrameSelector from '@/components/FrameSelector';
 import Camera from '@/components/Camera';
 import PhotoReview from '@/components/PhotoReview';
+import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
 import { Frame } from '@/lib/frames';
 
-type Step = 'select' | 'camera' | 'review' | 'final';
+type Step = 'select' | 'camera' | 'review' | 'background' | 'final';
 
 export default function Home() {
   const [step, setStep] = useState<Step>('select');
@@ -35,10 +36,15 @@ export default function Home() {
     setPendingPhoto(null);
     setPhotos(newPhotos);
     if (newPhotos.length >= selectedFrame.photoCount) {
-      setStep('final');
+      setStep('background');
     } else {
       setStep('camera');
     }
+  };
+
+  const handleBackgroundComplete = (compositedPhotos: string[]) => {
+    setPhotos(compositedPhotos);
+    setStep('final');
   };
 
   const handleRetry = () => {
@@ -80,10 +86,10 @@ export default function Home() {
 
           {/* Step indicator */}
           <div className="hidden md:flex items-center gap-2">
-            {(['select', 'camera', 'review', 'final'] as Step[]).map((s, i) => {
-              const labels = ['Frame', 'Camera', 'Review', 'Result'];
+            {(['select', 'camera', 'review', 'background', 'final'] as Step[]).map((s, i) => {
+              const labels = ['Frame', 'Camera', 'Review', 'Background', 'Result'];
               const isActive = step === s;
-              const isPast = ['select','camera','review','final'].indexOf(step) > i;
+              const isPast = ['select','camera','review','background','final'].indexOf(step) > i;
               return (
                 <div key={s} className="flex items-center gap-2">
                   <div className="flex items-center gap-1.5">
@@ -106,7 +112,7 @@ export default function Home() {
                       {labels[i]}
                     </span>
                   </div>
-                  {i < 3 && <div style={{ width: 16, height: 1, background: `${borderColor}20` }} />}
+                  {i < 4 && <div style={{ width: 16, height: 1, background: `${borderColor}20` }} />}
                 </div>
               );
             })}
@@ -165,6 +171,14 @@ export default function Home() {
             frame={selectedFrame}
             onAccept={handleAccept}
             onRetry={handleRetry}
+          />
+        )}
+
+        {step === 'background' && selectedFrame && (
+          <BackgroundSelector
+            photos={photos}
+            frame={selectedFrame}
+            onComplete={handleBackgroundComplete}
           />
         )}
 

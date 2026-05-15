@@ -18,29 +18,33 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
   const [error, setError] = useState('');
   const streamRef = useRef<MediaStream | null>(null);
 
-  const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setReady(true);
-      }
-    } catch {
-      setError('Camera access denied. Please allow camera permissions.');
-    }
-  }, []);
-
   useEffect(() => {
-    startCamera();
+    let mounted = true;
+
+    const initCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          if (mounted) setReady(true);
+        }
+      } catch {
+        if (mounted) setError('Camera access denied. Please allow camera permissions.');
+      }
+    };
+
+    initCamera();
+
     return () => {
+      mounted = false;
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
-  }, [startCamera]);
+  }, []);
 
   const capture = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
