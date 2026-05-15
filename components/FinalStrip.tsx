@@ -224,6 +224,86 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     setTimeout(() => setDownloadingGif(false), 1500);
   };
 
+  const downloadIndividual = async (photoSrc: string, index: number) => {
+    const PHOTO_W = 400;
+    const isGrid = frame.layout === 'grid-2x2';
+    const photoAR = isGrid ? 1 : 4 / 3;
+    const PHOTO_H = Math.round(PHOTO_W / photoAR);
+
+    // Polaroid-style frame dimensions
+    const FRAME_PAD_SIDE = 24;
+    const FRAME_PAD_TOP = 24;
+    const FRAME_PAD_BOTTOM = 72;
+    const BORDER_W = 4;
+
+    const canvasW = PHOTO_W + FRAME_PAD_SIDE * 2 + BORDER_W * 2;
+    const canvasH = PHOTO_H + FRAME_PAD_TOP + FRAME_PAD_BOTTOM + BORDER_W * 2;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d')!;
+
+    // White polaroid background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // Outer border
+    ctx.strokeStyle = frame.borderColor;
+    ctx.lineWidth = BORDER_W;
+    ctx.strokeRect(BORDER_W / 2, BORDER_W / 2, canvasW - BORDER_W, canvasH - BORDER_W);
+
+    // Accent tape strip at top
+    const tapeW = 64;
+    const tapeH = 16;
+    ctx.fillStyle = `${frame.accentColor}90`;
+    ctx.fillRect((canvasW - tapeW) / 2, 4, tapeW, tapeH);
+
+    // Draw the photo
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    await new Promise<void>((resolve) => {
+      img.onload = () => resolve();
+      img.src = photoSrc;
+    });
+
+    const photoX = FRAME_PAD_SIDE + BORDER_W;
+    const photoY = FRAME_PAD_TOP + BORDER_W;
+    ctx.drawImage(img, photoX, photoY, PHOTO_W, PHOTO_H);
+
+    // Label area below photo
+    const labelY = photoY + PHOTO_H + 20;
+    ctx.fillStyle = frame.borderColor;
+    ctx.globalAlpha = 0.5;
+    ctx.font = 'italic 14px "Playfair Display", serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${index + 1}/${photos.length}`, photoX, labelY);
+
+    ctx.font = '11px "DM Sans", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(frame.name.toUpperCase(), photoX + PHOTO_W, labelY);
+    ctx.globalAlpha = 1;
+
+    // Date
+    ctx.fillStyle = frame.borderColor;
+    ctx.globalAlpha = 0.3;
+    ctx.font = '10px "DM Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
+      canvasW / 2,
+      labelY + 20
+    );
+    ctx.globalAlpha = 1;
+
+    // Download
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`;
+    a.click();
+  };
+
   return (
     <div className="w-full animate-slideUp">
       <div className="text-center mb-8">
@@ -342,7 +422,7 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
             <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Individual Shots</p>
             <div className="flex gap-3 justify-center flex-wrap">
               {photos.map((photo, i) => (
-                <div key={i} style={{
+                <div key={i} className="group relative" style={{
                   background: 'white',
                   padding: '6px 6px 24px',
                   boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
@@ -357,6 +437,15 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
                     width: 80, height: frame.layout === 'grid-2x2' ? 80 : 60,
                     objectFit: 'cover', display: 'block',
                   }} />
+                  {/* Download overlay */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); downloadIndividual(photo, i); }}
+                    className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    style={{ background: 'rgba(0,0,0,0.5)' }}
+                    aria-label={`Download photo ${i + 1}`}
+                  >
+                    <span className="text-white text-lg">↓</span>
+                  </button>
                 </div>
               ))}
             </div>
