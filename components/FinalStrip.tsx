@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import GIF from 'gif.js';
 
 interface Props {
   photos: string[];
@@ -12,6 +13,9 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [gifDataUrl, setGifDataUrl] = useState('');
+  const [generatingGif, setGeneratingGif] = useState(false);
+  const [downloadingGif, setDownloadingGif] = useState(false);
 
   const roundRect = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
     ctx.beginPath();
@@ -152,9 +156,54 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     setStripDataUrl(canvas.toDataURL('image/jpeg', 0.95));
   }, [photos, frame, roundRect]);
 
+  const generateGif = useCallback(async () => {
+    setGeneratingGif(true);
+    const PHOTO_W = 400;
+    const isGrid = frame.layout === 'grid-2x2';
+    const photoAR = isGrid ? 1 : 4/3;
+    const PHOTO_H = Math.round(PHOTO_W / photoAR);
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      workerScript: '/gif.worker.js',
+      width: PHOTO_W,
+      height: PHOTO_H,
+    });
+
+    const imgs = await Promise.all(photos.map(src => new Promise<HTMLImageElement>((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = src;
+    })));
+
+    imgs.forEach(img => {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = PHOTO_W;
+      tempCanvas.height = PHOTO_H;
+      const ctx = tempCanvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
+      gif.addFrame(tempCanvas, { delay: 500 });
+    });
+
+    gif.on('finished', (blob: Blob) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setGifDataUrl(reader.result as string);
+        setGeneratingGif(false);
+      };
+      reader.readAsDataURL(blob);
+    });
+
+    gif.render();
+  }, [photos, frame.layout]);
+
   useEffect(() => {
     renderStrip();
-  }, [renderStrip]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    generateGif();
+  }, [renderStrip, generateGif]);
 
   const handleDownload = () => {
     setDownloading(true);
@@ -163,6 +212,16 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     a.download = `photobooth-${frame.id}-${Date.now()}.jpg`;
     a.click();
     setTimeout(() => setDownloading(false), 1500);
+  };
+
+  const handleDownloadGif = () => {
+    if (!gifDataUrl) return;
+    setDownloadingGif(true);
+    const a = document.createElement('a');
+    a.href = gifDataUrl;
+    a.download = `photobooth-${frame.id}-${Date.now()}.gif`;
+    a.click();
+    setTimeout(() => setDownloadingGif(false), 1500);
   };
 
   return (
@@ -216,6 +275,20 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
             >
               {downloading ? '✓ Saved!' : '↓ Download Strip'}
             </button>
+            {gifDataUrl && (
+              <button
+                onClick={handleDownloadGif}
+                className="flex-1 py-4 rounded-sm font-medium tracking-wide transition-all text-sm"
+                style={{
+                  background: frame.borderColor,
+                  color: frame.color,
+                  border: `2px solid ${frame.borderColor}`,
+                  opacity: downloadingGif ? 0.7 : 1,
+                }}
+              >
+                {downloadingGif ? '✓ Saved!' : '↓ Download GIF'}
+              </button>
+            )}
             <button
               onClick={onRestart}
               className="flex-1 py-4 rounded-sm font-medium tracking-wide transition-all text-sm"
@@ -227,6 +300,39 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
             >
               ↺ New Session
             </button>
+          </div>
+        )}
+
+        {/* Animated GIF preview */}
+        {generatingGif ? (
+          <div className="mt-10 animate-fadeIn delay-300">
+            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Animated GIF</p>
+            <div className="flex items-center justify-center h-48">
+              <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin"
+                style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+            </div>
+          </div>
+        ) : gifDataUrl && (
+          <div className="mt-10 animate-fadeIn delay-300">
+            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Animated GIF</p>
+            <div className="flex justify-center">
+              <div style={{
+                display: 'inline-block',
+                boxShadow: `0 12px 40px ${frame.borderColor}20, 0 4px 12px rgba(0,0,0,0.1)`,
+                padding: '8px',
+                background: 'white',
+              }}>
+                <img
+                  src={gifDataUrl}
+                  alt="Animated Photo Strip"
+                  className="max-w-full"
+                  style={{
+                    maxWidth: 300,
+                    display: 'block',
+                  }}
+                />
+              </div>
+            </div>
           </div>
         )}
 
