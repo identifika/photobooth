@@ -5,17 +5,21 @@ import GIF from 'gif.js';
 
 interface Props {
   photos: string[];
+  liveClips?: (string | null)[];
   frame: Frame;
   onRestart: () => void;
 }
 
-export default function FinalStrip({ photos, frame, onRestart }: Props) {
+export default function FinalStrip({ photos, liveClips, frame, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [gifDataUrl, setGifDataUrl] = useState('');
   const [generatingGif, setGeneratingGif] = useState(false);
   const [downloadingGif, setDownloadingGif] = useState(false);
+  const [liveVideoUrl, setLiveVideoUrl] = useState('');
+  const [generatingVideo, setGeneratingVideo] = useState(false);
+  const [downloadingVideo, setDownloadingVideo] = useState(false);
 
   const roundRect = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
     ctx.beginPath();
@@ -199,11 +203,114 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     gif.render();
   }, [photos, frame.layout]);
 
+  const generateLiveVideo = useCallback(async () => {
+    setGeneratingVideo(true);
+
+    try {
+      const PHOTO_W = 480;
+      const isGrid = frame.layout === 'grid-2x2';
+      const photoAR = isGrid ? 1 : 4 / 3;
+      const PHOTO_H = Math.round(PHOTO_W / photoAR);
+      const FPS = 30;
+      const PHOTO_DURATION_MS = 1000; // Each photo shown for 1s
+      const TRANSITION_MS = 500; // Crossfade transition
+      const TOTAL_FRAMES_PER_PHOTO = Math.round((PHOTO_DURATION_MS / 1000) * FPS);
+      const TRANSITION_FRAMES = Math.round((TRANSITION_MS / 1000) * FPS);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = PHOTO_W;
+      canvas.height = PHOTO_H;
+      const ctx = canvas.getContext('2d')!;
+
+      // Use canvas stream to record
+      const stream = canvas.captureStream(FPS);
+
+      // Determine supported MIME type
+      const mimeTypes = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+      let mimeType = 'video/webm';
+      for (const type of mimeTypes) {
+        if (MediaRecorder.isTypeSupported(type)) {
+          mimeType = type;
+          break;
+        }
+      }
+
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2500000 });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+
+      const imgs = await Promise.all(photos.map(src => new Promise<HTMLImageElement>((res, rej) => {
+        const img = new Image();
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = src;
+      })));
+
+      recorder.start();
+
+      // Render frames: each photo with crossfade transitions
+      for (let photoIdx = 0; photoIdx < imgs.length; photoIdx++) {
+        const currentImg = imgs[photoIdx];
+        const nextImg = imgs[(photoIdx + 1) % imgs.length];
+
+        // Show current photo
+        const holdFrames = photoIdx < imgs.length - 1
+          ? TOTAL_FRAMES_PER_PHOTO - TRANSITION_FRAMES
+          : TOTAL_FRAMES_PER_PHOTO;
+
+        for (let f = 0; f < holdFrames; f++) {
+          ctx.clearRect(0, 0, PHOTO_W, PHOTO_H);
+          ctx.drawImage(currentImg, 0, 0, PHOTO_W, PHOTO_H);
+          await new Promise((r) => requestAnimationFrame(r));
+        }
+
+        // Crossfade to next (skip for last photo)
+        if (photoIdx < imgs.length - 1) {
+          for (let f = 0; f < TRANSITION_FRAMES; f++) {
+            const alpha = f / TRANSITION_FRAMES;
+            ctx.clearRect(0, 0, PHOTO_W, PHOTO_H);
+            ctx.globalAlpha = 1 - alpha;
+            ctx.drawImage(currentImg, 0, 0, PHOTO_W, PHOTO_H);
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(nextImg, 0, 0, PHOTO_W, PHOTO_H);
+            ctx.globalAlpha = 1;
+            await new Promise((r) => requestAnimationFrame(r));
+          }
+        }
+      }
+
+      // Hold last frame a bit
+      for (let f = 0; f < FPS / 2; f++) {
+        ctx.drawImage(imgs[imgs.length - 1], 0, 0, PHOTO_W, PHOTO_H);
+        await new Promise((r) => requestAnimationFrame(r));
+      }
+
+      // Stop recording and get blob
+      const videoBlob = await new Promise<Blob>((resolve) => {
+        recorder.onstop = () => {
+          resolve(new Blob(chunks, { type: mimeType }));
+        };
+        recorder.stop();
+      });
+
+      const url = URL.createObjectURL(videoBlob);
+      setLiveVideoUrl(url);
+    } catch (err) {
+      console.error('Live video generation failed:', err);
+    } finally {
+      setGeneratingVideo(false);
+    }
+  }, [photos, frame.layout]);
+
   useEffect(() => {
     renderStrip();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     generateGif();
-  }, [renderStrip, generateGif]);
+    generateLiveVideo();
+  }, [renderStrip, generateGif, generateLiveVideo]);
 
   const handleDownload = () => {
     setDownloading(true);
@@ -222,6 +329,16 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     a.download = `photobooth-${frame.id}-${Date.now()}.gif`;
     a.click();
     setTimeout(() => setDownloadingGif(false), 1500);
+  };
+
+  const handleDownloadVideo = () => {
+    if (!liveVideoUrl) return;
+    setDownloadingVideo(true);
+    const a = document.createElement('a');
+    a.href = liveVideoUrl;
+    a.download = `photobooth-${frame.id}-live-${Date.now()}.webm`;
+    a.click();
+    setTimeout(() => setDownloadingVideo(false), 1500);
   };
 
   const downloadIndividual = async (photoSrc: string, index: number) => {
@@ -301,6 +418,14 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`;
+    a.click();
+  };
+
+  const downloadClip = (clipUrl: string, index: number) => {
+    const a = document.createElement('a');
+    a.href = clipUrl;
+    const ext = clipUrl.includes('video/mp4') ? 'mp4' : 'webm';
+    a.download = `photobooth-${frame.id}-live${index + 1}-${Date.now()}.${ext}`;
     a.click();
   };
 
@@ -416,38 +541,167 @@ export default function FinalStrip({ photos, frame, onRestart }: Props) {
           </div>
         )}
 
+        {/* Live Video */}
+        <div className="mt-10 animate-fadeIn delay-300">
+          <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Live Video</p>
+          {generatingVideo ? (
+            <div className="flex flex-col items-center justify-center h-48">
+              <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin mb-3"
+                style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+              <p className="text-xs opacity-50">Generating live video...</p>
+            </div>
+          ) : liveVideoUrl ? (
+            <div className="flex flex-col items-center gap-4">
+              <div style={{
+                boxShadow: `0 12px 40px ${frame.borderColor}20, 0 4px 12px rgba(0,0,0,0.1)`,
+                padding: '8px',
+                background: 'white',
+                borderRadius: '4px',
+              }}>
+                <video
+                  src={liveVideoUrl}
+                  className="max-w-full rounded-sm"
+                  style={{ maxWidth: 300, display: 'block' }}
+                  controls
+                  loop
+                  playsInline
+                  muted
+                  autoPlay
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDownloadVideo}
+                  className="px-5 py-2.5 rounded-sm font-medium text-sm tracking-wide transition-all"
+                  style={{
+                    background: frame.borderColor,
+                    color: frame.color,
+                    border: `2px solid ${frame.borderColor}`,
+                    opacity: downloadingVideo ? 0.7 : 1,
+                  }}
+                >
+                  {downloadingVideo ? '✓ Saved!' : '↓ Download Video'}
+                </button>
+                {gifDataUrl && (
+                  <button
+                    onClick={handleDownloadGif}
+                    className="px-5 py-2.5 rounded-sm font-medium text-sm tracking-wide transition-all"
+                    style={{
+                      background: 'transparent',
+                      color: frame.borderColor,
+                      border: `2px solid ${frame.borderColor}`,
+                      opacity: downloadingGif ? 0.7 : 1,
+                    }}
+                  >
+                    {downloadingGif ? '✓ Saved!' : '↓ Download GIF'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         {/* Individual photos row */}
         {stripDataUrl && (
           <div className="mt-10 animate-fadeIn delay-300">
             <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Individual Shots</p>
             <div className="flex gap-3 justify-center flex-wrap">
-              {photos.map((photo, i) => (
-                <div key={i} className="group relative" style={{
-                  background: 'white',
-                  padding: '6px 6px 24px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                  transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`,
-                  transition: 'transform 0.3s ease',
-                  cursor: 'pointer',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.transform = 'rotate(0deg) scale(1.05) translateY(-4px)')}
-                onMouseLeave={e => (e.currentTarget.style.transform = `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`)}
-                >
-                  <img src={photo} alt={`Photo ${i + 1}`} style={{
-                    width: 80, height: frame.layout === 'grid-2x2' ? 80 : 60,
-                    objectFit: 'cover', display: 'block',
-                  }} />
-                  {/* Download overlay */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); downloadIndividual(photo, i); }}
-                    className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    style={{ background: 'rgba(0,0,0,0.5)' }}
-                    aria-label={`Download photo ${i + 1}`}
+              {photos.map((photo, i) => {
+                const clip = liveClips?.[i] ?? null;
+                return (
+                  <div key={i} className="group relative" style={{
+                    background: 'white',
+                    padding: '6px 6px 24px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                    transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`,
+                    transition: 'transform 0.3s ease',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.transform = 'rotate(0deg) scale(1.05) translateY(-4px)')}
+                  onMouseLeave={e => (e.currentTarget.style.transform = `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`)}
                   >
-                    <span className="text-white text-lg">↓</span>
-                  </button>
-                </div>
-              ))}
+                    <img src={photo} alt={`Photo ${i + 1}`} style={{
+                      width: 80, height: frame.layout === 'grid-2x2' ? 80 : 60,
+                      objectFit: 'cover', display: 'block',
+                    }} />
+                    {/* Live badge */}
+                    {clip && (
+                      <div className="absolute top-1 left-1 flex items-center gap-0.5 px-1 py-0.5 rounded-full"
+                        style={{ background: 'rgba(0,0,0,0.6)', fontSize: 8 }}>
+                        <div className="w-1 h-1 rounded-full bg-red-500" />
+                        <span className="text-white font-medium">LIVE</span>
+                      </div>
+                    )}
+                    {/* Download overlay */}
+                    <div
+                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ background: 'rgba(0,0,0,0.6)' }}
+                    >
+                      <button
+                        onClick={(e) => { e.stopPropagation(); downloadIndividual(photo, i); }}
+                        className="text-white text-xs px-2 py-0.5 rounded"
+                        style={{ background: 'rgba(255,255,255,0.2)' }}
+                        aria-label={`Download photo ${i + 1}`}
+                      >
+                        📷
+                      </button>
+                      {clip && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); downloadClip(clip, i); }}
+                          className="text-white text-xs px-2 py-0.5 rounded"
+                          style={{ background: 'rgba(255,255,255,0.2)' }}
+                          aria-label={`Download live clip ${i + 1}`}
+                        >
+                          🎬
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Live Clips section */}
+        {liveClips && liveClips.some(c => c !== null) && stripDataUrl && (
+          <div className="mt-10 animate-fadeIn delay-300">
+            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Live Clips</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
+              {liveClips.map((clip, i) => {
+                if (!clip) return null;
+                return (
+                  <div key={i} className="rounded-lg overflow-hidden" style={{
+                    background: 'white',
+                    padding: '8px',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                  }}>
+                    <video
+                      src={clip}
+                      className="w-full rounded-sm"
+                      style={{ display: 'block' }}
+                      controls
+                      loop
+                      playsInline
+                      muted
+                    />
+                    <div className="flex items-center justify-between mt-2 px-1">
+                      <span className="text-xs opacity-50">Photo {i + 1} · Live</span>
+                      <button
+                        onClick={() => downloadClip(clip, i)}
+                        className="text-xs px-2 py-1 rounded transition-all"
+                        style={{
+                          background: `${frame.borderColor}15`,
+                          color: frame.borderColor,
+                          border: `1px solid ${frame.borderColor}30`,
+                        }}
+                      >
+                        ↓ Download
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

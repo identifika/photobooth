@@ -6,8 +6,10 @@ interface Props {
   frame: Frame;
   photoIndex: number;
   totalPhotos: number;
-  onCapture: (dataUrl: string) => void;
+  onCapture: (dataUrl: string, videoBlob: Blob | null) => void;
 }
+
+const POST_CAPTURE_MS = 2000;
 
 export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -16,7 +18,85 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
   const [countdown, setCountdown] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
   const [error, setError] = useState('');
+  const [capturing, setCapturing] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  // Get supported MIME type for MediaRecorder
+  const getSupportedMimeType = useCallback((): string => {
+    const types = [
+      'video/webm;codecs=vp9',
+      'video/webm;codecs=vp8',
+      'video/webm',
+      'video/mp4',
+    ];
+    for (const type of types) {
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return 'video/webm';
+  }, []);
+
+  // Start a fresh recording session — this ensures the first chunk has the WebM header
+  const startRecording = useCallback(() => {
+    const stream = streamRef.current;
+    if (!stream || !stream.active) return;
+    if (typeof MediaRecorder === 'undefined') return;
+
+    // Clear previous chunks
+    chunksRef.current = [];
+
+    const mimeType = getSupportedMimeType();
+    let recorder: MediaRecorder;
+
+    try {
+      recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 2500000,
+      });
+    } catch {
+      try {
+        recorder = new MediaRecorder(stream);
+      } catch {
+        return;
+      }
+    }
+
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        chunksRef.current.push(event.data);
+      }
+    };
+
+    // Record in small chunks for smooth capture
+    recorder.start(200);
+    recorderRef.current = recorder;
+  }, [getSupportedMimeType]);
+
+  // Stop recording and wait for all data to flush
+  const stopRecordingAsync = useCallback((): Promise<void> => {
+    return new Promise((resolve) => {
+      const recorder = recorderRef.current;
+      if (!recorder || recorder.state === 'inactive') {
+        recorderRef.current = null;
+        resolve();
+        return;
+      }
+
+      // Force flush any pending data
+      try {
+        recorder.requestData();
+      } catch {
+        // ignore
+      }
+
+      recorder.onstop = () => {
+        recorderRef.current = null;
+        setTimeout(resolve, 50);
+      };
+      recorder.stop();
+    });
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -42,26 +122,28 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
 
     return () => {
       mounted = false;
+      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+        recorderRef.current.stop();
+      }
+      recorderRef.current = null;
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
   }, []);
 
-  const capture = useCallback(() => {
+  const capture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    // Determine output dimensions based on frame aspect ratio
-    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4/3;
+    // Capture still frame
+    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
     canvas.width = 800;
     canvas.height = Math.round(800 / aspectRatio);
 
     const ctx = canvas.getContext('2d')!;
-    // Mirror for selfie
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
 
-    // Crop to fill the canvas
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const targetAR = canvas.width / canvas.height;
@@ -85,11 +167,38 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    onCapture(canvas.toDataURL('image/jpeg', 0.92));
-  }, [frame, onCapture]);
+    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+    // Continue recording for POST_CAPTURE_MS to get the "after" portion
+    setCapturing(true);
+    await new Promise((resolve) => setTimeout(resolve, POST_CAPTURE_MS));
+
+    // Stop recording and wait for all data
+    await stopRecordingAsync();
+
+    // Merge all chunks into a single blob — since we started a fresh session
+    // at countdown start, all chunks form a valid video file with proper headers
+    let videoBlob: Blob | null = null;
+    if (chunksRef.current.length > 0) {
+      const mimeType = chunksRef.current[0].type || 'video/webm';
+      videoBlob = new Blob(chunksRef.current, { type: mimeType });
+      if (videoBlob.size === 0) videoBlob = null;
+    }
+
+    setCapturing(false);
+    chunksRef.current = [];
+
+    onCapture(photoDataUrl, videoBlob);
+  }, [frame, onCapture, stopRecordingAsync]);
 
   const startCountdown = useCallback(() => {
-    if (countdown !== null) return;
+    if (countdown !== null || capturing) return;
+
+    // Start a FRESH recording session when countdown begins.
+    // This ensures the WebM header is in the first chunk.
+    // The countdown is 3 seconds, so we get ~3s before + 2s after = ~5s total clip.
+    startRecording();
+
     let count = 3;
     setCountdown(count);
     const interval = setInterval(() => {
@@ -104,9 +213,9 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
         setCountdown(count);
       }
     }, 1000);
-  }, [countdown, capture]);
+  }, [countdown, capturing, capture, startRecording]);
 
-  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4/3;
+  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
 
   return (
     <div className="w-full animate-fadeIn">
@@ -154,6 +263,33 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)', display: 'block' }}
               />
+
+              {/* Live recording indicator */}
+              {ready && !capturing && countdown === null && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  <span className="text-white text-[10px] font-medium tracking-wide">READY</span>
+                </div>
+              )}
+
+              {/* Recording indicator during countdown */}
+              {countdown !== null && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-white text-[10px] font-medium tracking-wide">LIVE</span>
+                </div>
+              )}
+
+              {/* Capturing indicator */}
+              {capturing && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(251,191,36,0.3)', border: '1px solid rgba(251,191,36,0.6)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="text-yellow-200 text-[10px] font-medium tracking-wide">RECORDING</span>
+                </div>
+              )}
 
               {/* Viewfinder corners */}
               {['top-2 left-2', 'top-2 right-2', 'bottom-2 left-2', 'bottom-2 right-2'].map((pos, i) => (
@@ -207,9 +343,9 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
             <div className="flex flex-col items-center mt-8 gap-4">
               <button
                 onClick={startCountdown}
-                disabled={!ready || countdown !== null}
+                disabled={!ready || countdown !== null || capturing}
                 className="relative"
-                style={{ cursor: ready && countdown === null ? 'pointer' : 'not-allowed' }}
+                style={{ cursor: ready && countdown === null && !capturing ? 'pointer' : 'not-allowed' }}
               >
                 <div style={{
                   width: 80, height: 80,
@@ -218,19 +354,19 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                   border: `4px solid ${frame.borderColor}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.2s',
-                  opacity: ready && countdown === null ? 1 : 0.5,
+                  opacity: ready && countdown === null && !capturing ? 1 : 0.5,
                   boxShadow: `0 4px 20px ${frame.borderColor}30`,
                 }}>
                   <div style={{
                     width: 44, height: 44,
                     borderRadius: '50%',
-                    background: countdown !== null ? 'var(--accent)' : frame.borderColor,
+                    background: countdown !== null || capturing ? 'var(--accent)' : frame.borderColor,
                     transition: 'background 0.3s',
                   }} />
                 </div>
 
-                {/* Pulse rings when counting */}
-                {countdown !== null && (
+                {/* Pulse rings when counting or capturing */}
+                {(countdown !== null || capturing) && (
                   <>
                     {[1, 2].map(r => (
                       <div key={r} style={{
@@ -245,7 +381,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                 )}
               </button>
               <p className="text-xs opacity-40 tracking-widest uppercase">
-                {countdown !== null ? `Shooting in ${countdown}...` : 'Press to take photo'}
+                {capturing ? 'Recording motion...' : countdown !== null ? `Shooting in ${countdown}...` : 'Press to take photo'}
               </p>
             </div>
           </>

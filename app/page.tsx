@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import FrameSelector from '@/components/FrameSelector';
 import Camera from '@/components/Camera';
 import PhotoReview from '@/components/PhotoReview';
@@ -13,7 +13,11 @@ export default function Home() {
   const [step, setStep] = useState<Step>('select');
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [liveClips, setLiveClips] = useState<(string | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  // Store blobs in a ref so they stay alive (won't be GC'd)
+  const clipBlobsRef = useRef<(Blob | null)[]>([]);
+  const pendingClipBlobRef = useRef<Blob | null>(null);
 
   const handleFrameSelect = (frame: Frame) => {
     setSelectedFrame(frame);
@@ -22,19 +26,32 @@ export default function Home() {
   const handleStart = () => {
     if (!selectedFrame) return;
     setPhotos([]);
+    setLiveClips([]);
+    clipBlobsRef.current = [];
+    pendingClipBlobRef.current = null;
     setStep('camera');
   };
 
-  const handleCapture = (dataUrl: string) => {
+  const handleCapture = (dataUrl: string, videoBlob: Blob | null) => {
     setPendingPhoto(dataUrl);
+    pendingClipBlobRef.current = videoBlob && videoBlob.size > 0 ? videoBlob : null;
     setStep('review');
   };
 
   const handleAccept = (finalPhotoUrl: string) => {
     if (!selectedFrame) return;
     const newPhotos = [...photos, finalPhotoUrl];
+
+    // Create blob URL from the stored blob (blob stays alive via ref)
+    const blob = pendingClipBlobRef.current;
+    const clipUrl = blob ? URL.createObjectURL(blob) : null;
+    const newClips = [...liveClips, clipUrl];
+    clipBlobsRef.current = [...clipBlobsRef.current, blob];
+
     setPendingPhoto(null);
+    pendingClipBlobRef.current = null;
     setPhotos(newPhotos);
+    setLiveClips(newClips);
     if (newPhotos.length >= selectedFrame.photoCount) {
       setStep('background');
     } else {
@@ -49,13 +66,19 @@ export default function Home() {
 
   const handleRetry = () => {
     setPendingPhoto(null);
+    pendingClipBlobRef.current = null;
     setStep('camera');
   };
 
   const handleRestart = () => {
+    // Revoke blob URLs
+    liveClips.forEach(url => { if (url) URL.revokeObjectURL(url); });
     setStep('select');
     setSelectedFrame(null);
     setPhotos([]);
+    setLiveClips([]);
+    clipBlobsRef.current = [];
+    pendingClipBlobRef.current = null;
     setPendingPhoto(null);
   };
 
@@ -185,6 +208,7 @@ export default function Home() {
         {step === 'final' && selectedFrame && (
           <FinalStrip
             photos={photos}
+            liveClips={liveClips}
             frame={selectedFrame}
             onRestart={handleRestart}
           />
