@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { removeBackground } from '@imgly/background-removal';
 import { Frame } from '@/lib/frames';
 
@@ -25,12 +25,14 @@ const FOLDER_BGS: BackgroundOption[] = [
 ];
 
 export default function BackgroundSelector({ photos, frame, onComplete }: Props) {
-  const [processing, setProcessing] = useState(true);
+  const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
 
-  // Array of object URLs for the transparent foregrounds
-  const [transparentPhotos, setTransparentPhotos] = useState<string[]>([]);
+  // Array of object URLs for the transparent foregrounds. Initially just the photos
+  const [transparentPhotos, setTransparentPhotos] = useState<string[]>(photos);
+  const [backgroundsRemoved, setBackgroundsRemoved] = useState(false);
 
   // The currently selected background
   const [selectedBg, setSelectedBg] = useState<BackgroundOption>({ type: 'original', id: 'orig', name: 'Original' });
@@ -38,55 +40,37 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let active = true;
+  const handleRemoveBackgrounds = async () => {
+    if (backgroundsRemoved) return;
+    setIsRemovingBg(true);
+    setProcessing(true);
+    try {
+      const results: string[] = [];
 
-    const processPhotos = async () => {
-      try {
-        setProcessing(true);
-        const results: string[] = [];
+      for (let i = 0; i < photos.length; i++) {
+        // Progress represents the number of processed photos
+        setProgress(Math.round((i / photos.length) * 100));
 
-        for (let i = 0; i < photos.length; i++) {
-          if (!active) return;
-          // Progress represents the number of processed photos
-          setProgress(Math.round((i / photos.length) * 100));
-
-          try {
-            const blob = await removeBackground(photos[i]);
-            results.push(URL.createObjectURL(blob));
-          } catch (err: unknown) {
-             console.error(`Error removing bg from photo ${i}:`, err);
-             // Fallback to original if background removal fails for a specific image
-             results.push(photos[i]);
-          }
-        }
-
-        if (active) {
-          setProgress(100);
-          setTransparentPhotos(results);
-          setProcessing(false);
-        }
-      } catch (err: unknown) {
-        if (active) {
-          setError(err instanceof Error ? err.message : 'Failed to remove backgrounds');
-          setProcessing(false);
+        try {
+          const blob = await removeBackground(photos[i]);
+          results.push(URL.createObjectURL(blob));
+        } catch (err: unknown) {
+            console.error(`Error removing bg from photo ${i}:`, err);
+            // Fallback to original if background removal fails for a specific image
+            results.push(photos[i]);
         }
       }
-    };
 
-    processPhotos();
-
-    return () => {
-      active = false;
-      // Cleanup object URLs on unmount to prevent memory leaks
-      setTransparentPhotos((currentPhotos) => {
-        currentPhotos.forEach(url => {
-          if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-        });
-        return currentPhotos;
-      });
-    };
-  }, [photos]);
+      setProgress(100);
+      setTransparentPhotos(results);
+      setBackgroundsRemoved(true);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to remove backgrounds');
+    } finally {
+      setIsRemovingBg(false);
+      setProcessing(false);
+    }
+  };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -163,7 +147,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
     }
   };
 
-  if (processing && transparentPhotos.length < photos.length) {
+  if (isRemovingBg) {
     return (
       <div className="w-full text-center py-20 animate-fadeIn">
         <div className="w-16 h-16 border-4 border-t-transparent rounded-full mx-auto mb-6 animate-spin"
@@ -251,6 +235,20 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
 
         {/* Controls */}
         <div className="w-full md:w-80 flex flex-col gap-6">
+          {!backgroundsRemoved && (
+            <button
+              onClick={handleRemoveBackgrounds}
+              className="w-full py-3 rounded-sm font-medium tracking-wide transition-all text-sm border-2"
+              style={{
+                borderColor: frame.borderColor,
+                color: frame.borderColor,
+                background: 'transparent',
+              }}
+            >
+              ✨ Remove All Backgrounds
+            </button>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             {bgOptions.map((bg) => {
               const isSelected = selectedBg.id === bg.id;

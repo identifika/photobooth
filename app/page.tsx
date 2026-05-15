@@ -30,9 +30,9 @@ export default function Home() {
     setStep('review');
   };
 
-  const handleAccept = () => {
-    if (!pendingPhoto || !selectedFrame) return;
-    const newPhotos = [...photos, pendingPhoto];
+  const handleAccept = (finalPhotoUrl: string) => {
+    if (!selectedFrame) return;
+    const newPhotos = [...photos, finalPhotoUrl];
     setPendingPhoto(null);
     setPhotos(newPhotos);
     if (newPhotos.length >= selectedFrame.photoCount) {
