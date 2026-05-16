@@ -52,7 +52,11 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         setProgress(Math.round((i / photos.length) * 100));
 
         try {
-          const blob = await removeBackground(photos[i]);
+          const blob = await removeBackground(photos[i], {
+            publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
+            device: 'cpu',
+            model: 'isnet_fp16',
+          });
           results.push(URL.createObjectURL(blob));
         } catch (err: unknown) {
             console.error(`Error removing bg from photo ${i}:`, err);
