@@ -6,10 +6,11 @@ interface Props {
   frame: Frame;
   photoIndex: number;
   totalPhotos: number;
-  onCapture: (dataUrl: string, videoBlob: Blob | null) => void;
+  onCapture: (dataUrl: string, liveFrames: string[] | null) => void;
 }
 
 const POST_CAPTURE_MS = 2000;
+const FRAME_CAPTURE_INTERVAL = 150; // ~6-7 fps for GIF
 
 export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -20,82 +21,57 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
   const [error, setError] = useState('');
   const [capturing, setCapturing] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
+  const liveFramesRef = useRef<string[]>([]);
+  const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Get supported MIME type for MediaRecorder
-  const getSupportedMimeType = useCallback((): string => {
-    const types = [
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=vp8',
-      'video/webm',
-      'video/mp4',
-    ];
-    for (const type of types) {
-      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) return type;
-    }
-    return 'video/webm';
-  }, []);
+  // Capture a small frame from the video for GIF
+  const captureGifFrame = useCallback(() => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (video.readyState < 2 || video.videoWidth === 0) return;
 
-  // Start a fresh recording session — this ensures the first chunk has the WebM header
-  const startRecording = useCallback(() => {
-    const stream = streamRef.current;
-    if (!stream || !stream.active) return;
-    if (typeof MediaRecorder === 'undefined') return;
+    const gifCanvas = document.createElement('canvas');
+    const gifW = 240;
+    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+    const gifH = Math.round(gifW / aspectRatio);
+    gifCanvas.width = gifW;
+    gifCanvas.height = gifH;
+    const gCtx = gifCanvas.getContext('2d')!;
 
-    // Clear previous chunks
-    chunksRef.current = [];
+    // Mirror
+    gCtx.translate(gifW, 0);
+    gCtx.scale(-1, 1);
 
-    const mimeType = getSupportedMimeType();
-    let recorder: MediaRecorder;
-
-    try {
-      recorder = new MediaRecorder(stream, {
-        mimeType,
-        videoBitsPerSecond: 2500000,
-      });
-    } catch {
-      try {
-        recorder = new MediaRecorder(stream);
-      } catch {
-        return;
-      }
+    // Crop to fill
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const targetAR = gifW / gifH;
+    const videoAR = vw / vh;
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (videoAR > targetAR) {
+      sw = vh * targetAR;
+      sx = (vw - sw) / 2;
+    } else {
+      sh = vw / targetAR;
+      sy = (vh - sh) / 2;
     }
 
-    recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        chunksRef.current.push(event.data);
-      }
-    };
+    gCtx.drawImage(video, sx, sy, sw, sh, 0, 0, gifW, gifH);
+    liveFramesRef.current.push(gifCanvas.toDataURL('image/jpeg', 0.6));
+  }, [frame.layout]);
 
-    // Record in small chunks for smooth capture
-    recorder.start(200);
-    recorderRef.current = recorder;
-  }, [getSupportedMimeType]);
+  // Start capturing frames for GIF
+  const startFrameCapture = useCallback(() => {
+    liveFramesRef.current = [];
+    frameIntervalRef.current = setInterval(captureGifFrame, FRAME_CAPTURE_INTERVAL);
+  }, [captureGifFrame]);
 
-  // Stop recording and wait for all data to flush
-  const stopRecordingAsync = useCallback((): Promise<void> => {
-    return new Promise((resolve) => {
-      const recorder = recorderRef.current;
-      if (!recorder || recorder.state === 'inactive') {
-        recorderRef.current = null;
-        resolve();
-        return;
-      }
-
-      // Force flush any pending data
-      try {
-        recorder.requestData();
-      } catch {
-        // ignore
-      }
-
-      recorder.onstop = () => {
-        recorderRef.current = null;
-        setTimeout(resolve, 50);
-      };
-      recorder.stop();
-    });
+  // Stop capturing frames
+  const stopFrameCapture = useCallback(() => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -122,13 +98,10 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
 
     return () => {
       mounted = false;
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        recorderRef.current.stop();
-      }
-      recorderRef.current = null;
+      stopFrameCapture();
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
-  }, []);
+  }, [stopFrameCapture]);
 
   const capture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
@@ -169,35 +142,28 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
 
     const photoDataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
-    // Continue recording for POST_CAPTURE_MS to get the "after" portion
+    // Continue capturing frames for POST_CAPTURE_MS
     setCapturing(true);
     await new Promise((resolve) => setTimeout(resolve, POST_CAPTURE_MS));
 
-    // Stop recording and wait for all data
-    await stopRecordingAsync();
-
-    // Merge all chunks into a single blob — since we started a fresh session
-    // at countdown start, all chunks form a valid video file with proper headers
-    let videoBlob: Blob | null = null;
-    if (chunksRef.current.length > 0) {
-      const mimeType = chunksRef.current[0].type || 'video/webm';
-      videoBlob = new Blob(chunksRef.current, { type: mimeType });
-      if (videoBlob.size === 0) videoBlob = null;
-    }
-
+    // Stop frame capture
+    stopFrameCapture();
     setCapturing(false);
-    chunksRef.current = [];
 
-    onCapture(photoDataUrl, videoBlob);
-  }, [frame, onCapture, stopRecordingAsync]);
+    // Get captured frames (limit to ~30 max)
+    const frames = liveFramesRef.current.length > 0
+      ? liveFramesRef.current.slice(0, 30)
+      : null;
+    liveFramesRef.current = [];
+
+    onCapture(photoDataUrl, frames);
+  }, [frame, onCapture, stopFrameCapture]);
 
   const startCountdown = useCallback(() => {
     if (countdown !== null || capturing) return;
 
-    // Start a FRESH recording session when countdown begins.
-    // This ensures the WebM header is in the first chunk.
-    // The countdown is 3 seconds, so we get ~3s before + 2s after = ~5s total clip.
-    startRecording();
+    // Start capturing frames for GIF when countdown begins
+    startFrameCapture();
 
     let count = 3;
     setCountdown(count);
@@ -213,7 +179,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
         setCountdown(count);
       }
     }, 1000);
-  }, [countdown, capturing, capture, startRecording]);
+  }, [countdown, capturing, capture, startFrameCapture]);
 
   const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
 
