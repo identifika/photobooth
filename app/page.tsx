@@ -13,7 +13,9 @@ export default function Home() {
   const [step, setStep] = useState<Step>('select');
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [liveClips, setLiveClips] = useState<(string[] | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
 
   const handleFrameSelect = (frame: Frame) => {
     setSelectedFrame(frame);
@@ -22,19 +24,25 @@ export default function Home() {
   const handleStart = () => {
     if (!selectedFrame) return;
     setPhotos([]);
+    setLiveClips([]);
     setStep('camera');
   };
 
-  const handleCapture = (dataUrl: string) => {
+  const handleCapture = (dataUrl: string, liveFrames: string[] | null) => {
     setPendingPhoto(dataUrl);
+    setPendingFrames(liveFrames);
     setStep('review');
   };
 
   const handleAccept = (finalPhotoUrl: string) => {
     if (!selectedFrame) return;
     const newPhotos = [...photos, finalPhotoUrl];
+    const newClips = [...liveClips, pendingFrames];
+
     setPendingPhoto(null);
+    setPendingFrames(null);
     setPhotos(newPhotos);
+    setLiveClips(newClips);
     if (newPhotos.length >= selectedFrame.photoCount) {
       setStep('background');
     } else {
@@ -49,6 +57,7 @@ export default function Home() {
 
   const handleRetry = () => {
     setPendingPhoto(null);
+    setPendingFrames(null);
     setStep('camera');
   };
 
@@ -56,7 +65,9 @@ export default function Home() {
     setStep('select');
     setSelectedFrame(null);
     setPhotos([]);
+    setLiveClips([]);
     setPendingPhoto(null);
+    setPendingFrames(null);
   };
 
   const accentColor = selectedFrame?.accentColor || 'var(--gold)';
@@ -185,6 +196,7 @@ export default function Home() {
         {step === 'final' && selectedFrame && (
           <FinalStrip
             photos={photos}
+            liveClips={liveClips}
             frame={selectedFrame}
             onRestart={handleRestart}
           />

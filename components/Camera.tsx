@@ -6,8 +6,11 @@ interface Props {
   frame: Frame;
   photoIndex: number;
   totalPhotos: number;
-  onCapture: (dataUrl: string) => void;
+  onCapture: (dataUrl: string, liveFrames: string[] | null) => void;
 }
+
+const POST_CAPTURE_MS = 2000;
+const FRAME_CAPTURE_INTERVAL = 150; // ~6-7 fps for GIF
 
 export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -16,7 +19,60 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
   const [countdown, setCountdown] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
   const [error, setError] = useState('');
+  const [capturing, setCapturing] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const liveFramesRef = useRef<string[]>([]);
+  const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Capture a small frame from the video for GIF
+  const captureGifFrame = useCallback(() => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    if (video.readyState < 2 || video.videoWidth === 0) return;
+
+    const gifCanvas = document.createElement('canvas');
+    const gifW = 240;
+    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+    const gifH = Math.round(gifW / aspectRatio);
+    gifCanvas.width = gifW;
+    gifCanvas.height = gifH;
+    const gCtx = gifCanvas.getContext('2d')!;
+
+    // Mirror
+    gCtx.translate(gifW, 0);
+    gCtx.scale(-1, 1);
+
+    // Crop to fill
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const targetAR = gifW / gifH;
+    const videoAR = vw / vh;
+    let sx = 0, sy = 0, sw = vw, sh = vh;
+    if (videoAR > targetAR) {
+      sw = vh * targetAR;
+      sx = (vw - sw) / 2;
+    } else {
+      sh = vw / targetAR;
+      sy = (vh - sh) / 2;
+    }
+
+    gCtx.drawImage(video, sx, sy, sw, sh, 0, 0, gifW, gifH);
+    liveFramesRef.current.push(gifCanvas.toDataURL('image/jpeg', 0.6));
+  }, [frame.layout]);
+
+  // Start capturing frames for GIF
+  const startFrameCapture = useCallback(() => {
+    liveFramesRef.current = [];
+    frameIntervalRef.current = setInterval(captureGifFrame, FRAME_CAPTURE_INTERVAL);
+  }, [captureGifFrame]);
+
+  // Stop capturing frames
+  const stopFrameCapture = useCallback(() => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -42,26 +98,25 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
 
     return () => {
       mounted = false;
+      stopFrameCapture();
       streamRef.current?.getTracks().forEach(t => t.stop());
     };
-  }, []);
+  }, [stopFrameCapture]);
 
-  const capture = useCallback(() => {
+  const capture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
-    // Determine output dimensions based on frame aspect ratio
-    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4/3;
+    // Capture still frame
+    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
     canvas.width = 800;
     canvas.height = Math.round(800 / aspectRatio);
 
     const ctx = canvas.getContext('2d')!;
-    // Mirror for selfie
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
 
-    // Crop to fill the canvas
     const vw = video.videoWidth;
     const vh = video.videoHeight;
     const targetAR = canvas.width / canvas.height;
@@ -85,11 +140,31 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    onCapture(canvas.toDataURL('image/jpeg', 0.92));
-  }, [frame, onCapture]);
+    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+    // Continue capturing frames for POST_CAPTURE_MS
+    setCapturing(true);
+    await new Promise((resolve) => setTimeout(resolve, POST_CAPTURE_MS));
+
+    // Stop frame capture
+    stopFrameCapture();
+    setCapturing(false);
+
+    // Get captured frames (limit to ~30 max)
+    const frames = liveFramesRef.current.length > 0
+      ? liveFramesRef.current.slice(0, 30)
+      : null;
+    liveFramesRef.current = [];
+
+    onCapture(photoDataUrl, frames);
+  }, [frame, onCapture, stopFrameCapture]);
 
   const startCountdown = useCallback(() => {
-    if (countdown !== null) return;
+    if (countdown !== null || capturing) return;
+
+    // Start capturing frames for GIF when countdown begins
+    startFrameCapture();
+
     let count = 3;
     setCountdown(count);
     const interval = setInterval(() => {
@@ -104,9 +179,9 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
         setCountdown(count);
       }
     }, 1000);
-  }, [countdown, capture]);
+  }, [countdown, capturing, capture, startFrameCapture]);
 
-  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4/3;
+  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
 
   return (
     <div className="w-full animate-fadeIn">
@@ -154,6 +229,33 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                 className="w-full h-full object-cover"
                 style={{ transform: 'scaleX(-1)', display: 'block' }}
               />
+
+              {/* Live recording indicator */}
+              {ready && !capturing && countdown === null && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  <span className="text-white text-[10px] font-medium tracking-wide">READY</span>
+                </div>
+              )}
+
+              {/* Recording indicator during countdown */}
+              {countdown !== null && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="text-white text-[10px] font-medium tracking-wide">LIVE</span>
+                </div>
+              )}
+
+              {/* Capturing indicator */}
+              {capturing && (
+                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(251,191,36,0.3)', border: '1px solid rgba(251,191,36,0.6)' }}>
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                  <span className="text-yellow-200 text-[10px] font-medium tracking-wide">RECORDING</span>
+                </div>
+              )}
 
               {/* Viewfinder corners */}
               {['top-2 left-2', 'top-2 right-2', 'bottom-2 left-2', 'bottom-2 right-2'].map((pos, i) => (
@@ -207,9 +309,9 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
             <div className="flex flex-col items-center mt-8 gap-4">
               <button
                 onClick={startCountdown}
-                disabled={!ready || countdown !== null}
+                disabled={!ready || countdown !== null || capturing}
                 className="relative"
-                style={{ cursor: ready && countdown === null ? 'pointer' : 'not-allowed' }}
+                style={{ cursor: ready && countdown === null && !capturing ? 'pointer' : 'not-allowed' }}
               >
                 <div style={{
                   width: 80, height: 80,
@@ -218,19 +320,19 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                   border: `4px solid ${frame.borderColor}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.2s',
-                  opacity: ready && countdown === null ? 1 : 0.5,
+                  opacity: ready && countdown === null && !capturing ? 1 : 0.5,
                   boxShadow: `0 4px 20px ${frame.borderColor}30`,
                 }}>
                   <div style={{
                     width: 44, height: 44,
                     borderRadius: '50%',
-                    background: countdown !== null ? 'var(--accent)' : frame.borderColor,
+                    background: countdown !== null || capturing ? 'var(--accent)' : frame.borderColor,
                     transition: 'background 0.3s',
                   }} />
                 </div>
 
-                {/* Pulse rings when counting */}
-                {countdown !== null && (
+                {/* Pulse rings when counting or capturing */}
+                {(countdown !== null || capturing) && (
                   <>
                     {[1, 2].map(r => (
                       <div key={r} style={{
@@ -245,7 +347,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                 )}
               </button>
               <p className="text-xs opacity-40 tracking-widest uppercase">
-                {countdown !== null ? `Shooting in ${countdown}...` : 'Press to take photo'}
+                {capturing ? 'Recording motion...' : countdown !== null ? `Shooting in ${countdown}...` : 'Press to take photo'}
               </p>
             </div>
           </>
