@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
+const isTauri = process.env.TAURI_ENV === '1';
+
 const nextConfig: NextConfig = {
-  output: 'export',
+  ...(isTauri ? { output: 'export' } : {}),
   turbopack: {},
   images: {
     unoptimized: true,

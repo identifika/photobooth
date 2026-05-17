@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "build:tauri": "TAURI_ENV=1 next build",
     "start": "next start",
     "lint": "eslint",
     "tauri": "tauri",
