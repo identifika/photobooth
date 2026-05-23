@@ -43,25 +43,25 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
 
-    const PHOTO_W = 400;
+    const PHOTO_W = 800;
     const isGrid = frame.layout === 'grid-2x2';
     const is2 = frame.layout === 'strip-2';
     const photoAR = isGrid ? 1 : 4 / 3;
     const PHOTO_H = Math.round(PHOTO_W / photoAR);
-    const PADDING = 20;
-    const HOLE_SIZE = 12;
-    const HOLE_MARGIN = 10;
+    const PADDING = 30;
+    const HOLE_SIZE = 18;
+    const HOLE_MARGIN = 14;
 
     let stripW: number, stripH: number;
     if (isGrid) {
       stripW = PHOTO_W * 2 + PADDING * 3;
-      stripH = PHOTO_H * 2 + PADDING * 3 + 60;
+      stripH = PHOTO_H * 2 + PADDING * 3 + 90;
     } else if (is2) {
       stripW = PHOTO_W * 2 + PADDING * 3;
-      stripH = PHOTO_H + PADDING * 2 + 60 + (HOLE_SIZE + HOLE_MARGIN) * 2;
+      stripH = PHOTO_H + PADDING * 2 + 90 + (HOLE_SIZE + HOLE_MARGIN) * 2;
     } else {
       stripW = PHOTO_W + PADDING * 2 + (HOLE_SIZE + HOLE_MARGIN) * 2;
-      stripH = PHOTO_H * photos.length + PADDING * (photos.length + 1) + 60;
+      stripH = PHOTO_H * photos.length + PADDING * (photos.length + 1) + 90;
     }
 
     canvas.width = stripW;
@@ -70,8 +70,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     ctx.fillStyle = frame.color;
     ctx.fillRect(0, 0, stripW, stripH);
     ctx.strokeStyle = frame.borderColor;
-    ctx.lineWidth = 8;
-    ctx.strokeRect(4, 4, stripW - 8, stripH - 8);
+    ctx.lineWidth = 12;
+    ctx.strokeRect(6, 6, stripW - 12, stripH - 12);
 
     const imgs = await Promise.all(photos.map(src => new Promise<HTMLImageElement>((res, rej) => {
       const img = new Image();
@@ -141,16 +141,16 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
 
     ctx.fillStyle = frame.borderColor;
     ctx.globalAlpha = 0.7;
-    const labelY = stripH - 38;
-    ctx.font = `bold 16px "Playfair Display", serif`;
+    const labelY = stripH - 55;
+    ctx.font = `bold 24px "Playfair Display", serif`;
     ctx.textAlign = 'center';
     ctx.fillText(frame.name.toUpperCase(), stripW / 2, labelY);
-    ctx.font = '12px "DM Sans", sans-serif';
+    ctx.font = '16px "DM Sans", sans-serif';
     ctx.globalAlpha = 0.4;
     ctx.fillText(
       new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
       stripW / 2,
-      labelY + 18
+      labelY + 26
     );
     ctx.globalAlpha = 1;
 
@@ -160,7 +160,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   const generateGif = useCallback(async () => {
     setGeneratingGif(true);
     try {
-      const PHOTO_W = 400;
+      const PHOTO_W = 600;
       const isGrid = frame.layout === 'grid-2x2';
       const photoAR = isGrid ? 1 : 4 / 3;
       const PHOTO_H = Math.round(PHOTO_W / photoAR);
@@ -330,14 +330,14 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   };
 
   const downloadIndividual = async (photoSrc: string, index: number) => {
-    const PHOTO_W = 400;
+    const PHOTO_W = 800;
     const isGrid = frame.layout === 'grid-2x2';
     const photoAR = isGrid ? 1 : 4 / 3;
     const PHOTO_H = Math.round(PHOTO_W / photoAR);
-    const FRAME_PAD_SIDE = 24;
-    const FRAME_PAD_TOP = 24;
-    const FRAME_PAD_BOTTOM = 72;
-    const BORDER_W = 4;
+    const FRAME_PAD_SIDE = 40;
+    const FRAME_PAD_TOP = 40;
+    const FRAME_PAD_BOTTOM = 120;
+    const BORDER_W = 6;
     const canvasW = PHOTO_W + FRAME_PAD_SIDE * 2 + BORDER_W * 2;
     const canvasH = PHOTO_H + FRAME_PAD_TOP + FRAME_PAD_BOTTOM + BORDER_W * 2;
 
@@ -352,13 +352,12 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     ctx.lineWidth = BORDER_W;
     ctx.strokeRect(BORDER_W / 2, BORDER_W / 2, canvasW - BORDER_W, canvasH - BORDER_W);
 
-    const tapeW = 64;
-    const tapeH = 16;
+    const tapeW = 100;
+    const tapeH = 24;
     ctx.fillStyle = `${frame.accentColor}90`;
-    ctx.fillRect((canvasW - tapeW) / 2, 4, tapeW, tapeH);
+    ctx.fillRect((canvasW - tapeW) / 2, 6, tapeW, tapeH);
 
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     await new Promise<void>(resolve => {
       img.onload = () => resolve();
       img.src = photoSrc;
@@ -368,22 +367,22 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     const photoY = FRAME_PAD_TOP + BORDER_W;
     ctx.drawImage(img, photoX, photoY, PHOTO_W, PHOTO_H);
 
-    const labelY = photoY + PHOTO_H + 20;
+    const labelY = photoY + PHOTO_H + 40;
     ctx.fillStyle = frame.borderColor;
     ctx.globalAlpha = 0.5;
-    ctx.font = 'italic 14px "Playfair Display", serif';
+    ctx.font = 'italic 22px "Playfair Display", serif';
     ctx.textAlign = 'left';
     ctx.fillText(`${index + 1}/${photos.length}`, photoX, labelY);
-    ctx.font = '11px "DM Sans", sans-serif';
+    ctx.font = '16px "DM Sans", sans-serif';
     ctx.textAlign = 'right';
     ctx.fillText(frame.name.toUpperCase(), photoX + PHOTO_W, labelY);
     ctx.globalAlpha = 0.3;
-    ctx.font = '10px "DM Sans", sans-serif';
+    ctx.font = '14px "DM Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(
       new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
       canvasW / 2,
-      labelY + 20
+      labelY + 30
     );
     ctx.globalAlpha = 1;
 

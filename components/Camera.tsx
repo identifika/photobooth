@@ -31,7 +31,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     if (video.readyState < 2 || video.videoWidth === 0) return;
 
     const gifCanvas = document.createElement('canvas');
-    const gifW = 240;
+    const gifW = 480;
     const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
     const gifH = Math.round(gifW / aspectRatio);
     gifCanvas.width = gifW;
@@ -57,7 +57,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     }
 
     gCtx.drawImage(video, sx, sy, sw, sh, 0, 0, gifW, gifH);
-    liveFramesRef.current.push(gifCanvas.toDataURL('image/jpeg', 0.6));
+    liveFramesRef.current.push(gifCanvas.toDataURL('image/jpeg', 0.75));
   }, [frame.layout]);
 
   // Start capturing frames for GIF
@@ -80,7 +80,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     const initCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+          video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1440 } },
           audio: false,
         });
         streamRef.current = stream;
@@ -110,8 +110,8 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
 
     // Capture still frame
     const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
-    canvas.width = 800;
-    canvas.height = Math.round(800 / aspectRatio);
+    canvas.width = 1920;
+    canvas.height = Math.round(1920 / aspectRatio);
 
     const ctx = canvas.getContext('2d')!;
     ctx.translate(canvas.width, 0);
@@ -140,7 +140,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.globalCompositeOperation = 'source-over';
 
-    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.92);
+    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
     // Continue capturing frames for POST_CAPTURE_MS
     setCapturing(true);
