@@ -96,12 +96,14 @@ function EditorInner() {
     setSaved(false);
     try {
       const derivedPhotoCount = Math.max(1, config.elements?.filter((e) => e.type === 'photo').length || 4);
+      const derivedLayout = derivedPhotoCount <= 2 ? 'strip-2' : derivedPhotoCount === 3 ? 'strip-3' : 'grid-2x2';
+
       // Save public frame (admin only)
       if (isPublicEdit && isUserAdmin) {
         await updateAnyPublicFrame(publicFrameId!, {
           config,
           name: frameName,
-          layout: categoryId as any,
+          layout: derivedLayout as any,
           sortOrder: parseInt(sortOrder) || 0,
           photoCount: derivedPhotoCount,
         });
