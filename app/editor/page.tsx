@@ -95,6 +95,7 @@ function EditorInner() {
     setSaving(true);
     setSaved(false);
     try {
+      const derivedPhotoCount = Math.max(1, config.elements?.filter((e) => e.type === 'photo').length || 4);
       // Save public frame (admin only)
       if (isPublicEdit && isUserAdmin) {
         await updateAnyPublicFrame(publicFrameId!, {
@@ -102,6 +103,7 @@ function EditorInner() {
           name: frameName,
           layout: categoryId as any,
           sortOrder: parseInt(sortOrder) || 0,
+          photoCount: derivedPhotoCount,
         });
       } else if (frameId) {
         // Save user frame
