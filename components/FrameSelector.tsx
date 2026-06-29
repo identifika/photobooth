@@ -1,9 +1,12 @@
 'use client';
-import { FRAMES, Frame } from '@/lib/frames';
+import { useState, useEffect } from 'react';
+import { Frame, loadPublicFrames } from '@/lib/frames';
+import FramePreview from '@/components/FramePreview';
 
 interface Props {
   selected: Frame | null;
   onSelect: (frame: Frame) => void;
+  userFrames?: Frame[];
 }
 
 const LayoutPreview = ({ frame }: { frame: Frame }) => {
@@ -11,110 +14,109 @@ const LayoutPreview = ({ frame }: { frame: Frame }) => {
   const isGrid = frame.layout === 'grid-2x2';
   const isStrip2 = frame.layout === 'strip-2';
 
+  const gridClass = isGrid ? 'grid-2x2' : frame.layout;
+
   return (
-    <div
-      className="relative p-2 rounded-sm"
-      style={{ background: frame.color, border: `3px solid ${frame.borderColor}` }}
-    >
-      {/* Film holes for strip layouts */}
-      {!isGrid && (
-        <div className="flex justify-between px-0.5 mb-1.5">
-          {[...Array(frame.photoCount + 1)].map((_, i) => (
-            <div key={i} style={{
-              width: 7, height: 10, borderRadius: 2,
-              background: frame.borderColor, opacity: 0.4,
-            }} />
-          ))}
-        </div>
-      )}
-
-      {/* Photo slots */}
-      <div className={`${isGrid ? 'grid grid-cols-2 gap-1' : isStrip2 ? 'grid grid-cols-2 gap-1' : 'flex flex-col gap-1'}`}>
-        {slots.map((_, i) => (
-          <div key={i} style={{
-            background: `${frame.borderColor}18`,
-            border: `1.5px dashed ${frame.borderColor}60`,
-            borderRadius: 2,
-            aspectRatio: isGrid ? '1' : (isStrip2 ? '4/3' : '4/3'),
-            width: '100%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <span style={{ fontSize: 10, color: frame.borderColor, opacity: 0.4 }}>{i + 1}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Bottom holes */}
-      {!isGrid && (
-        <div className="flex justify-between px-0.5 mt-1.5">
-          {[...Array(frame.photoCount + 1)].map((_, i) => (
-            <div key={i} style={{
-              width: 7, height: 10, borderRadius: 2,
-              background: frame.borderColor, opacity: 0.4,
-            }} />
-          ))}
-        </div>
-      )}
+    <div className={`frame-preview ${gridClass}`}>
+      {slots.map((_, i) => (
+        <div key={i} className="photo-slot" />
+      ))}
     </div>
   );
 };
 
-export default function FrameSelector({ selected, onSelect }: Props) {
+const FrameCard = ({
+  frame,
+  isSelected,
+  onClick,
+  isUserFrame,
+}: {
+  frame: Frame;
+  isSelected: boolean;
+  onClick: () => void;
+  isUserFrame?: boolean;
+}) => {
+  const scale = 0.2;
+  const w = frame.config?.width ?? 400;
+  const h = frame.config?.height ?? 600;
+  const hasConfig = !!frame.config;
+
   return (
-    <div className="w-full animate-fadeIn">
-      <div className="text-center mb-10">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Step 01</p>
-        <h2 className="font-display text-4xl font-bold" style={{ color: 'var(--ink)' }}>
-          Choose Your Frame
-        </h2>
-        <p className="mt-2 opacity-60 text-sm">Select a layout to begin your session</p>
+    <button
+      onClick={onClick}
+      className={`frame-card ${isSelected ? 'selected' : ''} animate-fadeIn`}
+    >
+      <div style={{ width: '100%', aspectRatio: '3/4', overflow: 'hidden', borderRadius: 6 }}>
+        {hasConfig ? (
+          <div style={{ width: w * scale, height: h * scale, overflow: 'hidden' }}>
+            <FramePreview config={frame.config!} scale={scale} />
+          </div>
+        ) : (
+          <LayoutPreview frame={frame} />
+        )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
-        {FRAMES.map((frame, i) => {
-          const isSelected = selected?.id === frame.id;
-          return (
-            <button
-              key={frame.id}
-              onClick={() => onSelect(frame)}
-              className="animate-fadeIn text-left group"
-              style={{ animationDelay: `${i * 0.08}s`, opacity: 0 }}
-            >
-              <div style={{
-                transform: isSelected ? 'translateY(-8px) rotate(-1.5deg)' : undefined,
-                transition: 'all 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
-                filter: isSelected ? `drop-shadow(0 12px 24px ${frame.borderColor}40)` : undefined,
-              }}
-              className="group-hover:-translate-y-2 group-hover:rotate-[-1deg] transition-all duration-300"
-              >
-                <LayoutPreview frame={frame} />
-              </div>
+      <div className="frame-name">{frame.emoji} {frame.name}</div>
+      <div className="frame-meta">{frame.photoCount} photos · {frame.layout.replace('-', ' ')}</div>
+    </button>
+  );
+};
 
-              <div className="mt-3 px-1">
-                <div className="flex items-center gap-1.5">
-                  <span>{frame.emoji}</span>
-                  <span className="font-medium text-sm">{frame.name}</span>
-                </div>
-                <p className="text-xs opacity-50 mt-0.5">{frame.description}</p>
-              </div>
+export default function FrameSelector({ selected, onSelect, userFrames = [] }: Props) {
+  const [frames, setFrames] = useState<Frame[]>([]);
+  const [loading, setLoading] = useState(true);
 
-              {isSelected && (
-                <div className="mt-2 px-1">
-                  <div className="h-0.5 rounded-full" style={{ background: frame.accentColor }} />
-                </div>
-              )}
-            </button>
-          );
-        })}
+  useEffect(() => {
+    loadPublicFrames()
+      .then(setFrames)
+      .catch(() => setFrames([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading && frames.length === 0) {
+    return (
+      <div className="w-full animate-fadeIn">
+        <p style={{ color: 'var(--text-muted)' }}>Loading frames...</p>
       </div>
+    );
+  }
 
-      {selected && (
-        <div className="text-center mt-10 animate-fadeIn">
-          <p className="text-sm opacity-60">
-            {selected.emoji} <strong>{selected.name}</strong> selected — {selected.photoCount} photos
-          </p>
+  const hasUserFrames = userFrames.length > 0;
+
+  return (
+    <div className="w-full">
+      {/* User custom frames section */}
+      {hasUserFrames && (
+        <div className="mb-8">
+          <div className="section-label">My Frames</div>
+          <div className="pb-frames-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+            {userFrames.map((frame) => (
+              <FrameCard
+                key={frame.id}
+                frame={frame}
+                isSelected={selected?.id === frame.id}
+                onClick={() => onSelect(frame)}
+                isUserFrame
+              />
+            ))}
+          </div>
         </div>
       )}
+
+      {/* Public frames section */}
+      <div className="section-label">
+        {hasUserFrames ? 'Community Frames' : 'Choose a frame'}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 32 }}>
+        {frames.map((frame) => (
+          <FrameCard
+            key={frame.id}
+            frame={frame}
+            isSelected={selected?.id === frame.id}
+            onClick={() => onSelect(frame)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,21 +1,89 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 import FrameSelector from '@/components/FrameSelector';
 import Camera from '@/components/Camera';
 import PhotoReview from '@/components/PhotoReview';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
+import StripPreview from '@/components/StripPreview';
 import { Frame } from '@/lib/frames';
+import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
+import { isAdmin } from '@/hooks/useAdmin';
+import { useTheme, ThemeToggle } from '@/hooks/useTheme';
+import { useStudioSettings } from '@/hooks/useStudioSettings';
 
-type Step = 'select' | 'camera' | 'review' | 'background' | 'final';
+type Step = 'select' | 'camera' | 'review' | 'background' | 'preview' | 'final';
+
+function userFrameToFrame(f: UserFrame): Frame {
+  const photoCount = Math.max(1, f.config.elements?.filter((e) => e.type === 'photo').length || 4);
+  return {
+    id: `user-${f.id}`,
+    name: f.name || 'My Frame',
+    description: f.config.description || 'Custom frame',
+    photoCount,
+    layout: photoCount <= 2 ? 'strip-2' : photoCount === 3 ? 'strip-3' : 'grid-2x2',
+    aspectRatio: 4 / 3,
+    color: f.config.color || '#f5f0e8',
+    borderColor: f.config.borderColor || '#1a1410',
+    accentColor: f.config.accentColor || '#c9a84c',
+    emoji: '✨',
+    config: f.config,
+    width: f.config.width,
+    height: f.config.height,
+  };
+}
+
+const STEPS: { id: Step; label: string }[] = [
+  { id: 'select', label: 'Frame' },
+  { id: 'camera', label: 'Capture' },
+  { id: 'review', label: 'Review' },
+  { id: 'preview', label: 'Preview' },
+  { id: 'background', label: 'BG' },
+  { id: 'final', label: 'Result' },
+];
 
 export default function Home() {
+  const { user, loading, signOut } = useAuth();
+  const router = useRouter();
+  const { settings, isLoaded } = useStudioSettings();
   const [step, setStep] = useState<Step>('select');
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [liveClips, setLiveClips] = useState<(string[] | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
+  const [userFrames, setUserFrames] = useState<UserFrame[]>([]);
+  const [framesLoading, setFramesLoading] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
+  const [photosBgRemoved, setPhotosBgRemoved] = useState<boolean[]>([]);
+  const [isGuest, setIsGuest] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    setIsGuest(sessionStorage.getItem('guest') === 'true');
+  }, []);
+
+  useEffect(() => {
+    if (!user) { setUserFrames([]); return; }
+    setFramesLoading(true);
+    listUserFrames(user.uid)
+      .then(setUserFrames)
+      .catch(console.error)
+      .finally(() => setFramesLoading(false));
+  }, [user]);
+
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-user-menu]')) setShowUserMenu(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showUserMenu]);
 
   const handleFrameSelect = (frame: Frame) => {
     setSelectedFrame(frame);
@@ -34,19 +102,39 @@ export default function Home() {
     setStep('review');
   };
 
-  const handleAccept = (finalPhotoUrl: string) => {
+  const handleAccept = (finalPhotoUrl: string, bgRemoved: boolean = false) => {
     if (!selectedFrame) return;
-    const newPhotos = [...photos, finalPhotoUrl];
-    const newClips = [...liveClips, pendingFrames];
-
-    setPendingPhoto(null);
-    setPendingFrames(null);
-    setPhotos(newPhotos);
-    setLiveClips(newClips);
-    if (newPhotos.length >= selectedFrame.photoCount) {
-      setStep('background');
+    
+    if (retakeIndex !== null) {
+      // Replace the photo at the specific index
+      const newPhotos = [...photos];
+      newPhotos[retakeIndex] = finalPhotoUrl;
+      const newClips = [...liveClips];
+      newClips[retakeIndex] = pendingFrames;
+      const newBgRemoved = [...photosBgRemoved];
+      newBgRemoved[retakeIndex] = bgRemoved;
+      setPhotos(newPhotos);
+      setLiveClips(newClips);
+      setPhotosBgRemoved(newBgRemoved);
+      setRetakeIndex(null);
+      setPendingPhoto(null);
+      setPendingFrames(null);
+      setStep('preview');
     } else {
-      setStep('camera');
+      // Normal flow - append new photo
+      const newPhotos = [...photos, finalPhotoUrl];
+      const newClips = [...liveClips, pendingFrames];
+      const newBgRemoved = [...photosBgRemoved, bgRemoved];
+      setPendingPhoto(null);
+      setPendingFrames(null);
+      setPhotos(newPhotos);
+      setLiveClips(newClips);
+      setPhotosBgRemoved(newBgRemoved);
+      if (newPhotos.length >= selectedFrame.photoCount) {
+        setStep('preview');
+      } else {
+        setStep('camera');
+      }
     }
   };
 
@@ -61,119 +149,217 @@ export default function Home() {
     setStep('camera');
   };
 
+  const handleRetakePhoto = (index: number) => {
+    // Mark which index we're retaking, keep photos in place
+    setRetakeIndex(index);
+    setPendingPhoto(null);
+    setPendingFrames(null);
+    setStep('camera');
+  };
+
+  const handleConfirmPreview = () => {
+    setStep('background');
+  };
+
   const handleRestart = () => {
     setStep('select');
     setSelectedFrame(null);
     setPhotos([]);
     setLiveClips([]);
+    setPhotosBgRemoved([]);
     setPendingPhoto(null);
     setPendingFrames(null);
+    setRetakeIndex(null);
   };
 
-  const accentColor = selectedFrame?.accentColor || 'var(--gold)';
-  const borderColor = selectedFrame?.borderColor || 'var(--ink)';
+  const studioName = settings?.studioName || 'Photobooth';
+  const studioLogo = settings?.studioLogo || '📷';
+  const tagline = settings?.tagline || 'Capture the moment';
+
+  const currentStepIndex = STEPS.findIndex(s => s.id === step);
+
+  if (loading || !isLoaded || isGuest === null) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</p>
+      </main>
+    );
+  }
+
+  if (!user && !isGuest) {
+    router.replace('/login');
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-background">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Redirecting...</p>
+      </main>
+    );
+  }
 
   return (
-    <main className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <>
       {/* Header */}
-      <header className="relative border-b" style={{ borderColor: `${borderColor}20` }}>
-        <div className="max-w-4xl mx-auto px-6 py-5 flex items-center justify-between">
-          <button onClick={handleRestart} className="flex items-center gap-3 group">
-            {/* Film reel logo */}
-            <div style={{
-              width: 36, height: 36,
-              background: borderColor,
-              borderRadius: 4,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'transform 0.3s',
-            }} className="group-hover:rotate-12">
-              <span style={{ fontSize: 18 }}>📷</span>
+      <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 16 }}>
+
+          {/* Logo */}
+          <button onClick={handleRestart} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+            <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
+              style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand)', fontSize: 18 }}>
+              {studioLogo}
             </div>
             <div>
-              <h1 className="font-display font-bold text-lg leading-none">Photobooth</h1>
-              <p className="text-xs opacity-40 tracking-widest uppercase">Studio</p>
+              <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px' }}>{studioName}</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>
             </div>
           </button>
 
-          {/* Step indicator */}
-          <div className="hidden md:flex items-center gap-2">
-            {(['select', 'camera', 'review', 'background', 'final'] as Step[]).map((s, i) => {
-              const labels = ['Frame', 'Camera', 'Review', 'Background', 'Result'];
-              const isActive = step === s;
-              const isPast = ['select','camera','review','background','final'].indexOf(step) > i;
+          {/* Film strip step indicator */}
+          <nav className="hidden md:flex items-center" aria-label="Session steps">
+            {STEPS.map((s, i) => {
+              const isActive = i === currentStepIndex;
+              const isPast = i < currentStepIndex;
               return (
-                <div key={s} className="flex items-center gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <div style={{
-                      width: 22, height: 22, borderRadius: '50%',
-                      background: isActive ? borderColor : isPast ? accentColor : 'transparent',
-                      border: `2px solid ${isActive || isPast ? borderColor : `${borderColor}30`}`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 9, color: isActive ? 'white' : isPast ? 'white' : `${borderColor}50`,
-                      fontWeight: 600, transition: 'all 0.3s',
-                    }}>
-                      {isPast ? '✓' : i + 1}
-                    </div>
-                    <span style={{
-                      fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase',
-                      color: isActive ? borderColor : `${borderColor}40`,
-                      fontWeight: isActive ? 600 : 400,
-                      transition: 'color 0.3s',
-                    }}>
-                      {labels[i]}
-                    </span>
+                <div key={s.id} className="flex items-center">
+                  <div className={`film-cell ${isActive ? 'is-active' : ''} ${isPast ? 'is-past' : ''}`}>
+                    <div className="film-frame"><span>{String(i + 1).padStart(2, '0')}</span></div>
+                    <div className="film-label">{s.label}</div>
                   </div>
-                  {i < 4 && <div style={{ width: 16, height: 1, background: `${borderColor}20` }} />}
+                  {i < STEPS.length - 1 && <div className="film-connector" />}
                 </div>
               );
             })}
-          </div>
+          </nav>
 
-          {/* Selected frame badge */}
-          {selectedFrame && step !== 'select' && (
-            <div className="text-xs px-3 py-1.5 rounded-full hidden sm:block" style={{
-              background: `${selectedFrame.borderColor}15`,
-              border: `1px solid ${selectedFrame.borderColor}30`,
-              color: selectedFrame.borderColor,
-            }}>
-              {selectedFrame.emoji} {selectedFrame.name}
+          {/* Header actions */}
+          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+            <ThemeToggle />
+            {user && isAdmin(user.email) && (
+              <>
+                <button className="btn ghost" onClick={() => router.push('/frames')}>Frames</button>
+                <button className="btn ghost" onClick={() => router.push('/settings')} aria-label="Settings">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                </button>
+              </>
+            )}
+            {!isGuest && (
+              <button className="btn primary" onClick={() => router.push('/editor')}>
+                <span style={{ fontSize: 14 }}>+</span>
+                <span className="hidden sm:inline">New frame</span>
+              </button>
+            )}
+            {/* User dropdown */}
+            <div className="relative" data-user-menu>
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'var(--bg-accent)', border: '0.5px solid var(--border-strong)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 600, color: 'var(--text-accent)',
+                  flexShrink: 0,
+                }}
+              >
+                {user?.displayName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'G'}
+              </button>
+              {showUserMenu && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 36, width: 220,
+                  background: 'var(--surface-2)', border: '0.5px solid var(--border)',
+                  borderRadius: 10, padding: '8px 0', boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+                  zIndex: 50,
+                }}>
+                  <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--border)' }}>
+                    <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{user?.displayName || 'Guest'}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{user?.email || 'Not logged in'}</p>
+                  </div>
+                  {!isGuest && (
+                    <>
+                      <button
+                        onClick={() => { setShowUserMenu(false); router.push('/frames'); }}
+                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        className="hover:bg-[var(--surface-1)]"
+                      >
+                        My Frames
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); router.push('/settings'); }}
+                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        className="hover:bg-[var(--surface-1)]"
+                      >
+                        Settings
+                      </button>
+                      <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                    </>
+                  )}
+                  <button
+                    onClick={() => { 
+                      setShowUserMenu(false); 
+                      if (isGuest) {
+                        sessionStorage.removeItem('guest');
+                        setIsGuest(false);
+                        router.push('/login');
+                      } else {
+                        signOut(); 
+                      }
+                    }}
+                    style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-secondary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                    className="hover:bg-[var(--surface-1)]"
+                  >
+                    {isGuest ? 'Sign in' : 'Sign out'}
+                  </button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </header>
 
       {/* Main content */}
-      <div className="max-w-4xl mx-auto px-6 py-12">
+      <main style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px 80px' }}>
+
+        {/* Frame badge */}
+        {selectedFrame && step !== 'select' && (
+          <div className="frame-badge visible">
+            <div className="frame-badge-dot" />
+            <span>{selectedFrame.emoji} {selectedFrame.name}</span>
+          </div>
+        )}
+
+        {/* Step: Select */}
         {step === 'select' && (
           <>
-            <FrameSelector selected={selectedFrame} onSelect={handleFrameSelect} />
+            <FrameSelector
+              selected={selectedFrame}
+              onSelect={handleFrameSelect}
+              userFrames={userFrames.map(userFrameToFrame)}
+            />
             {selectedFrame && (
-              <div className="text-center mt-10 animate-fadeIn">
-                <button
-                  onClick={handleStart}
-                  className="px-12 py-4 font-medium tracking-wide transition-all text-sm rounded-sm"
-                  style={{
-                    background: selectedFrame.borderColor,
-                    color: selectedFrame.color,
-                    boxShadow: `0 8px 24px ${selectedFrame.borderColor}30`,
-                  }}
-                >
-                  Begin Session →
+              <div className="fixed z-50 animate-fadeIn" style={{ bottom: '48px', right: '24px' }}>
+                <button className="begin-btn" onClick={handleStart} style={{ boxShadow: 'var(--shadow-md)' }}>
+                  Begin session
+                  <span className="arrow">→</span>
                 </button>
               </div>
             )}
           </>
         )}
 
+        {/* Step: Camera */}
         {step === 'camera' && selectedFrame && (
           <Camera
             frame={selectedFrame}
             photoIndex={photos.length}
             totalPhotos={selectedFrame.photoCount}
             onCapture={handleCapture}
+            isRetake={retakeIndex !== null}
+            retakeIndex={retakeIndex ?? undefined}
           />
         )}
 
+        {/* Step: Review */}
         {step === 'review' && selectedFrame && pendingPhoto && (
           <PhotoReview
             photoUrl={pendingPhoto}
@@ -182,9 +368,11 @@ export default function Home() {
             frame={selectedFrame}
             onAccept={handleAccept}
             onRetry={handleRetry}
+            autoRemoveBg={retakeIndex !== null && photosBgRemoved[retakeIndex] === true}
           />
         )}
 
+        {/* Step: Background */}
         {step === 'background' && selectedFrame && (
           <BackgroundSelector
             photos={photos}
@@ -193,6 +381,18 @@ export default function Home() {
           />
         )}
 
+        {/* Step: Preview */}
+        {step === 'preview' && selectedFrame && (
+          <StripPreview
+            photos={photos}
+            liveClips={liveClips}
+            frame={selectedFrame}
+            onRetakePhoto={handleRetakePhoto}
+            onConfirm={handleConfirmPreview}
+          />
+        )}
+
+        {/* Step: Final */}
         {step === 'final' && selectedFrame && (
           <FinalStrip
             photos={photos}
@@ -201,19 +401,16 @@ export default function Home() {
             onRestart={handleRestart}
           />
         )}
-      </div>
+      </main>
 
-      {/* Bottom ticker */}
-      <div className="fixed bottom-0 left-0 right-0 overflow-hidden py-2 border-t"
-        style={{ background: 'var(--ink)', borderColor: 'transparent', zIndex: 10 }}>
-        <div className="flex whitespace-nowrap animate-ticker">
-          {[...Array(4)].fill('📷 CAPTURE THE MOMENT · 🎞 VINTAGE PHOTOBOOTH · ✨ MAKE MEMORIES · 🎭 STRIKE A POSE · 💫 SAY CHEESE · ').map((t, i) => (
-            <span key={i} className="text-xs tracking-widest uppercase mx-8" style={{ color: 'var(--gold)', opacity: 0.7 }}>{t}</span>
-          ))}
+      {/* Ticker */}
+      <div className="ticker" role="marquee">
+        <div className="ticker-track">
+          <span className="ticker-text">
+            {'📷 CAPTURE THE MOMENT · 🎞 PHOTOBOOTH STUDIO · ✨ MAKE MEMORIES · 🎭 STRIKE A POSE · 💫 SAY CHEESE · '.repeat(6)}
+          </span>
         </div>
       </div>
-
-      <div className="h-10" /> {/* Ticker spacer */}
-    </main>
+    </>
   );
 }

@@ -1,14 +1,21 @@
+import { listPublicFrames, type PublicFrame } from '@/lib/public-frames';
+import type { FrameConfig, FrameElement } from '@/lib/frame-types';
+
 export interface Frame {
   id: string;
   name: string;
   description: string;
   photoCount: number;
   layout: 'strip-2' | 'strip-3' | 'strip-4' | 'grid-2x2';
-  aspectRatio: number; // width/height for each photo slot
+  aspectRatio: number;
   color: string;
   borderColor: string;
   accentColor: string;
   emoji: string;
+  // Optional elements-based config (for custom frames / modern public frames)
+  config?: FrameConfig;
+  width?: number;
+  height?: number;
 }
 
 export const FRAMES: Frame[] = [
@@ -156,9 +163,6 @@ export const FRAMES: Frame[] = [
     accentColor: '#ffd54f',
     emoji: '✨',
   },
-
-  // — New frames below —
-
   {
     id: 'polaroid-duo',
     name: 'Polaroid',
@@ -304,3 +308,75 @@ export const FRAMES: Frame[] = [
     emoji: '🪸',
   },
 ];
+
+// Helper to convert legacy layout-based frame to FrameConfig with elements
+function layoutToConfig(layout: Frame['layout'], photoCount: number, width = 400, height = 600): FrameConfig {
+  const pad = 20;
+  const gap = 8;
+  const elements: FrameElement[] = [];
+
+  if (layout === 'grid-2x2') {
+    const w = (width - pad * 2 - gap) / 2;
+    const h = w;
+    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p3', type: 'photo', x: pad, y: pad + 60 + h + gap + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p4', type: 'photo', x: pad + w + gap, y: pad + 60 + h + gap + 60, width: w, height: h, borderRadius: 4 });
+  } else if (layout === 'strip-2') {
+    const w = (width - pad * 2 - gap) / 2;
+    const h = Math.round(w * 3 / 4);
+    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
+  } else if (layout === 'strip-3') {
+    const w = (width - pad * 2 - gap * 2) / 3;
+    const h = Math.round(w * 3 / 4);
+    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    elements.push({ id: 'p3', type: 'photo', x: pad + (w + gap) * 2, y: pad + 60, width: w, height: h, borderRadius: 4 });
+  } else {
+    // strip-4 (default)
+    const w = width - pad * 2;
+    const h = Math.round((w * 3 / 4) * 0.4);
+    for (let i = 0; i < 4; i++) {
+      elements.push({ id: `p${i + 1}`, type: 'photo', x: pad, y: pad + 60 + i * (h + gap), width: w, height: h, borderRadius: 4 });
+    }
+  }
+
+  return { width, height, elements, accentSize: 4 };
+}
+
+/** Load public frames from Firestore, falling back to static list. */
+export async function loadPublicFrames(): Promise<Frame[]> {
+  try {
+    const remote: PublicFrame[] = await listPublicFrames();
+    const active = remote.filter((f) => f.active !== false);
+    
+    if (active.length > 0) {
+      // Convert PublicFrame (simple) to Frame with config
+      return active.map((f) => ({
+        id: f.id,
+        name: f.name,
+        description: f.description,
+        photoCount: f.photoCount,
+        layout: f.layout,
+        aspectRatio: f.aspectRatio,
+        color: f.color,
+        borderColor: f.borderColor,
+        accentColor: f.accentColor,
+        emoji: f.emoji,
+        // Use stored config if available, otherwise generate from layout
+        config: f.config ?? layoutToConfig(f.layout, f.photoCount),
+        width: f.width,
+        height: f.height,
+      }));
+    }
+  } catch {
+    // Firestore unavailable — use static fallback
+  }
+
+  // Convert static legacy frames to also have config
+  return FRAMES.map((f) => ({
+    ...f,
+    config: layoutToConfig(f.layout, f.photoCount),
+  }));
+}

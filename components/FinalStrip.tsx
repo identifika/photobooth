@@ -17,7 +17,6 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   const [gifDataUrl, setGifDataUrl] = useState('');
   const [generatingGif, setGeneratingGif] = useState(false);
   const [downloadingGif, setDownloadingGif] = useState(false);
-  // null = not started, 'pending' = generating, string = done, 'error' = failed
   const [liveClipGifs, setLiveClipGifs] = useState<(string | null | 'pending' | 'error')[]>([]);
   const [generatingClipGifs, setGeneratingClipGifs] = useState(false);
 
@@ -38,11 +37,156 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     ctx.closePath();
   }, []);
 
+  const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
+    new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = rej;
+      img.src = src;
+    }), []);
+
   const renderStrip = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
 
+    // ── Elements-based rendering (frame editor config) ──
+    const cfg = frame.config;
+    if (cfg && cfg.elements && cfg.elements.length > 0) {
+      const fw = cfg.width ?? 400;
+      const fh = cfg.height ?? 600;
+      const OUT_W = 1200; // High quality output
+      const scale = OUT_W / fw;
+      const OUT_H = Math.round(fh * scale);
+
+      canvas.width = OUT_W;
+      canvas.height = OUT_H;
+
+      // Background
+      ctx.fillStyle = cfg.color ?? frame.color;
+      ctx.fillRect(0, 0, OUT_W, OUT_H);
+      ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
+      ctx.lineWidth = 12;
+      ctx.strokeRect(4, 4, OUT_W - 8, OUT_H - 8);
+
+      // Accent bars
+      const accentSz = cfg.accentSize ?? 4;
+      ctx.fillStyle = cfg.accentColor ?? frame.accentColor;
+      ctx.fillRect(0, 0, OUT_W, accentSz * scale);
+      ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
+
+      const photoImgs = await Promise.all(photos.map(src => loadImage(src)));
+      let photoIdx = 0;
+
+      for (const el of cfg.elements) {
+        const x = el.x * scale;
+        const y = el.y * scale;
+        const w = el.width * scale;
+        const h = el.height * scale;
+
+        if (el.type === 'photo') {
+          const rot = (el as any).rotation ?? 0;
+          ctx.save();
+
+          // Apply rotation if needed
+          if (rot !== 0) {
+            ctx.translate(x + w / 2, y + h / 2);
+            ctx.rotate((rot * Math.PI) / 180);
+            ctx.translate(-(x + w / 2), -(y + h / 2));
+          }
+
+          // Draw border (rotated with the slot)
+          ctx.fillStyle = `${cfg.borderColor ?? '#1a1410'}18`;
+          ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
+          ctx.lineWidth = 3;
+          ctx.setLineDash([12, 8]);
+          roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          if (photoIdx < photoImgs.length) {
+            const img = photoImgs[photoIdx]!;
+            ctx.save();
+            roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+            ctx.clip();
+            const imgRatio = img.width / img.height;
+            const slotRatio = w / h;
+            let dw = w, dh = h, dx = x, dy = y;
+            if (imgRatio > slotRatio) { dh = h; dw = h * imgRatio; dx = x - (dw - w) / 2; }
+            else { dw = w; dh = w / imgRatio; dy = y - (dh - h) / 2; }
+            ctx.drawImage(img, dx, dy, dw, dh);
+            ctx.restore();
+            photoIdx++;
+          }
+          ctx.restore();
+        }
+
+        if (el.type === 'title') {
+          ctx.save();
+          ctx.fillStyle = el.color;
+          ctx.font = `bold ${el.fontSize * scale}px "${el.font}", serif`;
+          ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
+          const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
+          ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+          ctx.restore();
+        }
+
+        if (el.type === 'image' && el.src) {
+          try {
+            const img = await loadImage(el.src);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x, y, w, h);
+            ctx.clip();
+            if (el.objectFit === 'cover') {
+              const imgRatio = img.width / img.height;
+              const slotRatio = w / h;
+              let dw = w, dh = h, dx = x, dy = y;
+              if (imgRatio > slotRatio) { dh = h; dw = h * imgRatio; dx = x - (dw - w) / 2; }
+              else { dw = w; dh = w / imgRatio; dy = y - (dh - h) / 2; }
+              ctx.drawImage(img, dx, dy, dw, dh);
+            } else {
+              ctx.drawImage(img, x, y, w, h);
+            }
+            ctx.restore();
+          } catch { /* skip broken images */ }
+        }
+
+        if (el.type === 'emoji') {
+          ctx.save();
+          ctx.font = `${20 * scale}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+          ctx.textAlign = 'center';
+          const emojiW = el.spacing * scale;
+          const count = Math.floor(w / emojiW);
+          for (let i = 0; i < count; i++) {
+            ctx.fillText(el.emoji, x + emojiW / 2 + i * emojiW, y + h * 0.8);
+          }
+          ctx.restore();
+        }
+
+        if (el.type === 'sticker') {
+          ctx.save();
+          const fontSize = Math.max(48, Math.min(w, h));
+          ctx.font = `${fontSize}px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          if (el.rotation) {
+            ctx.translate(x + w / 2, y + h / 2);
+            ctx.rotate((el.rotation * Math.PI) / 180);
+            ctx.fillText(el.emoji, 0, 4);
+          } else {
+            ctx.fillText(el.emoji, x + w / 2, y + h / 2 + 4);
+          }
+          ctx.restore();
+        }
+      }
+
+      setStripDataUrl(canvas.toDataURL('image/jpeg', 0.95));
+      return;
+    }
+
+    // ── Legacy layout-based rendering ──
     const PHOTO_W = 800;
     const isGrid = frame.layout === 'grid-2x2';
     const is2 = frame.layout === 'strip-2';
@@ -139,23 +283,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       });
     }
 
-    ctx.fillStyle = frame.borderColor;
-    ctx.globalAlpha = 0.7;
-    const labelY = stripH - 55;
-    ctx.font = `bold 24px "Playfair Display", serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(frame.name.toUpperCase(), stripW / 2, labelY);
-    ctx.font = '16px "DM Sans", sans-serif';
-    ctx.globalAlpha = 0.4;
-    ctx.fillText(
-      new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      stripW / 2,
-      labelY + 26
-    );
-    ctx.globalAlpha = 1;
-
     setStripDataUrl(canvas.toDataURL('image/jpeg', 0.95));
-  }, [photos, frame, roundRect]);
+  }, [photos, frame, roundRect, loadImage]);
 
   const generateGif = useCallback(async () => {
     setGeneratingGif(true);
@@ -166,11 +295,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       const PHOTO_H = Math.round(PHOTO_W / photoAR);
 
       const gif = new GIF({
-        workers: 2,
-        quality: 10,
-        workerScript: '/gif.worker.js',
-        width: PHOTO_W,
-        height: PHOTO_H,
+        workers: 2, quality: 10, workerScript: '/gif.worker.js',
+        width: PHOTO_W, height: PHOTO_H,
       });
 
       const imgs = await Promise.all(photos.map(src => new Promise<HTMLImageElement>((res, rej) => {
@@ -192,10 +318,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       await new Promise<void>((resolve, reject) => {
         gif.on('finished', (blob: Blob) => {
           const reader = new FileReader();
-          reader.onloadend = () => {
-            setGifDataUrl(reader.result as string);
-            resolve();
-          };
+          reader.onloadend = () => { setGifDataUrl(reader.result as string); resolve(); };
           reader.onerror = reject;
           reader.readAsDataURL(blob);
         });
@@ -210,32 +333,17 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
 
   const convertClipToGif = useCallback(async (frames: string[]): Promise<string> => {
     if (frames.length === 0) throw new Error('No frames to convert');
-
-    // Load first frame to get dimensions
     const firstImg = await new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
       img.onload = () => resolve(img);
       img.onerror = reject;
-      img.src = frames[0];
+      img.src = frames[0]!;
     });
-
-    const width = firstImg.width;
-    const height = firstImg.height;
-
-    const gif = new GIF({
-      workers: 2,
-      quality: 8,
-      workerScript: '/gif.worker.js',
-      width,
-      height,
-    });
-
+    const gif = new GIF({ workers: 2, quality: 8, workerScript: '/gif.worker.js', width: firstImg.width, height: firstImg.height });
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = firstImg.width;
+    canvas.height = firstImg.height;
     const ctx = canvas.getContext('2d')!;
-
-    // Load and add each frame
     for (const frameSrc of frames) {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const i = new Image();
@@ -243,16 +351,11 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         i.onerror = reject;
         i.src = frameSrc;
       });
-      ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(img, 0, 0, width, height);
-      gif.addFrame(ctx.getImageData(0, 0, width, height), { delay: 150 });
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      gif.addFrame(ctx.getImageData(0, 0, canvas.width, canvas.height), { delay: 150 });
     }
-
-    const blob = await new Promise<Blob>((resolve) => {
-      gif.on('finished', resolve);
-      gif.render();
-    });
-
+    const blob = await new Promise<Blob>((resolve) => { gif.on('finished', resolve); gif.render(); });
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result as string);
@@ -264,44 +367,22 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   const generateClipGifs = useCallback(async () => {
     if (!liveClips || !liveClips.some(c => c !== null)) return;
     setGeneratingClipGifs(true);
-
     setLiveClipGifs(liveClips.map(c => (c ? 'pending' : null)));
-
     for (let i = 0; i < liveClips.length; i++) {
       const frames = liveClips[i];
-      if (!frames || frames.length === 0) {
-        setLiveClipGifs(prev => {
-          const next = [...prev];
-          next[i] = null;
-          return next;
-        });
-        continue;
-      }
+      if (!frames || frames.length === 0) { setLiveClipGifs(prev => { const next = [...prev]; next[i] = null; return next; }); continue; }
       try {
         const gifUrl = await convertClipToGif(frames);
-        setLiveClipGifs(prev => {
-          const next = [...prev];
-          next[i] = gifUrl;
-          return next;
-        });
+        setLiveClipGifs(prev => { const next = [...prev]; next[i] = gifUrl; return next; });
       } catch (err) {
         console.error(`Clip ${i} GIF failed:`, err);
-        setLiveClipGifs(prev => {
-          const next = [...prev];
-          next[i] = 'error';
-          return next;
-        });
+        setLiveClipGifs(prev => { const next = [...prev]; next[i] = 'error'; return next; });
       }
     }
-
     setGeneratingClipGifs(false);
   }, [liveClips, convertClipToGif]);
 
-  useEffect(() => {
-    renderStrip();
-    generateGif();
-    generateClipGifs();
-  }, [renderStrip, generateGif, generateClipGifs]);
+  useEffect(() => { renderStrip(); generateGif(); generateClipGifs(); }, [renderStrip, generateGif, generateClipGifs]);
 
   const handleDownload = () => {
     setDownloading(true);
@@ -329,66 +410,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     a.click();
   };
 
-  const downloadIndividual = async (photoSrc: string, index: number) => {
-    const PHOTO_W = 800;
-    const isGrid = frame.layout === 'grid-2x2';
-    const photoAR = isGrid ? 1 : 4 / 3;
-    const PHOTO_H = Math.round(PHOTO_W / photoAR);
-    const FRAME_PAD_SIDE = 40;
-    const FRAME_PAD_TOP = 40;
-    const FRAME_PAD_BOTTOM = 120;
-    const BORDER_W = 6;
-    const canvasW = PHOTO_W + FRAME_PAD_SIDE * 2 + BORDER_W * 2;
-    const canvasH = PHOTO_H + FRAME_PAD_TOP + FRAME_PAD_BOTTOM + BORDER_W * 2;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = canvasW;
-    canvas.height = canvasH;
-    const ctx = canvas.getContext('2d')!;
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvasW, canvasH);
-    ctx.strokeStyle = frame.borderColor;
-    ctx.lineWidth = BORDER_W;
-    ctx.strokeRect(BORDER_W / 2, BORDER_W / 2, canvasW - BORDER_W, canvasH - BORDER_W);
-
-    const tapeW = 100;
-    const tapeH = 24;
-    ctx.fillStyle = `${frame.accentColor}90`;
-    ctx.fillRect((canvasW - tapeW) / 2, 6, tapeW, tapeH);
-
-    const img = new Image();
-    await new Promise<void>(resolve => {
-      img.onload = () => resolve();
-      img.src = photoSrc;
-    });
-
-    const photoX = FRAME_PAD_SIDE + BORDER_W;
-    const photoY = FRAME_PAD_TOP + BORDER_W;
-    ctx.drawImage(img, photoX, photoY, PHOTO_W, PHOTO_H);
-
-    const labelY = photoY + PHOTO_H + 40;
-    ctx.fillStyle = frame.borderColor;
-    ctx.globalAlpha = 0.5;
-    ctx.font = 'italic 22px "Playfair Display", serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${index + 1}/${photos.length}`, photoX, labelY);
-    ctx.font = '16px "DM Sans", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(frame.name.toUpperCase(), photoX + PHOTO_W, labelY);
-    ctx.globalAlpha = 0.3;
-    ctx.font = '14px "DM Sans", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(
-      new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-      canvasW / 2,
-      labelY + 30
-    );
-    ctx.globalAlpha = 1;
-
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  const handleDownloadPhoto = (photoUrl: string, index: number) => {
     const a = document.createElement('a');
-    a.href = dataUrl;
+    a.href = photoUrl;
     a.download = `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`;
     a.click();
   };
@@ -397,272 +421,103 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
 
   return (
     <div className="w-full animate-slideUp">
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Complete</p>
-        <h2 className="font-display text-4xl font-bold">Your Photo Strip</h2>
+        <h2 className="font-display text-3xl font-bold">Your Photo Strip</h2>
         <p className="mt-2 opacity-60 text-sm">{frame.emoji} {frame.name} · {photos.length} photos</p>
       </div>
 
-      <div className="max-w-2xl mx-auto">
-        {/* Strip preview */}
+      <div className="max-w-4xl mx-auto">
+        {/* Main strip preview */}
         {stripDataUrl ? (
-          <div className="animate-slideUp flex justify-center">
+          <div className="animate-slideUp flex justify-center mb-8">
             <div style={{
               display: 'inline-block',
               boxShadow: `0 24px 80px ${frame.borderColor}30, 0 8px 24px rgba(0,0,0,0.1)`,
               transform: 'rotate(-0.5deg)',
             }}>
-              <img
-                src={stripDataUrl}
-                alt="Photo strip"
-                className="max-w-full"
-                style={{
-                  maxWidth: frame.layout === 'strip-4' || frame.layout === 'strip-3' ? 220 : 440,
-                  display: 'block',
-                  filter: 'sepia(8%) contrast(1.03)',
-                }}
-              />
+              <img src={stripDataUrl} alt="Photo strip" className="max-w-full" style={{ display: 'block', filter: 'sepia(8%) contrast(1.03)', maxWidth: 400, width: '100%' }} />
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-48">
-            <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin"
-              style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+          <div className="flex items-center justify-center h-32 mb-8">
+            <div className="w-8 h-8 border-3 border-t-transparent rounded-full animate-spin" style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+          </div>
+        )}
+
+        {/* Live result preview - show first live clip GIF if available */}
+        {liveClipGifs.some(g => g && g !== 'pending' && g !== 'error') && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium mb-3 opacity-70">Live Preview</h3>
+            <div className="flex gap-4 justify-center">
+              {liveClipGifs.map((gifUrl, i) => (
+                gifUrl && gifUrl !== 'pending' && gifUrl !== 'error' ? (
+                  <div key={i} className="relative">
+                    <img src={gifUrl} alt={`Live ${i + 1}`} className="h-24 rounded-sm" />
+                    <button
+                      onClick={() => downloadClipGif(gifUrl, i)}
+                      className="absolute bottom-1 right-1 px-2 py-1 text-xs rounded transition-all hover:opacity-90 bg-primary text-primary-foreground"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                ) : gifUrl === 'pending' ? (
+                  <div key={i} className="h-24 w-24 flex items-center justify-center rounded-sm" style={{ background: `${frame.borderColor}20` }}>
+                    <span className="text-xs opacity-50">Loading...</span>
+                  </div>
+                ) : null
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Download one by one - individual photos */}
+        <div className="mb-6">
+          <h3 className="text-sm font-medium mb-3 opacity-70">Download Photos</h3>
+          <div className="flex gap-3 justify-center flex-wrap">
+            {photos.map((photo, i) => (
+              <div key={i} className="relative group">
+                <img src={photo} alt={`Photo ${i + 1}`} className="h-16 rounded-sm" style={{ border: `1px solid ${frame.borderColor}40` }} />
+                <button
+                  onClick={() => handleDownloadPhoto(photo, i)}
+                  className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all rounded-sm"
+                >
+                  <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs">↓</span>
+                </button>
+                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] opacity-50">{i + 1}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* GIF preview and download */}
+        {gifDataUrl && (
+          <div className="mb-6 text-center">
+            <h3 className="text-sm font-medium mb-3 opacity-70">Animated GIF Preview</h3>
+            <div className="inline-block rounded-sm overflow-hidden" style={{ boxShadow: `0 8px 24px ${frame.borderColor}20` }}>
+              <img src={gifDataUrl} alt="Animated GIF" className="max-h-48" />
+            </div>
           </div>
         )}
 
         {/* Action buttons */}
         {stripDataUrl && (
-          <div className="flex flex-col sm:flex-row gap-4 mt-10 animate-fadeIn delay-200">
-            <button
-              onClick={handleDownload}
-              className="flex-1 py-4 rounded-sm font-medium tracking-wide transition-all text-sm"
-              style={{
-                background: frame.borderColor,
-                color: frame.color,
-                border: `2px solid ${frame.borderColor}`,
-                opacity: downloading ? 0.7 : 1,
-              }}
-            >
+          <div className="flex flex-col sm:flex-row gap-3 animate-fadeIn delay-200">
+            <button onClick={handleDownload} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloading ? 0.7 : 1 }}>
               {downloading ? '✓ Saved!' : '↓ Download Strip'}
             </button>
-
             {generatingGif ? (
-              <button
-                disabled
-                className="flex-1 py-4 rounded-sm font-medium tracking-wide text-sm cursor-not-allowed"
-                style={{
-                  background: 'transparent',
-                  border: `2px solid ${frame.borderColor}`,
-                  color: frame.borderColor,
-                  opacity: 0.5,
-                }}
-              >
-                ⏳ Building GIF…
+              <button disabled className="flex-1 py-3 rounded-sm font-medium tracking-wide text-sm cursor-not-allowed border-2 border-input text-muted-foreground bg-transparent" style={{ opacity: 0.5 }}>
+                ⏳ GIF...
               </button>
             ) : gifDataUrl ? (
-              <button
-                onClick={handleDownloadGif}
-                className="flex-1 py-4 rounded-sm font-medium tracking-wide transition-all text-sm"
-                style={{
-                  background: frame.borderColor,
-                  color: frame.color,
-                  border: `2px solid ${frame.borderColor}`,
-                  opacity: downloadingGif ? 0.7 : 1,
-                }}
-              >
+              <button onClick={handleDownloadGif} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloadingGif ? 0.7 : 1 }}>
                 {downloadingGif ? '✓ Saved!' : '↓ Download GIF'}
               </button>
             ) : null}
-
-            <button
-              onClick={onRestart}
-              className="flex-1 py-4 rounded-sm font-medium tracking-wide transition-all text-sm"
-              style={{
-                background: 'transparent',
-                border: `2px solid ${frame.borderColor}`,
-                color: frame.borderColor,
-              }}
-            >
-              ↺ New Session
+            <button onClick={onRestart} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-75 border-2 border-input text-foreground bg-transparent hover:bg-surface-0">
+              ↺ New
             </button>
-          </div>
-        )}
-
-        {/* Animated GIF preview */}
-        {(generatingGif || gifDataUrl) && (
-          <div className="mt-10 animate-fadeIn delay-300">
-            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Animated GIF</p>
-            {generatingGif ? (
-              <div className="flex items-center justify-center h-48">
-                <div className="w-10 h-10 border-4 border-t-transparent rounded-full animate-spin"
-                  style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
-              </div>
-            ) : gifDataUrl && (
-              <div className="flex justify-center">
-                <div style={{
-                  display: 'inline-block',
-                  boxShadow: `0 12px 40px ${frame.borderColor}20, 0 4px 12px rgba(0,0,0,0.1)`,
-                  padding: '8px',
-                  background: 'white',
-                }}>
-                  <img
-                    src={gifDataUrl}
-                    alt="Animated Photo Strip"
-                    style={{ maxWidth: 300, display: 'block' }}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Individual photos */}
-        {stripDataUrl && (
-          <div className="mt-10 animate-fadeIn delay-300">
-            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Individual Shots</p>
-            <div className="flex gap-3 justify-center flex-wrap">
-              {photos.map((photo, i) => {
-                const clip = liveClips?.[i] ?? null;
-                const hasClip = clip !== null && clip.length > 0;
-                const clipGif = liveClipGifs[i];
-
-                return (
-                  <div
-                    key={i}
-                    className="group relative"
-                    style={{
-                      background: 'white',
-                      padding: '6px 6px 24px',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                      transform: `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`,
-                      transition: 'transform 0.3s ease',
-                      cursor: 'pointer',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.transform = 'rotate(0deg) scale(1.05) translateY(-4px)')}
-                    onMouseLeave={e => (e.currentTarget.style.transform = `rotate(${(i % 2 === 0 ? -1 : 1) * (i * 0.5 + 0.5)}deg)`)}
-                  >
-                    <img src={photo} alt={`Photo ${i + 1}`} style={{
-                      width: 80,
-                      height: frame.layout === 'grid-2x2' ? 80 : 60,
-                      objectFit: 'cover',
-                      display: 'block',
-                    }} />
-
-                    {/* Live badge */}
-                    {hasClip && (
-                      <div className="absolute top-1 left-1 flex items-center gap-0.5 px-1 py-0.5 rounded-full"
-                        style={{ background: 'rgba(0,0,0,0.6)', fontSize: 8 }}>
-                        <div className="w-1 h-1 rounded-full bg-red-500" />
-                        <span className="text-white font-medium">LIVE</span>
-                      </div>
-                    )}
-
-                    {/* Download overlay */}
-                    <div
-                      className="absolute inset-0 flex flex-col items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ background: 'rgba(0,0,0,0.6)' }}
-                    >
-                      <button
-                        onClick={e => { e.stopPropagation(); downloadIndividual(photo, i); }}
-                        className="text-white text-xs px-2 py-0.5 rounded"
-                        style={{ background: 'rgba(255,255,255,0.2)' }}
-                        aria-label={`Download photo ${i + 1}`}
-                      >
-                        📷
-                      </button>
-
-                      {hasClip && clipGif === 'pending' && (
-                        <span className="text-white text-xs opacity-60">⏳</span>
-                      )}
-                      {hasClip && clipGif && clipGif !== 'pending' && clipGif !== 'error' && (
-                        <button
-                          onClick={e => { e.stopPropagation(); downloadClipGif(clipGif as string, i); }}
-                          className="text-white text-xs px-2 py-0.5 rounded"
-                          style={{ background: 'rgba(255,255,255,0.2)' }}
-                          aria-label={`Download live clip ${i + 1}`}
-                        >
-                          🎬
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Live Moments GIFs */}
-        {hasLiveClips && stripDataUrl && (
-          <div className="mt-10 animate-fadeIn delay-300">
-            <p className="text-xs opacity-40 tracking-widest uppercase text-center mb-4">Live Moments</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg mx-auto">
-              {liveClips!.map((frames, i) => {
-                if (!frames || frames.length === 0) return null;
-                const gifEntry = liveClipGifs[i];
-
-                return (
-                  <div
-                    key={i}
-                    className="rounded-lg overflow-hidden"
-                    style={{
-                      background: 'white',
-                      padding: '8px',
-                      boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    {(!gifEntry || gifEntry === 'pending') && (
-                      <div className="flex items-center justify-center rounded-sm"
-                        style={{ height: 150, background: '#f0f0f0' }}>
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin"
-                            style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
-                          <span className="text-xs opacity-50">Creating GIF…</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {gifEntry && gifEntry !== 'pending' && gifEntry !== 'error' && (
-                      <img
-                        src={gifEntry as string}
-                        alt={`Live moment ${i + 1}`}
-                        className="w-full rounded-sm"
-                        style={{ display: 'block' }}
-                      />
-                    )}
-
-                    {gifEntry === 'error' && (
-                      <div className="flex items-center justify-center rounded-sm"
-                        style={{ height: 150, background: '#fef2f2' }}>
-                        <span className="text-xs text-red-500">Failed to create GIF</span>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between mt-2 px-1">
-                      <span className="text-xs opacity-50">Photo {i + 1} · Live</span>
-                      {gifEntry && gifEntry !== 'pending' && gifEntry !== 'error' ? (
-                        <button
-                          onClick={() => downloadClipGif(gifEntry as string, i)}
-                          className="text-xs px-2 py-1 rounded transition-all"
-                          style={{
-                            background: `${frame.borderColor}15`,
-                            color: frame.borderColor,
-                            border: `1px solid ${frame.borderColor}30`,
-                          }}
-                        >
-                          ↓ Download GIF
-                        </button>
-                      ) : gifEntry === 'error' ? (
-                        <span className="text-xs opacity-40">Failed</span>
-                      ) : (
-                        <span className="text-xs opacity-30">Generating…</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 'use client';
 import { useState, useRef, useCallback } from 'react';
-import { removeBackground } from '@imgly/background-removal';
+import { removeBg } from '@/lib/remove-bg';
 import { Frame } from '@/lib/frames';
 
 interface Props {
@@ -107,21 +107,13 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
     setIsRemovingBg(true);
     setProcessing(true);
     try {
+      setProgress(5);
       const results: string[] = [];
       for (let i = 0; i < photos.length; i++) {
-        setProgress(Math.round((i / photos.length) * 100));
         try {
-          const blob = await removeBackground(photos[i], {
-            publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.7.0/dist/',
-            device: 'cpu',
-            model: 'isnet_fp16',
-            proxyToWorker: false,
-            fetchArgs: {
-              mode: 'cors',
-              credentials: 'omit',
-            },
-          });
-          results.push(URL.createObjectURL(blob));
+          setProgress(5 + Math.round((i / photos.length) * 90));
+          const result = await removeBg(photos[i]);
+          results.push(result);
         } catch (err: unknown) {
           console.error(`Error removing bg from photo ${i}:`, err);
           results.push(photos[i]);
@@ -374,7 +366,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         <div className="p-8 rounded-lg border-2 border-dashed mx-auto max-w-md" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
           <p className="font-display text-lg mb-3">⚠️ Error Processing Images</p>
           <p className="text-sm opacity-70 mb-4">{error}</p>
-          <button onClick={() => onComplete(photos)} className="px-6 py-2 rounded-sm text-sm" style={{ background: 'var(--accent)', color: 'white' }}>
+          <button onClick={() => onComplete(photos)} className="px-6 py-2 rounded-sm text-sm transition-opacity hover:opacity-80" style={{ background: 'var(--accent)', color: 'white' }}>
             Skip & Use Originals
           </button>
         </div>
@@ -456,11 +448,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className="flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all capitalize"
-            style={{
-              background: activeTab === tab ? frame.borderColor : 'transparent',
-              color: activeTab === tab ? frame.color : frame.borderColor,
-            }}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all capitalize hover:opacity-80 ${activeTab === tab ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-surface-0'}`}
           >
             {tab === 'filters' ? '🎨 Filters' : '🖼 Background'}
           </button>
@@ -470,7 +458,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
       <div className="flex flex-col md:flex-row gap-8 max-w-5xl mx-auto">
         {/* Preview Grid */}
         <div className="flex-1">
-          <div className="grid grid-cols-2 gap-3 bg-white p-4 rounded-sm shadow-md" style={{ border: `1px solid ${frame.borderColor}20` }}>
+          <div className="grid grid-cols-2 gap-3 bg-[var(--surface-2)] p-4 rounded-sm shadow-md" style={{ border: `1px solid ${frame.borderColor}20` }}>
             {transparentPhotos.map((fg, i) => renderPreview(fg, photos[i], i))}
           </div>
         </div>
@@ -489,11 +477,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
                       <button
                         key={preset.id}
                         onClick={() => handlePresetSelect(preset)}
-                        className="flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all"
-                        style={{
-                          background: isActive ? `${frame.borderColor}15` : 'transparent',
-                          border: `2px solid ${isActive ? frame.borderColor : `${frame.borderColor}15`}`,
-                        }}
+                        className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all hover:opacity-80 ${isActive ? 'bg-primary/10 border-2 border-primary text-foreground' : 'bg-transparent border-2 border-border text-foreground'}`}
                       >
                         <span className="text-lg">{preset.emoji}</span>
                         <span className="text-[9px] font-medium leading-tight text-center">{preset.name}</span>
@@ -509,8 +493,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
                   <p className="text-xs uppercase tracking-widest opacity-50">Adjustments</p>
                   <button
                     onClick={handleResetFilters}
-                    className="text-[10px] px-2 py-0.5 rounded opacity-50 hover:opacity-100 transition-opacity"
-                    style={{ border: `1px solid ${frame.borderColor}30`, color: frame.borderColor }}
+                    className="text-[10px] px-2 py-0.5 rounded border border-border text-foreground opacity-50 hover:opacity-100 transition-opacity"
                   >
                     Reset
                   </button>
@@ -548,8 +531,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
               {!backgroundsRemoved && (
                 <button
                   onClick={handleRemoveBackgrounds}
-                  className="w-full py-3 rounded-sm font-medium tracking-wide transition-all text-sm border-2"
-                  style={{ borderColor: frame.borderColor, color: frame.borderColor, background: 'transparent' }}
+                  className="w-full py-3 rounded-sm font-medium tracking-wide transition-all text-sm border-2 border-input bg-transparent text-foreground hover:bg-surface-0 hover:opacity-75"
                 >
                   ✨ Remove All Backgrounds
                 </button>
@@ -562,11 +544,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
                     <button
                       key={bg.id}
                       onClick={() => setSelectedBg(bg)}
-                      className={`relative p-2 rounded-sm border-2 text-left transition-all ${isSelected ? 'shadow-md' : ''}`}
-                      style={{
-                        borderColor: isSelected ? frame.borderColor : `${frame.borderColor}20`,
-                        background: isSelected ? `${frame.borderColor}05` : 'transparent',
-                      }}
+                      className={`relative p-2 rounded-sm border-2 text-left transition-all hover:opacity-80 text-foreground ${isSelected ? 'border-primary bg-primary/10 shadow-md' : 'border-border bg-transparent'}`}
                     >
                       <div className="w-full h-16 mb-2 rounded bg-gray-100 overflow-hidden border border-black/10">
                         {bg.type === 'original' && <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-400 flex items-center justify-center text-xl">📸</div>}
@@ -581,8 +559,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
                 })}
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="relative p-2 rounded-sm border-2 border-dashed text-left transition-all hover:bg-black/5"
-                  style={{ borderColor: `${frame.borderColor}40` }}
+                  className="relative p-2 rounded-sm border-2 border-dashed border-input text-foreground text-left transition-all hover:opacity-80 hover:bg-surface-0"
                 >
                   <div className="w-full h-16 mb-2 rounded flex flex-col items-center justify-center opacity-60">
                     <span className="text-xl mb-1">↑</span>
@@ -598,10 +575,8 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           <button
             onClick={handleApply}
             disabled={processing}
-            className="w-full py-4 rounded-sm font-medium tracking-wide transition-all text-sm mt-auto"
+            className="w-full py-4 rounded-sm font-medium tracking-wide transition-all text-sm mt-auto hover:opacity-90 bg-primary text-primary-foreground"
             style={{
-              background: frame.borderColor,
-              color: frame.color,
               opacity: processing ? 0.7 : 1,
             }}
           >

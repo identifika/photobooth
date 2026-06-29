@@ -7,12 +7,14 @@ interface Props {
   photoIndex: number;
   totalPhotos: number;
   onCapture: (dataUrl: string, liveFrames: string[] | null) => void;
+  isRetake?: boolean;
+  retakeIndex?: number;
 }
 
 const POST_CAPTURE_MS = 2000;
 const FRAME_CAPTURE_INTERVAL = 150; // ~6-7 fps for GIF
 
-export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Props) {
+export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRetake, retakeIndex }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
@@ -186,9 +188,15 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
   return (
     <div className="w-full animate-fadeIn">
       <div className="text-center mb-8">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Step 02</p>
+        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">
+          {isRetake ? 'Retake' : 'Step 02'}
+        </p>
         <h2 className="font-display text-4xl font-bold">
-          Photo {photoIndex + 1} <span className="opacity-40">of {totalPhotos}</span>
+          {isRetake ? (
+            <>Retake Photo <span className="opacity-40">#{retakeIndex! + 1}</span></>
+          ) : (
+            <>Photo {photoIndex + 1} <span className="opacity-40">of {totalPhotos}</span></>
+          )}
         </h2>
         <p className="mt-2 opacity-60 text-sm">{frame.emoji} {frame.name}</p>
       </div>
@@ -316,7 +324,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture }: Pr
                 <div style={{
                   width: 80, height: 80,
                   borderRadius: '50%',
-                  background: 'var(--cream)',
+                  background: 'var(--surface-2)',
                   border: `4px solid ${frame.borderColor}`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.2s',
