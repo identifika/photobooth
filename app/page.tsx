@@ -176,6 +176,12 @@ export default function Home() {
   const studioLogo = settings?.studioLogo || '📷';
   const tagline = settings?.tagline || 'Capture the moment';
 
+  useEffect(() => {
+    if (isLoaded) {
+      document.title = `${studioName} — ${tagline}`;
+    }
+  }, [studioName, tagline, isLoaded]);
+
   const currentStepIndex = STEPS.findIndex(s => s.id === step);
 
   if (loading || !isLoaded || isGuest === null) {
@@ -208,7 +214,7 @@ export default function Home() {
               {studioLogo}
             </div>
             <div>
-              <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px' }}>{studioName}</div>
+              <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>
             </div>
           </button>
@@ -310,6 +316,11 @@ export default function Home() {
                   >
                     {isGuest ? 'Sign in' : 'Sign out'}
                   </button>
+                  <div style={{ padding: '8px 14px 4px 14px', borderTop: '0.5px solid var(--border)' }}>
+                    <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                      v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}
+                    </p>
+                  </div>
                 </div>
               )}
             </div>

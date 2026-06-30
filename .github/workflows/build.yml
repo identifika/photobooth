@@ -78,7 +78,7 @@ jobs:
           TAURI_ENV: 1
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Photobooth ${{ github.ref_name }}'
+          releaseName: 'Pika ${{ github.ref_name }}'
           releaseBody: 'Desktop app release for macOS, Windows, and Linux.'
           releaseDraft: true
           prerelease: false

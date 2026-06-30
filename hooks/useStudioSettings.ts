@@ -10,7 +10,7 @@ export interface StudioSettings {
 }
 
 const DEFAULT_SETTINGS: StudioSettings = {
-  studioName: 'Photobooth',
+  studioName: 'Pika',
   studioLogo: '📷',
   tagline: 'Capture the moment',
 };

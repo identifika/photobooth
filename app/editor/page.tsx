@@ -10,6 +10,7 @@ import FrameEditor from '@/components/FrameEditor';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Globe, Check, Loader2 } from 'lucide-react';
+import { useStudioSettings } from '@/hooks/useStudioSettings';
 
 const EMPTY_CONFIG: FrameConfig = {
   width: 400,
@@ -36,11 +37,18 @@ function EditorInner() {
   const frameId = searchParams.get('id');
   const publicFrameId = searchParams.get('publicId');
   const { resolvedTheme } = useTheme();
+  const { settings, isLoaded } = useStudioSettings();
   const isUserAdmin = user ? isAdmin(user.email) : false;
 
   const [config, setConfig] = useState<FrameConfig>(EMPTY_CONFIG);
   const [frameName, setFrameName] = useState('');
   const [frameEmoji, setFrameEmoji] = useState('✨');
+
+  useEffect(() => {
+    if (isLoaded && settings) {
+      document.title = `Editor — ${settings.studioName}`;
+    }
+  }, [isLoaded, settings]);
   const [categoryId, setCategoryId] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [saving, setSaving] = useState(false);
@@ -174,9 +182,9 @@ function EditorInner() {
           <div className="flex items-center justify-center" style={{ width: 28, height: 28, background: 'var(--primary)', borderRadius: 4 }}>
             <span style={{ fontSize: 14 }}>📷</span>
           </div>
-          <span className="font-serif font-bold text-sm text-foreground">
+          <h1 className="font-serif font-bold text-sm text-foreground m-0">
             {isPublicEdit ? 'Edit Community Frame' : isEdit ? 'Edit My Frame' : 'New Frame'}
-          </span>
+          </h1>
         </button>
         <div className="flex items-center gap-3">
           <ThemeToggle />

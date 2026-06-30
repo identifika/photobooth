@@ -40,6 +40,12 @@ export default function LoginPage() {
   const studioLogo = settings?.studioLogo || '📷';
   const tagline = settings?.tagline || 'Capture the moment';
 
+  useEffect(() => {
+    if (isLoaded) {
+      document.title = `Login — ${studioName}`;
+    }
+  }, [studioName, isLoaded]);
+
   if (loading || !isLoaded) {
     return (
       <main className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
@@ -223,7 +229,6 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Footer */}
         <p className="text-center text-xs mt-6" style={{ color: 'var(--text-muted)' }}>
           By continuing, you agree to our{' '}
           <a href="/terms" className="hover:underline" style={{ color: 'var(--text-primary)' }}>
@@ -233,6 +238,11 @@ export default function LoginPage() {
           <a href="/privacy" className="hover:underline" style={{ color: 'var(--text-primary)' }}>
             Privacy Policy
           </a>
+        </p>
+        
+        {/* Version Info */}
+        <p className="text-center mt-6 text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
+          {studioName || 'Photobooth'} v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}
         </p>
       </div>
     </main>

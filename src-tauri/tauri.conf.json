@@ -1,7 +1,7 @@
 {
-  "productName": "Photobooth",
+  "productName": "Pika",
   "version": "0.1.0",
-  "identifier": "com.photobooth.app",
+  "identifier": "com.pika.app",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Photobooth",
+        "title": "Pika",
         "width": 1024,
         "height": 768,
         "minWidth": 800,

@@ -39,6 +39,7 @@ export default function SettingsPage() {
       setStudioName(settings.studioName);
       setStudioLogo(settings.studioLogo);
       setTagline(settings.tagline);
+      document.title = `Settings — ${settings.studioName}`;
     }
   }, [isLoaded, settings]);
 
@@ -148,7 +149,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-center" style={{ width: 32, height: 32, background: 'var(--brand)', borderRadius: 8 }}>
               <span style={{ fontSize: 16 }}>{settings.studioLogo}</span>
             </div>
-            <span className="font-medium text-lg" style={{ color: 'var(--text-primary)' }}>Settings</span>
+            <h1 className="font-medium text-lg" style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
           </button>
         </div>
         <div className="flex items-center gap-3">
@@ -526,6 +527,13 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+      </div>
+      
+      {/* Version Info */}
+      <div className="mt-8 text-center pb-8">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          {studioName || 'Photobooth'} v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}
+        </p>
       </div>
     </main>
   );

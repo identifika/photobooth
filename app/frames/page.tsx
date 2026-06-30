@@ -15,6 +15,7 @@ import type { Frame } from '@/lib/frames';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Pencil, Trash2, Plus, Globe, Upload } from 'lucide-react';
+import { useStudioSettings } from '@/hooks/useStudioSettings';
 
 const EMPTY_FRAME: Omit<Frame, 'id'> = {
   name: 'Untitled Frame',
@@ -32,6 +33,13 @@ export default function FramesPage() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const { resolvedTheme } = useTheme();
+  const { settings, isLoaded } = useStudioSettings();
+
+  useEffect(() => {
+    if (isLoaded && settings) {
+      document.title = `Frames — ${settings.studioName}`;
+    }
+  }, [isLoaded, settings]);
 
   const isUserAdmin = !loading && user && isAdmin(user.email);
 
@@ -132,7 +140,7 @@ export default function FramesPage() {
             <div className="flex items-center justify-center" style={{ width: 28, height: 28, background: 'var(--primary)', borderRadius: 4 }}>
               <span style={{ fontSize: 14 }}>🎨</span>
             </div>
-            <span className="font-serif font-bold text-sm text-foreground">My Frames</span>
+            <h1 className="font-serif font-bold text-sm text-foreground m-0">My Frames</h1>
           </button>
         </div>
         <div className="flex items-center gap-3">
