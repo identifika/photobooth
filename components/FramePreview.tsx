@@ -20,9 +20,9 @@ export default function FramePreview({ config, scale = 0.5 }: Props) {
   const accentSize = config.accentSize ?? 4;
 
   const resolvedBg = (): string => {
-    const bgType = (config as any).bgType || 'solid';
-    if (bgType === 'gradient') return `linear-gradient(${(config as any).bgGradientAngle || 135}deg, ${(config as any).bgGradientFrom || '#f5f0e8'}, ${(config as any).bgGradientTo || '#e5e0d8'})`;
-    if (bgType === 'image' && (config as any).bgImage) return `url(${(config as any).bgImage}) center/cover no-repeat`;
+    const bgType = config.bgType ?? 'solid';
+    if (bgType === 'gradient') return `linear-gradient(${config.bgGradientAngle ?? 135}deg, ${config.bgGradientFrom ?? '#f5f0e8'}, ${config.bgGradientTo ?? '#e8dfd0'})`;
+    if (bgType === 'image' && config.bgImage) return `url(${config.bgImage}) center/cover no-repeat`;
     return config.color ?? '#f5f0e8';
   };
 

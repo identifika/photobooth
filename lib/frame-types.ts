@@ -88,6 +88,11 @@ export interface FrameConfig {
   ticketHoleSize?: number;
   description?: string;
   elements?: FrameElement[];
+  bgType?: 'solid' | 'gradient' | 'image';
+  bgImage?: string;
+  bgGradientFrom?: string;
+  bgGradientTo?: string;
+  bgGradientAngle?: number;
   /** legacy fields kept for compat */
   slots?: unknown[];
   background?: unknown;

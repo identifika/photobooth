@@ -26,6 +26,17 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
   const liveFramesRef = useRef<string[]>([]);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const activeIndex = isRetake && retakeIndex !== undefined ? retakeIndex : photoIndex;
+  
+  let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+  if (frame.config?.elements) {
+    const photos = frame.config.elements.filter(el => el.type === 'photo');
+    const targetPhoto = photos[activeIndex] || photos[0];
+    if (targetPhoto && targetPhoto.width && targetPhoto.height) {
+      currentAspectRatio = targetPhoto.width / targetPhoto.height;
+    }
+  }
+
   // Capture a small frame from the video for GIF
   const captureGifFrame = useCallback(() => {
     if (!videoRef.current) return;
@@ -34,8 +45,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
 
     const gifCanvas = document.createElement('canvas');
     const gifW = 480;
-    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
-    const gifH = Math.round(gifW / aspectRatio);
+    const gifH = Math.round(gifW / currentAspectRatio);
     gifCanvas.width = gifW;
     gifCanvas.height = gifH;
     const gCtx = gifCanvas.getContext('2d')!;
@@ -60,7 +70,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
 
     gCtx.drawImage(video, sx, sy, sw, sh, 0, 0, gifW, gifH);
     liveFramesRef.current.push(gifCanvas.toDataURL('image/jpeg', 0.75));
-  }, [frame.layout]);
+  }, [currentAspectRatio]);
 
   // Start capturing frames for GIF
   const startFrameCapture = useCallback(() => {
@@ -111,9 +121,8 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     const canvas = canvasRef.current;
 
     // Capture still frame
-    const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
     canvas.width = 1920;
-    canvas.height = Math.round(1920 / aspectRatio);
+    canvas.height = Math.round(1920 / currentAspectRatio);
 
     const ctx = canvas.getContext('2d')!;
     ctx.translate(canvas.width, 0);
@@ -159,7 +168,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     liveFramesRef.current = [];
 
     onCapture(photoDataUrl, frames);
-  }, [frame, onCapture, stopFrameCapture]);
+  }, [frame, currentAspectRatio, onCapture, stopFrameCapture]);
 
   const startCountdown = useCallback(() => {
     if (countdown !== null || capturing) return;
@@ -182,8 +191,6 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
       }
     }, 1000);
   }, [countdown, capturing, capture, startFrameCapture]);
-
-  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
 
   return (
     <div className="w-full animate-fadeIn">
@@ -214,18 +221,20 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
         ))}
       </div>
 
-      <div className="max-w-lg mx-auto">
+      <div className="w-full flex flex-col items-center justify-center">
         {error ? (
-          <div className="p-8 text-center rounded-lg border-2 border-dashed" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+          <div className="p-8 text-center rounded-lg border-2 border-dashed max-w-lg w-full" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
             <p className="font-display text-lg mb-3">📷 Camera Unavailable</p>
             <p className="text-sm opacity-70">{error}</p>
           </div>
         ) : (
           <>
             {/* Camera viewfinder */}
-            <div className="relative overflow-hidden rounded-sm shadow-2xl"
+            <div className="relative overflow-hidden rounded-sm shadow-2xl transition-all duration-300"
               style={{
-                aspectRatio: String(aspectRatio),
+                aspectRatio: String(currentAspectRatio),
+                width: '100%',
+                maxWidth: `min(32rem, 55vh * ${currentAspectRatio})`,
                 border: `4px solid ${frame.borderColor}`,
                 boxShadow: `0 20px 60px ${frame.borderColor}30`,
               }}

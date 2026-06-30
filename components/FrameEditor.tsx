@@ -596,17 +596,17 @@ export default function FrameEditor({
 
     // ── Background ──
     type BgType = 'solid' | 'gradient' | 'image';
-    const bgType: BgType = (config as any).bgType ?? 'solid';
-    const bgGradientFrom: string = (config as any).bgGradientFrom ?? '#f5f0e8';
-    const bgGradientTo: string = (config as any).bgGradientTo ?? '#e8dfd0';
-    const bgGradientAngle: number = (config as any).bgGradientAngle ?? 135;
-    const bgImage: string = (config as any).bgImage ?? '';
+    const bgType: BgType = config.bgType ?? 'solid';
+    const bgGradientFrom: string = config.bgGradientFrom ?? '#f5f0e8';
+    const bgGradientTo: string = config.bgGradientTo ?? '#e8dfd0';
+    const bgGradientAngle: number = config.bgGradientAngle ?? 135;
+    const bgImage: string = config.bgImage ?? '';
 
-    const setBgType = (t: BgType) => onChange({ ...config, bgType: t } as any);
-    const setBgGradientFrom = (v: string) => onChange({ ...config, bgGradientFrom: v } as any);
-    const setBgGradientTo = (v: string) => onChange({ ...config, bgGradientTo: v } as any);
-    const setBgGradientAngle = (v: number) => onChange({ ...config, bgGradientAngle: v } as any);
-    const setBgImage = (v: string) => onChange({ ...config, bgImage: v } as any);
+    const setBgType = (t: BgType) => onChange({ ...config, bgType: t });
+    const setBgGradientFrom = (v: string) => onChange({ ...config, bgGradientFrom: v });
+    const setBgGradientTo = (v: string) => onChange({ ...config, bgGradientTo: v });
+    const setBgGradientAngle = (v: number) => onChange({ ...config, bgGradientAngle: v });
+    const setBgImage = (v: string) => onChange({ ...config, bgImage: v });
 
     const resolvedBg = (): string => {
         if (bgType === 'gradient') return `linear-gradient(${bgGradientAngle}deg, ${bgGradientFrom}, ${bgGradientTo})`;

@@ -18,7 +18,14 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
   const [removeBgEnabled, setRemoveBgEnabled] = useState(false);
   const [transparentUrl, setTransparentUrl] = useState<string | null>(null);
 
-  const aspectRatio = frame.layout === 'grid-2x2' ? 1 : 4/3;
+  let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+  if (frame.config?.elements) {
+    const photos = frame.config.elements.filter(el => el.type === 'photo');
+    const targetPhoto = photos[photoIndex] || photos[0];
+    if (targetPhoto && targetPhoto.width && targetPhoto.height) {
+      currentAspectRatio = targetPhoto.width / targetPhoto.height;
+    }
+  }
 
   // Auto-apply background removal for retakes
   useEffect(() => {
@@ -61,9 +68,10 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         <p className="mt-2 opacity-60 text-sm">Photo {photoIndex + 1} of {totalPhotos}</p>
       </div>
 
-      <div className="max-w-sm mx-auto">
+      <div className="w-full flex flex-col items-center justify-center">
         {/* Polaroid-style preview */}
-        <div className="relative animate-slideUp" style={{
+        <div className="relative animate-slideUp w-full transition-all duration-300" style={{
+          maxWidth: `min(24rem, 45vh * ${currentAspectRatio})`,
           background: 'white',
           padding: '12px 12px 48px',
           boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.1)',
@@ -76,7 +84,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
           }} />
 
           <div style={{
-            aspectRatio: String(aspectRatio),
+            aspectRatio: String(currentAspectRatio),
             overflow: 'hidden',
             background: '#eee',
             position: 'relative'
@@ -107,7 +115,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         </div>
 
         {/* Toggle Background Button */}
-        <div className="mt-6 flex justify-center">
+        <div className="mt-6 flex justify-center w-full max-w-sm">
            <button
              onClick={handleToggleBg}
              disabled={processing}
@@ -118,7 +126,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-4 mt-8">
+        <div className="flex gap-4 mt-8 w-full max-w-sm">
           <button
             onClick={onRetry}
             className="flex-1 py-3.5 rounded-sm font-medium text-sm tracking-wide transition-all border-2 border-input text-foreground bg-transparent hover:bg-surface-0"

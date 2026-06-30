@@ -79,9 +79,9 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
       canvas.height = OUT_H;
 
       // Background
-      const bgType = (cfg as any).bgType ?? 'solid';
+      const bgType = cfg.bgType ?? 'solid';
       if (bgType === 'gradient') {
-        const angle = (((cfg as any).bgGradientAngle ?? 135) - 90) * (Math.PI / 180);
+        const angle = ((cfg.bgGradientAngle ?? 135) - 90) * (Math.PI / 180);
         const cx = OUT_W / 2;
         const cy = OUT_H / 2;
         const diag = Math.sqrt(cx * cx + cy * cy);
@@ -91,13 +91,13 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
           cx + Math.cos(angle) * diag,
           cy + Math.sin(angle) * diag
         );
-        grad.addColorStop(0, (cfg as any).bgGradientFrom ?? '#f5f0e8');
-        grad.addColorStop(1, (cfg as any).bgGradientTo ?? '#e8dfd0');
+        grad.addColorStop(0, cfg.bgGradientFrom ?? '#f5f0e8');
+        grad.addColorStop(1, cfg.bgGradientTo ?? '#e8dfd0');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
-      } else if (bgType === 'image' && (cfg as any).bgImage) {
+      } else if (bgType === 'image' && cfg.bgImage) {
         try {
-          const bgImg = await loadImage((cfg as any).bgImage);
+          const bgImg = await loadImage(cfg.bgImage);
           const imgRatio = bgImg.width / bgImg.height;
           const canvasRatio = OUT_W / OUT_H;
           let dw = OUT_W, dh = OUT_H, dx = 0, dy = 0;
@@ -431,14 +431,24 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
 
         {/* Photo thumbnails */}
         <div className="flex gap-3 justify-center flex-wrap">
-          {photos.map((photo, i) => (
-            <button
-              key={i}
-              onClick={() => onRetakePhoto(i)}
-              className="relative group transition-transform hover:scale-105"
-              style={{
-                width: 80,
-                height: frame.layout === 'grid-2x2' ? 80 : 60,
+          {photos.map((photo, i) => {
+            let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+            if (frame.config?.elements) {
+              const photoSlots = frame.config.elements.filter(el => el.type === 'photo');
+              const targetPhoto = photoSlots[i] || photoSlots[0];
+              if (targetPhoto && targetPhoto.width && targetPhoto.height) {
+                currentAspectRatio = targetPhoto.width / targetPhoto.height;
+              }
+            }
+
+            return (
+              <button
+                key={i}
+                onClick={() => onRetakePhoto(i)}
+                className="relative group transition-transform hover:scale-105"
+                style={{
+                  width: 80,
+                  aspectRatio: String(currentAspectRatio),
                 borderRadius: 6,
                 overflow: 'hidden',
                 border: `2px solid ${frame.borderColor}`,
@@ -455,7 +465,8 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
                 {i + 1}
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {/* Action buttons */}

@@ -19,6 +19,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   const [downloadingGif, setDownloadingGif] = useState(false);
   const [liveClipGifs, setLiveClipGifs] = useState<(string | null | 'pending' | 'error')[]>([]);
   const [generatingClipGifs, setGeneratingClipGifs] = useState(false);
+  const [polaroidDataUrls, setPolaroidDataUrls] = useState<string[]>([]);
 
   const roundRect = useCallback((
     ctx: CanvasRenderingContext2D,
@@ -85,9 +86,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       canvas.height = OUT_H;
 
       // Background
-      const bgType = (cfg as any).bgType ?? 'solid';
+      const bgType = cfg.bgType ?? 'solid';
       if (bgType === 'gradient') {
-        const angle = (((cfg as any).bgGradientAngle ?? 135) - 90) * (Math.PI / 180);
+        const angle = ((cfg.bgGradientAngle ?? 135) - 90) * (Math.PI / 180);
         const cx = OUT_W / 2;
         const cy = OUT_H / 2;
         const diag = Math.sqrt(cx * cx + cy * cy);
@@ -97,13 +98,13 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           cx + Math.cos(angle) * diag,
           cy + Math.sin(angle) * diag
         );
-        grad.addColorStop(0, (cfg as any).bgGradientFrom ?? '#f5f0e8');
-        grad.addColorStop(1, (cfg as any).bgGradientTo ?? '#e8dfd0');
+        grad.addColorStop(0, cfg.bgGradientFrom ?? '#f5f0e8');
+        grad.addColorStop(1, cfg.bgGradientTo ?? '#e8dfd0');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
-      } else if (bgType === 'image' && (cfg as any).bgImage) {
+      } else if (bgType === 'image' && cfg.bgImage) {
         try {
-          const bgImg = await loadImage((cfg as any).bgImage);
+          const bgImg = await loadImage(cfg.bgImage);
           const imgRatio = bgImg.width / bgImg.height;
           const canvasRatio = OUT_W / OUT_H;
           let dw = OUT_W, dh = OUT_H, dx = 0, dy = 0;
@@ -409,9 +410,19 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     setGeneratingGif(true);
     try {
       const PHOTO_W = 600;
-      const isGrid = frame.layout === 'grid-2x2';
-      const photoAR = isGrid ? 1 : 4 / 3;
-      const PHOTO_H = Math.round(PHOTO_W / photoAR);
+      let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+      if (frame.config?.elements) {
+        const photoSlots = frame.config.elements.filter(el => el.type === 'photo');
+        if (photoSlots.length > 0) {
+          const smallestSlot = photoSlots.reduce((prev, curr) => {
+            return (prev.width * prev.height) < (curr.width * curr.height) ? prev : curr;
+          });
+          if (smallestSlot.width && smallestSlot.height) {
+            currentAspectRatio = smallestSlot.width / smallestSlot.height;
+          }
+        }
+      }
+      const PHOTO_H = Math.round(PHOTO_W / currentAspectRatio);
 
       const gif = new GIF({
         workers: 2, quality: 10, workerScript: '/gif.worker.js',
@@ -431,7 +442,23 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         tempCanvas.width = PHOTO_W;
         tempCanvas.height = PHOTO_H;
         const ctx = tempCanvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
+        
+        // object-fit: cover logic to avoid stretching
+        const imgRatio = img.width / img.height;
+        const canvasRatio = PHOTO_W / PHOTO_H;
+        let dw = PHOTO_W, dh = PHOTO_H, dx = 0, dy = 0;
+        
+        if (imgRatio > canvasRatio) {
+          dh = PHOTO_H;
+          dw = PHOTO_H * imgRatio;
+          dx = (PHOTO_W - dw) / 2;
+        } else {
+          dw = PHOTO_W;
+          dh = PHOTO_W / imgRatio;
+          dy = (PHOTO_H - dh) / 2;
+        }
+        
+        ctx.drawImage(img, dx, dy, dw, dh);
         gif.addFrame(tempCanvas, { delay: 500, copy: true });
       });
 
@@ -449,7 +476,88 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     } finally {
       setGeneratingGif(false);
     }
-  }, [photos, frame.layout]);
+  }, [photos, frame, loadImage]);
+
+  const generatePolaroids = useCallback(async () => {
+    try {
+      const imgs = await Promise.all(photos.map(src => loadImage(src)));
+      const pCanvas = document.createElement('canvas');
+      const pCtx = pCanvas.getContext('2d')!;
+      
+      const scale = 2; // High res
+      
+      let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+      if (frame.config?.elements) {
+        const photoSlots = frame.config.elements.filter(el => el.type === 'photo');
+        if (photoSlots.length > 0) {
+          const targetPhotoSlot = photoSlots[0];
+          if (targetPhotoSlot.width && targetPhotoSlot.height) {
+            currentAspectRatio = targetPhotoSlot.width / targetPhotoSlot.height;
+          }
+        }
+      }
+
+      const P_WIDTH = 400 * scale; 
+      const paddingX = 12 * scale;
+      const paddingTop = 24 * scale;
+      const paddingBottom = 48 * scale;
+      
+      const photoW = P_WIDTH - (paddingX * 2);
+      const photoH = Math.round(photoW / currentAspectRatio);
+      const P_HEIGHT = photoH + paddingTop + paddingBottom;
+      
+      pCanvas.width = P_WIDTH;
+      pCanvas.height = P_HEIGHT;
+      
+      const urls: string[] = [];
+      
+      for (let i = 0; i < imgs.length; i++) {
+        const img = imgs[i];
+        pCtx.clearRect(0, 0, P_WIDTH, P_HEIGHT);
+        
+        pCtx.fillStyle = '#ffffff';
+        pCtx.fillRect(0, 0, P_WIDTH, P_HEIGHT);
+        
+        pCtx.fillStyle = `${frame.accentColor}99`; // roughly 60% opacity
+        const tapeW = 64 * scale;
+        const tapeH = 24 * scale;
+        pCtx.fillRect(P_WIDTH / 2 - tapeW / 2, 0, tapeW, tapeH);
+        
+        pCtx.save();
+        pCtx.filter = 'sepia(10%) contrast(105%) brightness(98%)';
+        pCtx.beginPath();
+        pCtx.rect(paddingX, paddingTop, photoW, photoH);
+        pCtx.clip();
+        
+        const imgRatio = img.width / img.height;
+        const slotRatio = photoW / photoH;
+        let dw = photoW, dh = photoH, dx = paddingX, dy = paddingTop;
+        if (imgRatio > slotRatio) {
+          dh = photoH; dw = photoH * imgRatio; dx = paddingX - (dw - photoW) / 2;
+        } else {
+          dw = photoW; dh = photoW / imgRatio; dy = paddingTop - (dh - photoH) / 2;
+        }
+        pCtx.drawImage(img, dx, dy, dw, dh);
+        pCtx.restore();
+        
+        pCtx.fillStyle = 'rgba(0,0,0,0.4)';
+        pCtx.font = `italic ${12 * scale}px "Plus Jakarta Sans", "Inter", sans-serif`;
+        pCtx.textAlign = 'left';
+        pCtx.fillText(`${i + 1}/${imgs.length}`, paddingX, paddingTop + photoH + 20 * scale);
+        
+        pCtx.fillStyle = 'rgba(0,0,0,0.7)';
+        pCtx.font = `bold ${10 * scale}px "Plus Jakarta Sans", "Inter", sans-serif`;
+        pCtx.textAlign = 'right';
+        pCtx.fillText(frame.name.toUpperCase(), P_WIDTH - paddingX, paddingTop + photoH + 20 * scale);
+        
+        urls.push(pCanvas.toDataURL('image/jpeg', 0.95));
+      }
+      
+      setPolaroidDataUrls(urls);
+    } catch (err) {
+      console.error('Polaroid generation failed:', err);
+    }
+  }, [photos, frame, loadImage]);
 
   const convertClipToGif = useCallback(async (frames: string[]): Promise<string> => {
     if (frames.length === 0) throw new Error('No frames to convert');
@@ -504,7 +612,12 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     setGeneratingClipGifs(false);
   }, [liveClips, convertClipToGif]);
 
-  useEffect(() => { renderStrip(); generateGif(); generateClipGifs(); }, [renderStrip, generateGif, generateClipGifs]);
+  useEffect(() => { 
+    renderStrip(); 
+    generateGif(); 
+    generateClipGifs(); 
+    generatePolaroids();
+  }, [renderStrip, generateGif, generateClipGifs, generatePolaroids]);
 
   const handleDownload = () => {
     setDownloading(true);
@@ -595,23 +708,24 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         )}
 
         {/* Download one by one - individual photos */}
-        <div className="mb-6">
-          <h3 className="text-sm font-medium mb-3 opacity-70">Download Photos</h3>
-          <div className="flex gap-3 justify-center flex-wrap">
-            {photos.map((photo, i) => (
-              <div key={i} className="relative group">
-                <img src={photo} alt={`Photo ${i + 1}`} className="h-16 rounded-sm" style={{ border: `1px solid ${frame.borderColor}40` }} />
-                <button
-                  onClick={() => handleDownloadPhoto(photo, i)}
-                  className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all rounded-sm"
-                >
-                  <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs">↓</span>
-                </button>
-                <span className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] opacity-50">{i + 1}</span>
-              </div>
-            ))}
+        {polaroidDataUrls.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium mb-3 opacity-70">Download Polaroids</h3>
+            <div className="flex gap-4 justify-center flex-wrap">
+              {polaroidDataUrls.map((photoUrl, i) => (
+                <div key={i} className="relative group shadow-lg" style={{ transform: i % 2 === 0 ? 'rotate(-2deg)' : 'rotate(2deg)' }}>
+                  <img src={photoUrl} alt={`Photo ${i + 1}`} className="h-40 rounded-sm bg-white" />
+                  <button
+                    onClick={() => handleDownloadPhoto(photoUrl, i)}
+                    className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition-all rounded-sm"
+                  >
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-medium tracking-wide">↓ Save</span>
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* GIF preview and download */}
         {gifDataUrl && (

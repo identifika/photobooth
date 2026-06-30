@@ -9,8 +9,8 @@ interface Props {
   onComplete: (compositedPhotos: string[]) => void;
 }
 
-type BgType = 'original' | 'green' | 'folder' | 'upload';
-type Tab = 'background' | 'filters';
+type BgType = 'original' | 'green' | 'gradient' | 'folder' | 'upload';
+type Tab = 'presets' | 'adjustments' | 'background';
 
 interface BackgroundOption {
   type: BgType;
@@ -65,6 +65,13 @@ const FILTER_PRESETS: FilterPreset[] = [
   { id: 'moonlight', name: 'Moonlight', emoji: '🌙', adjustments: { ...DEFAULT_ADJUSTMENTS, temperature: -20, brightness: 110, contrast: 90, saturation: 60 } },
 ];
 
+const GRADIENT_BGS: BackgroundOption[] = [
+  { type: 'gradient', id: 'grad1', name: 'Sunset', src: 'linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%)' },
+  { type: 'gradient', id: 'grad2', name: 'Ocean', src: 'linear-gradient(135deg, #2b5876 0%, #4e4376 100%)' },
+  { type: 'gradient', id: 'grad3', name: 'Holo', src: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)' },
+  { type: 'gradient', id: 'grad4', name: 'Midnight', src: 'linear-gradient(135deg, #141e30 0%, #243b55 100%)' },
+];
+
 const FOLDER_BGS: BackgroundOption[] = [
   { type: 'folder', id: 'bg1', name: 'Abstract', src: '/backgrounds/bg1.jpg' },
   { type: 'folder', id: 'bg2', name: 'Neon', src: '/backgrounds/bg2.jpg' },
@@ -85,7 +92,9 @@ function buildCssFilter(adj: ImageAdjustments): string {
 }
 
 export default function BackgroundSelector({ photos, frame, onComplete }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('filters');
+  const [activeTab, setActiveTab] = useState<Tab>('presets');
+  const [selectedPhotoIdx, setSelectedPhotoIdx] = useState(0);
+
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +182,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         canvas.height = img.height;
         const ctx = canvas.getContext('2d')!;
 
-        // Check if ctx.filter is supported (Safari/WKWebView may not support it)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const supportsFilter = 'filter' in (ctx as any);
 
@@ -187,7 +195,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           (ctx as any).filter = 'none';
         }
 
-        // If ctx.filter is NOT supported, apply adjustments manually via pixel manipulation
         if (!supportsFilter && cssFilter !== 'none') {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
@@ -202,17 +209,14 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
             let g = data[i + 1];
             let b = data[i + 2];
 
-            // Brightness
             r *= brightness;
             g *= brightness;
             b *= brightness;
 
-            // Contrast
             r = ((r / 255 - 0.5) * contrast + 0.5) * 255;
             g = ((g / 255 - 0.5) * contrast + 0.5) * 255;
             b = ((b / 255 - 0.5) * contrast + 0.5) * 255;
 
-            // Grayscale
             if (grayscale > 0) {
               const gray = 0.299 * r + 0.587 * g + 0.114 * b;
               r = r * (1 - grayscale) + gray * grayscale;
@@ -220,7 +224,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
               b = b * (1 - grayscale) + gray * grayscale;
             }
 
-            // Saturation
             if (saturation !== 1) {
               const gray = 0.299 * r + 0.587 * g + 0.114 * b;
               r = gray + (r - gray) * saturation;
@@ -228,7 +231,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
               b = gray + (b - gray) * saturation;
             }
 
-            // Sepia
             if (sepia > 0) {
               const sr = r * 0.393 + g * 0.769 + b * 0.189;
               const sg = r * 0.349 + g * 0.686 + b * 0.168;
@@ -245,7 +247,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           ctx.putImageData(imageData, 0, 0);
         }
 
-        // Apply temperature (warm = orange overlay, cool = blue overlay)
         if (hasTemperature) {
           ctx.globalCompositeOperation = 'overlay';
           ctx.globalAlpha = Math.abs(adjustments.temperature) / 300;
@@ -259,7 +260,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           ctx.globalAlpha = 1;
         }
 
-        // Apply vignette
         if (hasVignette) {
           const gradient = ctx.createRadialGradient(
             canvas.width / 2, canvas.height / 2, canvas.width * 0.3,
@@ -274,8 +274,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         resolve(canvas.toDataURL('image/jpeg', 0.95));
       };
       img.onerror = () => {
-        // If image fails to load, return original
-        console.error('Filter: failed to load image, returning original');
         resolve(src);
       };
       img.src = src;
@@ -298,6 +296,11 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
 
         if (selectedBg.type === 'green') {
           ctx.fillStyle = '#00FF00';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(fgImg, 0, 0);
+          resolve(canvas.toDataURL('image/jpeg', 0.95));
+        } else if (selectedBg.type === 'gradient' && selectedBg.src) {
+          ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(fgImg, 0, 0);
           resolve(canvas.toDataURL('image/jpeg', 0.95));
@@ -328,11 +331,9 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
   const handleApply = async () => {
     setProcessing(true);
     try {
-      // First composite backgrounds
       const composited = await Promise.all(
         transparentPhotos.map((fg, i) => compositeImage(fg, photos[i]))
       );
-      // Then apply filters
       const filtered = await Promise.all(
         composited.map(src => applyFiltersToImage(src))
       );
@@ -344,32 +345,17 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
     }
   };
 
-  // CSS filter string for live preview
   const previewFilter = buildCssFilter(adjustments);
   const previewTemperatureOverlay = adjustments.temperature !== 0;
   const previewVignette = adjustments.vignette > 0;
 
-  if (isRemovingBg) {
-    return (
-      <div className="w-full text-center py-20 animate-fadeIn">
-        <div className="w-16 h-16 border-4 border-t-transparent rounded-full mx-auto mb-6 animate-spin"
-             style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
-        <h2 className="font-display text-2xl font-bold mb-2">Extracting Magic...</h2>
-        <p className="opacity-60 text-sm mb-4">Removing backgrounds ({progress}%)</p>
-        <div className="max-w-xs mx-auto h-2 rounded-full overflow-hidden" style={{ background: `${frame.borderColor}20` }}>
-          <div className="h-full transition-all duration-300" style={{ width: `${progress}%`, background: frame.accentColor }} />
-        </div>
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="w-full text-center py-20 animate-fadeIn">
-        <div className="p-8 rounded-lg border-2 border-dashed mx-auto max-w-md" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
-          <p className="font-display text-lg mb-3">⚠️ Error Processing Images</p>
+        <div className="p-8 rounded-xl border-2 border-dashed mx-auto max-w-md" style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}>
+          <p className="font-display text-lg mb-3">⚠️ Error Processing</p>
           <p className="text-sm opacity-70 mb-4">{error}</p>
-          <button onClick={() => onComplete(photos)} className="px-6 py-2 rounded-sm text-sm transition-opacity hover:opacity-80" style={{ background: 'var(--accent)', color: 'white' }}>
+          <button onClick={() => onComplete(photos)} className="px-6 py-2 rounded-lg text-sm transition-opacity hover:opacity-80" style={{ background: 'var(--accent)', color: 'white' }}>
             Skip & Use Originals
           </button>
         </div>
@@ -377,7 +363,16 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
     );
   }
 
-  const renderPreview = (fgSrc: string, origSrc: string, i: number) => {
+  const renderPreview = (fgSrc: string, origSrc: string, i: number, isHero: boolean) => {
+    let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+    if (frame.config?.elements) {
+      const p = frame.config.elements.filter(el => el.type === 'photo');
+      const targetPhoto = p[i] || p[0];
+      if (targetPhoto && targetPhoto.width && targetPhoto.height) {
+        currentAspectRatio = targetPhoto.width / targetPhoto.height;
+      }
+    }
+
     let bgStyle: React.CSSProperties = {};
     let imgSrc = origSrc;
 
@@ -385,21 +380,26 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
       imgSrc = fgSrc;
       if (selectedBg.type === 'green') {
         bgStyle = { backgroundColor: '#00FF00' };
+      } else if (selectedBg.type === 'gradient' && selectedBg.src) {
+        bgStyle = { background: selectedBg.src };
       } else if (selectedBg.src) {
         bgStyle = { backgroundImage: `url(${selectedBg.src})`, backgroundSize: 'cover', backgroundPosition: 'center' };
       }
     }
 
     return (
-      <div key={i} className="aspect-[4/3] rounded overflow-hidden shadow-sm border border-black/10 relative">
-        <div className="w-full h-full" style={bgStyle}>
+      <div
+        key={i}
+        className={`relative overflow-hidden shadow-md ${isHero ? 'rounded-xl' : 'w-full h-full'}`}
+        style={isHero ? { aspectRatio: String(currentAspectRatio), maxHeight: '100%', maxWidth: '100%', margin: '0 auto' } : {}}
+      >
+        <div className="w-full h-full bg-surface-0/50" style={bgStyle}>
           <img
             src={imgSrc}
             alt={`Preview ${i}`}
             className="w-full h-full object-cover"
             style={{ filter: previewFilter !== 'none' ? previewFilter : undefined }}
           />
-          {/* Temperature overlay */}
           {previewTemperatureOverlay && (
             <div className="absolute inset-0 pointer-events-none" style={{
               background: adjustments.temperature > 0 ? '#ff8c00' : '#0066ff',
@@ -407,7 +407,6 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
               mixBlendMode: 'overlay',
             }} />
           )}
-          {/* Vignette overlay */}
           {previewVignette && (
             <div className="absolute inset-0 pointer-events-none" style={{
               background: `radial-gradient(circle, transparent 30%, rgba(0,0,0,${adjustments.vignette / 100}) 100%)`,
@@ -421,6 +420,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
   const bgOptions: BackgroundOption[] = [
     { type: 'original', id: 'orig', name: 'Original' },
     { type: 'green', id: 'green', name: 'Green Screen', src: '#00FF00' },
+    ...GRADIENT_BGS,
     ...FOLDER_BGS,
   ];
   if (uploadedBg) bgOptions.push(uploadedBg);
@@ -439,152 +439,236 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
 
   return (
     <div className="w-full animate-slideUp">
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Step 03</p>
         <h2 className="font-display text-4xl font-bold">Edit & Enhance</h2>
-        <p className="mt-2 opacity-60 text-sm">Filters, adjustments & background</p>
       </div>
 
-      {/* Tabs */}
-      <div className="flex justify-center gap-1 mb-8 max-w-xs mx-auto p-1 rounded-lg" style={{ background: `${frame.borderColor}10` }}>
-        {(['filters', 'background'] as Tab[]).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all capitalize hover:opacity-80 ${activeTab === tab ? 'bg-primary text-primary-foreground' : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-surface-0'}`}
-          >
-            {tab === 'filters' ? '🎨 Filters' : '🖼 Background'}
-          </button>
-        ))}
-      </div>
+      <div className="flex flex-col md:flex-row gap-6 max-w-6xl mx-auto h-[75vh] min-h-[500px]">
+        {/* Left Column: Hero Viewer & Carousel */}
+        <div className="flex-1 flex flex-col gap-4 bg-[var(--surface-2)] rounded-2xl border border-border p-4 shadow-sm overflow-hidden relative">
 
-      <div className="flex flex-col md:flex-row gap-8 max-w-5xl mx-auto">
-        {/* Preview Grid */}
-        <div className="flex-1">
-          <div className="grid grid-cols-2 gap-3 bg-[var(--surface-2)] p-4 rounded-sm shadow-md" style={{ border: `1px solid ${frame.borderColor}20` }}>
-            {transparentPhotos.map((fg, i) => renderPreview(fg, photos[i], i))}
+          {/* Removing overlay */}
+          {isRemovingBg && (
+            <div className="absolute inset-0 z-10 bg-surface-2/80 backdrop-blur-md flex flex-col items-center justify-center animate-fadeIn">
+              <div className="w-16 h-16 border-4 border-t-transparent rounded-full mx-auto mb-6 animate-spin"
+                style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+              <h3 className="font-display text-2xl font-bold mb-2">Extracting Magic...</h3>
+              <p className="opacity-60 text-sm mb-4">Removing backgrounds ({progress}%)</p>
+              <div className="w-48 h-2 rounded-full overflow-hidden" style={{ background: `${frame.borderColor}20` }}>
+                <div className="h-full transition-all duration-300" style={{ width: `${progress}%`, background: frame.accentColor }} />
+              </div>
+            </div>
+          )}
+
+          {/* Hero Viewer */}
+          <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-black/5 rounded-xl">
+            {renderPreview(transparentPhotos[selectedPhotoIdx], photos[selectedPhotoIdx], selectedPhotoIdx, true)}
+          </div>
+
+          {/* Thumbnail Carousel */}
+          <div className="flex gap-3 overflow-x-auto pb-2 justify-center shrink-0">
+            {photos.map((_, i) => {
+              let thumbAspect = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
+              if (frame.config?.elements) {
+                const p = frame.config.elements.filter(el => el.type === 'photo');
+                const targetPhoto = p[i] || p[0];
+                if (targetPhoto && targetPhoto.width && targetPhoto.height) {
+                  thumbAspect = targetPhoto.width / targetPhoto.height;
+                }
+              }
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedPhotoIdx(i)}
+                  className={`relative rounded-lg overflow-hidden transition-all shrink-0 bg-surface-0 ${i === selectedPhotoIdx ? 'shadow-md' : 'opacity-50 hover:opacity-100 ring-1 ring-border/50'}`}
+                  style={{ height: 64, aspectRatio: String(thumbAspect), boxShadow: i === selectedPhotoIdx ? `0 0 0 2px ${frame.borderColor}` : undefined }}
+                >
+                  {renderPreview(transparentPhotos[i], photos[i], i, false)}
+                  <div className="absolute top-0.5 left-0.5 bg-black/60 text-white text-[9px] px-1.5 py-[1px] rounded-full">
+                    {i + 1}
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="w-full md:w-80 flex flex-col gap-4">
-          {activeTab === 'filters' && (
-            <>
-              {/* Preset filters */}
-              <div>
-                <p className="text-xs uppercase tracking-widest opacity-50 mb-3">Presets</p>
-                <div className="grid grid-cols-5 gap-2">
-                  {FILTER_PRESETS.map(preset => {
-                    const isActive = selectedPreset === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        onClick={() => handlePresetSelect(preset)}
-                        className={`flex flex-col items-center gap-1 p-1.5 rounded-lg transition-all hover:opacity-80 ${isActive ? 'bg-primary/10 border-2 border-primary text-foreground' : 'bg-transparent border-2 border-border text-foreground'}`}
-                      >
-                        <span className="text-lg">{preset.emoji}</span>
-                        <span className="text-[9px] font-medium leading-tight text-center">{preset.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+        {/* Right Column: Controls */}
+        <div className="w-full md:w-[400px] flex flex-col bg-[var(--surface-2)] rounded-2xl border border-border shadow-sm overflow-hidden h-full">
 
-              {/* Manual adjustments */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-xs uppercase tracking-widest opacity-50">Adjustments</p>
-                  <button
-                    onClick={handleResetFilters}
-                    className="text-[10px] px-2 py-0.5 rounded border border-border text-foreground opacity-50 hover:opacity-100 transition-opacity"
-                  >
-                    Reset
-                  </button>
-                </div>
-                <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-                  {sliders.map(slider => (
-                    <div key={slider.key}>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="text-xs opacity-70">{slider.label}</label>
-                        <span className="text-[10px] font-mono opacity-50 w-8 text-right">
-                          {adjustments[slider.key]}
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={slider.min}
-                        max={slider.max}
-                        value={adjustments[slider.key]}
-                        onChange={e => handleAdjustmentChange(slider.key, Number(e.target.value))}
-                        className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                        style={{
-                          background: `linear-gradient(to right, ${frame.accentColor} 0%, ${frame.accentColor} ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 100%)`,
-                          accentColor: frame.borderColor,
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+          {/* Tabs */}
+          <div className="flex border-b border-border bg-surface-0/50">
+            {(['presets', 'adjustments', 'background'] as Tab[]).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-4 px-2 text-xs font-semibold tracking-wide uppercase transition-colors ${activeTab === tab ? 'text-foreground border-b-2' : 'text-muted-foreground hover:text-foreground'}`}
+                style={{ borderBottomColor: activeTab === tab ? frame.borderColor : 'transparent' }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-          {activeTab === 'background' && (
-            <>
-              {!backgroundsRemoved && (
-                <button
-                  onClick={handleRemoveBackgrounds}
-                  className="w-full py-3 rounded-sm font-medium tracking-wide transition-all text-sm border-2 border-input bg-transparent text-foreground hover:bg-surface-0 hover:opacity-75"
-                >
-                  ✨ Remove All Backgrounds
-                </button>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                {bgOptions.map(bg => {
-                  const isSelected = selectedBg.id === bg.id;
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto p-5 relative">
+            {activeTab === 'presets' && (
+              <div className="grid grid-cols-2 gap-3 animate-fadeIn">
+                {FILTER_PRESETS.map(preset => {
+                  const isActive = selectedPreset === preset.id;
                   return (
                     <button
-                      key={bg.id}
-                      onClick={() => setSelectedBg(bg)}
-                      className={`relative p-2 rounded-sm border-2 text-left transition-all hover:opacity-80 text-foreground ${isSelected ? 'border-primary bg-primary/10 shadow-md' : 'border-border bg-transparent'}`}
+                      key={preset.id}
+                      onClick={() => handlePresetSelect(preset)}
+                      className={`relative p-3 rounded-xl border text-left transition-all ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
+                      style={{ borderColor: isActive ? frame.borderColor : undefined }}
                     >
-                      <div className="w-full h-16 mb-2 rounded bg-gray-100 overflow-hidden border border-black/10">
-                        {bg.type === 'original' && <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-400 flex items-center justify-center text-xl">📸</div>}
-                        {bg.type === 'green' && <div className="w-full h-full bg-[#00FF00]" />}
-                        {(bg.type === 'folder' || bg.type === 'upload') && bg.src && (
-                          <img src={bg.src} className="w-full h-full object-cover" alt={bg.name} />
-                        )}
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center text-xl shadow-inner from-gray-100 to-gray-200 border border-black/5">
+                          {preset.emoji}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{preset.name}</p>
+                        </div>
                       </div>
-                      <p className="text-xs font-medium text-center truncate">{bg.name}</p>
                     </button>
                   );
                 })}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="relative p-2 rounded-sm border-2 border-dashed border-input text-foreground text-left transition-all hover:opacity-80 hover:bg-surface-0"
-                >
-                  <div className="w-full h-16 mb-2 rounded flex flex-col items-center justify-center opacity-60">
-                    <span className="text-xl mb-1">↑</span>
-                  </div>
-                  <p className="text-xs font-medium text-center">Upload</p>
-                </button>
-                <input type="file" ref={fileInputRef} onChange={handleUpload} accept="image/*" className="hidden" />
               </div>
-            </>
-          )}
+            )}
 
-          {/* Apply button */}
-          <button
-            onClick={handleApply}
-            disabled={processing}
-            className="w-full py-4 rounded-sm font-medium tracking-wide transition-all text-sm mt-auto hover:opacity-90 bg-primary text-primary-foreground"
-            style={{
-              opacity: processing ? 0.7 : 1,
-            }}
-          >
-            {processing ? 'Applying...' : 'Apply & Continue →'}
-          </button>
+            {activeTab === 'adjustments' && (
+              <div className="space-y-6 animate-fadeIn pb-4">
+                <div className="flex justify-end">
+                  <button onClick={handleResetFilters} className="text-xs font-medium opacity-60 hover:opacity-100 transition-opacity">
+                    Reset All
+                  </button>
+                </div>
+                {sliders.map(slider => (
+                  <div key={slider.key}>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="text-xs font-medium tracking-wide uppercase opacity-70">{slider.label}</label>
+                      <span className="text-[10px] font-mono opacity-50 w-8 text-right bg-surface-0 px-1 py-0.5 rounded">
+                        {adjustments[slider.key]}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={slider.min}
+                      max={slider.max}
+                      value={adjustments[slider.key]}
+                      onChange={e => handleAdjustmentChange(slider.key, Number(e.target.value))}
+                      className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                      style={{
+                        background: `linear-gradient(to right, ${frame.accentColor} 0%, ${frame.accentColor} ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 100%)`,
+                        accentColor: frame.borderColor,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'background' && (
+              <div className="space-y-6 animate-fadeIn pb-4">
+                {/* Magic Remove Toggle */}
+                {!backgroundsRemoved ? (
+                  <div className="p-5 rounded-2xl border border-primary/20 bg-primary/5 text-center relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
+                    <h4 className="font-display font-semibold text-lg mb-2 relative z-10">Magic Extraction</h4>
+                    <p className="text-xs opacity-70 mb-5 relative z-10">Automatically remove backgrounds from your photos using AI to apply custom backdrops.</p>
+                    <button
+                      onClick={handleRemoveBackgrounds}
+                      className="relative z-10 w-full py-3 rounded-xl font-medium text-sm transition-transform hover:scale-[1.02] shadow-sm text-primary-foreground"
+                      style={{ background: frame.borderColor }}
+                    >
+                      ✨ Remove Backgrounds
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl border border-green-500/30 bg-green-500/10 text-center flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-green-500 text-white flex items-center justify-center text-xs">✓</div>
+                    <p className="text-sm font-medium text-green-700 dark:text-green-400">Backgrounds successfully extracted</p>
+                  </div>
+                )}
+
+                {/* Colors & Gradients */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">Colors & Gradients</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    {bgOptions.filter(b => b.type === 'original' || b.type === 'green' || b.type === 'gradient').map(bg => {
+                      const isSelected = selectedBg.id === bg.id;
+                      return (
+                        <button
+                          key={bg.id}
+                          onClick={() => setSelectedBg(bg)}
+                          className={`relative rounded-lg p-1.5 transition-all text-left ${isSelected ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
+                        >
+                          <div
+                            className="w-full aspect-square rounded mb-2 overflow-hidden border border-black/5"
+                            style={bg.type === 'green' ? { background: '#00FF00' } : bg.type === 'gradient' ? { background: bg.src } : {}}
+                          >
+                            {bg.type === 'original' && <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-xl opacity-60">📸</div>}
+                          </div>
+                          <p className="text-[10px] text-center font-medium truncate opacity-80">{bg.name}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Scenes & Upload */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">Scenes</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {bgOptions.filter(b => b.type === 'folder' || b.type === 'upload').map(bg => {
+                      const isSelected = selectedBg.id === bg.id;
+                      return (
+                        <button
+                          key={bg.id}
+                          onClick={() => setSelectedBg(bg)}
+                          className={`relative rounded-lg p-1.5 transition-all text-left ${isSelected ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
+                        >
+                          <div className="w-full h-16 rounded mb-2 overflow-hidden border border-black/5 bg-gray-100">
+                            {bg.src && <img src={bg.src} className="w-full h-full object-cover" alt={bg.name} />}
+                          </div>
+                          <p className="text-[10px] text-center font-medium truncate opacity-80">{bg.name}</p>
+                        </button>
+                      );
+                    })}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="relative rounded-lg p-1.5 transition-all text-left hover:bg-surface-0/50"
+                    >
+                      <div className="w-full h-16 rounded mb-2 flex items-center justify-center border-2 border-dashed border-border text-foreground/40">
+                        <span className="text-xl">+</span>
+                      </div>
+                      <p className="text-[10px] text-center font-medium truncate opacity-80">Upload Custom</p>
+                    </button>
+                    <input type="file" ref={fileInputRef} onChange={handleUpload} accept="image/*" className="hidden" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Footer Action */}
+          <div className="p-4 border-t border-border bg-surface-0/50 backdrop-blur-md">
+            <button
+              onClick={handleApply}
+              disabled={processing}
+              className="w-full py-3.5 rounded-xl font-semibold tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground shadow-md flex items-center justify-center gap-2"
+              style={{ opacity: processing ? 0.7 : 1, background: frame.borderColor }}
+            >
+              {processing ? (
+                <>
+                  <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                  Applying Magic...
+                </>
+              ) : 'Apply & Continue →'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
