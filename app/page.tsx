@@ -28,7 +28,7 @@ function userFrameToFrame(f: UserFrame): Frame {
     color: f.config.color || '#f5f0e8',
     borderColor: f.config.borderColor || '#1a1410',
     accentColor: f.config.accentColor || '#c9a84c',
-    emoji: '✨',
+    emoji: f.emoji || '✨',
     config: f.config,
     width: f.config.width,
     height: f.config.height,

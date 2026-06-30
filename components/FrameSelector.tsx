@@ -35,9 +35,13 @@ const FrameCard = ({
   index?: number;
   isUserFrame?: boolean;
 }) => {
-  const scale = 0.35;
   const w = frame.config?.width ?? 400;
   const h = frame.config?.height ?? 600;
+
+  // Bound the thumbnail to 140x210 (which is 400x600 * 0.35)
+  const MAX_W = 140;
+  const MAX_H = 210;
+  const scale = Math.min(MAX_W / w, MAX_H / h);
   const hasConfig = !!frame.config;
 
   return (
@@ -54,12 +58,11 @@ const FrameCard = ({
         }}
         className="group-hover:-translate-y-2 group-hover:rotate-[-1deg] transition-all duration-300"
       >
-        <div style={{ 
-          width: w * scale, 
-          height: h * scale, 
-          overflow: 'hidden', 
-          borderRadius: 8,
-          boxShadow: isSelected ? `0 0 0 3px ${frame.accentColor ?? 'var(--brand)'}` : '0 4px 12px rgba(0,0,0,0.05)',
+        <div style={{
+          width: w * scale,
+          height: h * scale,
+          overflow: hasConfig && frame.config?.borderStyle === 'ticket' ? 'visible' : 'hidden',
+          boxShadow: hasConfig && frame.config?.borderStyle === 'ticket' ? 'none' : (isSelected ? `0 0 0 3px ${frame.accentColor ?? 'var(--brand)'}` : '0 4px 12px rgba(0,0,0,0.05)'),
           transition: 'box-shadow 0.2s'
         }}>
           {hasConfig ? (

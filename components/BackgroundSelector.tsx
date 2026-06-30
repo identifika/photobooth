@@ -166,6 +166,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
 
     return new Promise((resolve) => {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
@@ -290,6 +291,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
       if (!ctx) return reject(new Error('Failed to get canvas context'));
 
       const fgImg = new Image();
+      fgImg.crossOrigin = 'anonymous';
       fgImg.onload = () => {
         canvas.width = fgImg.width;
         canvas.height = fgImg.height;
@@ -301,6 +303,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           resolve(canvas.toDataURL('image/jpeg', 0.95));
         } else if (selectedBg.src) {
           const bgImg = new Image();
+          bgImg.crossOrigin = 'anonymous';
           bgImg.onload = () => {
             const scale = Math.max(canvas.width / bgImg.width, canvas.height / bgImg.height);
             const w = bgImg.width * scale;

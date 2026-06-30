@@ -171,7 +171,10 @@ export default function FramesPage() {
                   <div className="p-4">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-sm text-foreground truncate">{f.name || 'Untitled'}</h3>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg">{f.emoji || '✨'}</span>
+                          <h3 className="font-medium text-sm text-foreground truncate">{f.name || 'Untitled'}</h3>
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {f.config?.elements?.filter((e: any) => e.type === 'photo').length || 0} photos
                         </p>

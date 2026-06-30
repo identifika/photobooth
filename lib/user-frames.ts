@@ -18,6 +18,7 @@ export interface UserFrame {
   uid: string;
   config: FrameConfig;
   name: string;
+  emoji?: string;
   categoryId: string;
   createdAt: unknown;
   updatedAt: unknown;
@@ -51,7 +52,7 @@ export async function loadUserFrame(uid: string, frameId: string): Promise<UserF
 /** Create a new frame. Returns the new doc ID. */
 export async function createUserFrame(
   uid: string,
-  data: { config: FrameConfig; name: string; categoryId: string },
+  data: { config: FrameConfig; name: string; emoji?: string; categoryId: string },
 ): Promise<string> {
   const ref = await addDoc(collection(db, 'user_frames'), {
     uid,
@@ -66,7 +67,7 @@ export async function createUserFrame(
 export async function updateUserFrame(
   uid: string,
   frameId: string,
-  data: { config: FrameConfig; name: string; categoryId: string },
+  data: { config: FrameConfig; name: string; emoji?: string; categoryId: string },
 ): Promise<void> {
   await updateDoc(doc(db, 'user_frames', frameId), {
     ...data,

@@ -40,6 +40,7 @@ function EditorInner() {
 
   const [config, setConfig] = useState<FrameConfig>(EMPTY_CONFIG);
   const [frameName, setFrameName] = useState('');
+  const [frameEmoji, setFrameEmoji] = useState('✨');
   const [categoryId, setCategoryId] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [saving, setSaving] = useState(false);
@@ -66,6 +67,7 @@ function EditorInner() {
         if (frame) {
           if (frame.config) setConfig(frame.config);
           setFrameName(frame.name);
+          setFrameEmoji(frame.emoji || '✨');
           setCategoryId(frame.layout);
           setSortOrder(String(frame.sortOrder ?? 0));
         }
@@ -80,6 +82,7 @@ function EditorInner() {
         if (frame) {
           setConfig(frame.config);
           setFrameName(frame.name);
+          setFrameEmoji(frame.emoji || '✨');
           setCategoryId(frame.categoryId);
         }
         setLoaded(true);
@@ -109,10 +112,10 @@ function EditorInner() {
         });
       } else if (frameId) {
         // Save user frame
-        await updateUserFrame(user.uid, frameId, { config, name: frameName, categoryId });
+        await updateUserFrame(user.uid, frameId, { config, name: frameName, emoji: frameEmoji, categoryId });
       } else {
         // Create new user frame
-        const newId = await createUserFrame(user.uid, { config, name: frameName, categoryId });
+        const newId = await createUserFrame(user.uid, { config, name: frameName, emoji: frameEmoji, categoryId });
         router.replace(`/editor?id=${newId}`);
       }
       setSaved(true);
@@ -123,7 +126,7 @@ function EditorInner() {
     } finally {
       setSaving(false);
     }
-  }, [user, frameId, publicFrameId, config, frameName, categoryId, sortOrder, isPublicEdit, isUserAdmin, router]);
+  }, [user, frameId, publicFrameId, config, frameName, frameEmoji, categoryId, sortOrder, isPublicEdit, isUserAdmin, router]);
 
   const handlePublish = useCallback(async () => {
     if (!user || !frameName.trim()) {
@@ -135,10 +138,10 @@ function EditorInner() {
       // First ensure the frame is saved
       let currentFrameId = frameId;
       if (!currentFrameId) {
-        currentFrameId = await createUserFrame(user.uid, { config, name: frameName, categoryId });
+        currentFrameId = await createUserFrame(user.uid, { config, name: frameName, emoji: frameEmoji, categoryId });
         router.replace(`/editor?id=${currentFrameId}`);
       } else {
-        await updateUserFrame(user.uid, currentFrameId, { config, name: frameName, categoryId });
+        await updateUserFrame(user.uid, currentFrameId, { config, name: frameName, emoji: frameEmoji, categoryId });
       }
       
       // Then publish to community
@@ -190,6 +193,8 @@ function EditorInner() {
           onChange={setConfig}
           frameName={frameName}
           onNameChange={setFrameName}
+          frameEmoji={frameEmoji}
+          onEmojiChange={setFrameEmoji}
           categoryId={categoryId}
           onCategoryChange={setCategoryId}
           sortOrder={sortOrder}

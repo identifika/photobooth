@@ -11,6 +11,11 @@ export interface FramePhotoElement {
   height: number;
   borderRadius: number;
   rotation?: number;
+  borderColor?: string;
+  borderWidth?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket';
+  ticketHoleSize?: number;
+  hidden?: boolean;
 }
 
 export interface FrameTitleElement {
@@ -25,6 +30,7 @@ export interface FrameTitleElement {
   color: string;
   fontSize: number;
   align: 'left' | 'center' | 'right';
+  hidden?: boolean;
 }
 
 export interface FrameImageElement {
@@ -36,6 +42,7 @@ export interface FrameImageElement {
   height: number;
   src: string;
   objectFit: 'cover' | 'contain';
+  hidden?: boolean;
 }
 
 export interface FrameEmojiElement {
@@ -47,6 +54,7 @@ export interface FrameEmojiElement {
   height: number;
   emoji: string;
   spacing: number;
+  hidden?: boolean;
 }
 
 export interface FrameStickerElement {
@@ -58,6 +66,7 @@ export interface FrameStickerElement {
   height: number;
   emoji: string;
   rotation: number;
+  hidden?: boolean;
 }
 
 export type FrameElement =
@@ -72,8 +81,11 @@ export interface FrameConfig {
   height?: number;
   color?: string;
   borderColor?: string;
+  borderWidth?: number;
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket';
   accentColor?: string;
   accentSize?: number;
+  ticketHoleSize?: number;
   description?: string;
   elements?: FrameElement[];
   /** legacy fields kept for compat */

@@ -31,9 +31,31 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
     ctx.closePath();
   }, []);
 
+  const buildTicketPath = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
+    const spacing = Math.max(r * 2, Math.round(r * 2.8));
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+
+    const xHoles = [];
+    for (let cx = x + spacing / 2; cx < x + w; cx += spacing) xHoles.push(cx);
+    const yHoles = [];
+    for (let cy = y + spacing / 2; cy < y + h; cy += spacing) yHoles.push(cy);
+
+    for (const cx of xHoles) { ctx.lineTo(cx - r, y); ctx.arc(cx, y, r, Math.PI, 0, true); }
+    ctx.lineTo(x + w, y);
+    for (const cy of yHoles) { ctx.lineTo(x + w, cy - r); ctx.arc(x + w, cy, r, -Math.PI / 2, Math.PI / 2, true); }
+    ctx.lineTo(x + w, y + h);
+    for (let i = xHoles.length - 1; i >= 0; i--) { const cx = xHoles[i]; ctx.lineTo(cx + r, y + h); ctx.arc(cx, y + h, r, 0, Math.PI, true); }
+    ctx.lineTo(x, y + h);
+    for (let i = yHoles.length - 1; i >= 0; i--) { const cy = yHoles[i]; ctx.lineTo(x, cy + r); ctx.arc(x, cy, r, Math.PI / 2, -Math.PI / 2, true); }
+    ctx.lineTo(x, y);
+    ctx.closePath();
+  }, []);
+
   const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
     new Promise((res, rej) => {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => res(img);
       img.onerror = rej;
       img.src = src;
@@ -57,11 +79,51 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
       canvas.height = OUT_H;
 
       // Background
-      ctx.fillStyle = cfg.color ?? frame.color;
-      ctx.fillRect(0, 0, OUT_W, OUT_H);
-      ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
-      ctx.lineWidth = 6;
-      ctx.strokeRect(3, 3, OUT_W - 6, OUT_H - 6);
+      const bgType = (cfg as any).bgType ?? 'solid';
+      if (bgType === 'gradient') {
+        const angle = (((cfg as any).bgGradientAngle ?? 135) - 90) * (Math.PI / 180);
+        const cx = OUT_W / 2;
+        const cy = OUT_H / 2;
+        const diag = Math.sqrt(cx * cx + cy * cy);
+        const grad = ctx.createLinearGradient(
+          cx - Math.cos(angle) * diag,
+          cy - Math.sin(angle) * diag,
+          cx + Math.cos(angle) * diag,
+          cy + Math.sin(angle) * diag
+        );
+        grad.addColorStop(0, (cfg as any).bgGradientFrom ?? '#f5f0e8');
+        grad.addColorStop(1, (cfg as any).bgGradientTo ?? '#e8dfd0');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
+      } else if (bgType === 'image' && (cfg as any).bgImage) {
+        try {
+          const bgImg = await loadImage((cfg as any).bgImage);
+          const imgRatio = bgImg.width / bgImg.height;
+          const canvasRatio = OUT_W / OUT_H;
+          let dw = OUT_W, dh = OUT_H, dx = 0, dy = 0;
+          if (imgRatio > canvasRatio) { dh = OUT_H; dw = OUT_H * imgRatio; dx = (OUT_W - dw) / 2; }
+          else { dw = OUT_W; dh = OUT_W / imgRatio; dy = (OUT_H - dh) / 2; }
+          ctx.drawImage(bgImg, dx, dy, dw, dh);
+        } catch {
+          ctx.fillStyle = cfg.color ?? frame.color;
+          ctx.fillRect(0, 0, OUT_W, OUT_H);
+        }
+      } else {
+        ctx.fillStyle = cfg.color ?? frame.color;
+        ctx.fillRect(0, 0, OUT_W, OUT_H);
+      }
+      if (cfg.borderStyle !== 'ticket') {
+        ctx.save();
+        ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
+        ctx.lineWidth = 6;
+        if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
+        else if (cfg.borderStyle === 'dotted') {
+          ctx.setLineDash([6 * scale, 12 * scale]);
+          ctx.lineCap = 'round';
+        }
+        ctx.strokeRect(3, 3, OUT_W - 6, OUT_H - 6);
+        ctx.restore();
+      }
 
       // Accent bars
       const accentSz = cfg.accentSize ?? 4;
@@ -90,20 +152,26 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
             ctx.translate(-(x + w / 2), -(y + h / 2));
           }
           
-          // Draw border (rotated with the slot)
+          // Fill background for the slot first
           ctx.fillStyle = `${cfg.borderColor ?? '#1a1410'}18`;
-          ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
-          ctx.lineWidth = 2;
-          ctx.setLineDash([6, 4]);
-          roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+          if ((el as any).borderStyle === 'ticket') {
+            buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
+          } else {
+            ctx.beginPath();
+            roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+          }
           ctx.fill();
-          ctx.stroke();
-          ctx.setLineDash([]);
 
-          if (photoIdx < photoImgs.length) {
+          const hasImage = photoIdx < photoImgs.length;
+          if (hasImage) {
             const img = photoImgs[photoIdx]!;
             ctx.save();
-            roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+            if ((el as any).borderStyle === 'ticket') {
+              buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
+            } else {
+              ctx.beginPath();
+              roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+            }
             ctx.clip();
             const imgRatio = img.width / img.height;
             const slotRatio = w / h;
@@ -115,6 +183,33 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
             photoPositions.push({ x, y, w, h });
             photoIdx++;
           }
+
+          // Draw border on top
+          const photoEl = el as any;
+          if (photoEl.borderWidth !== undefined) {
+            if (photoEl.borderWidth > 0 || photoEl.borderStyle === 'ticket') {
+              if (photoEl.borderWidth > 0 && photoEl.borderStyle !== 'ticket') {
+                  ctx.strokeStyle = photoEl.borderColor || '#000000';
+                  ctx.lineWidth = photoEl.borderWidth * scale;
+                  if (photoEl.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
+                  else if (photoEl.borderStyle === 'dotted') {
+                    ctx.setLineDash([6 * scale, 12 * scale]);
+                    ctx.lineCap = 'round';
+                  } else {
+                    ctx.setLineDash([]);
+                  }
+                  roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+                  ctx.stroke();
+              }
+            }
+          } else if (!hasImage) {
+            ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
           ctx.restore();
         }
 
@@ -143,7 +238,12 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
               else { dw = w; dh = w / imgRatio; dy = y - (dh - h) / 2; }
               ctx.drawImage(img, dx, dy, dw, dh);
             } else {
-              ctx.drawImage(img, x, y, w, h);
+              const imgRatio = img.width / img.height;
+              const slotRatio = w / h;
+              let dw = w, dh = h, dx = x, dy = y;
+              if (imgRatio > slotRatio) { dw = w; dh = w / imgRatio; dy = y + (h - dh) / 2; }
+              else { dh = h; dw = h * imgRatio; dx = x + (w - dw) / 2; }
+              ctx.drawImage(img, dx, dy, dw, dh);
             }
             ctx.restore();
           } catch { /* skip broken images */ }
@@ -178,7 +278,25 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
         }
       }
 
-      setStripDataUrl(canvas.toDataURL('image/jpeg', 0.95));
+      if (cfg.borderStyle === 'ticket') {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        const r = (cfg.ticketHoleSize ?? 14) * scale;
+        const spacing = Math.max(r * 2, Math.round(r * 2.8));
+        ctx.beginPath();
+        for (let x = spacing / 2; x < OUT_W; x += spacing) {
+          ctx.moveTo(x + r, 0); ctx.arc(x, 0, r, 0, Math.PI * 2);
+          ctx.moveTo(x + r, OUT_H); ctx.arc(x, OUT_H, r, 0, Math.PI * 2);
+        }
+        for (let y = spacing / 2; y < OUT_H; y += spacing) {
+          ctx.moveTo(r, y); ctx.arc(0, y, r, 0, Math.PI * 2);
+          ctx.moveTo(OUT_W + r, y); ctx.arc(OUT_W, y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+        ctx.restore();
+      }
+
+      setStripDataUrl(canvas.toDataURL('image/png'));
       return;
     }
 
@@ -278,7 +396,7 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
       });
     }
 
-    setStripDataUrl(canvas.toDataURL('image/jpeg', 0.95));
+    setStripDataUrl(canvas.toDataURL('image/png'));
   }, [photos, frame, roundRect, loadImage]);
 
   useEffect(() => { renderStrip(); }, [renderStrip]);
@@ -296,7 +414,8 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
         <div className="animate-slideUp">
           <div style={{
             display: 'inline-block',
-            boxShadow: `0 24px 80px ${frame.borderColor}30, 0 8px 24px rgba(0,0,0,0.1)`,
+            boxShadow: frame.config?.borderStyle === 'ticket' ? 'none' : `0 24px 80px ${frame.borderColor}30, 0 8px 24px rgba(0,0,0,0.1)`,
+            filter: frame.config?.borderStyle === 'ticket' ? 'drop-shadow(0 8px 24px rgba(0,0,0,0.15))' : 'none',
             transform: 'rotate(-0.5deg)',
           }}>
             <canvas
