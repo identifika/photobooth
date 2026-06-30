@@ -12,8 +12,6 @@ interface Props {
 const LayoutPreview = ({ frame }: { frame: Frame }) => {
   const slots = Array.from({ length: frame.photoCount });
   const isGrid = frame.layout === 'grid-2x2';
-  const isStrip2 = frame.layout === 'strip-2';
-
   const gridClass = isGrid ? 'grid-2x2' : frame.layout;
 
   return (
@@ -29,14 +27,15 @@ const FrameCard = ({
   frame,
   isSelected,
   onClick,
-  isUserFrame,
+  index = 0,
 }: {
   frame: Frame;
   isSelected: boolean;
   onClick: () => void;
+  index?: number;
   isUserFrame?: boolean;
 }) => {
-  const scale = 0.2;
+  const scale = 0.35;
   const w = frame.config?.width ?? 400;
   const h = frame.config?.height ?? 600;
   const hasConfig = !!frame.config;
@@ -44,20 +43,46 @@ const FrameCard = ({
   return (
     <button
       onClick={onClick}
-      className={`frame-card ${isSelected ? 'selected' : ''} animate-fadeIn`}
+      className="animate-fadeIn text-center group flex flex-col items-center gap-2 w-full"
+      style={{ animationDelay: `${index * 0.08}s`, opacity: 0, outline: 'none' }}
     >
-      <div style={{ width: '100%', aspectRatio: '3/4', overflow: 'hidden', borderRadius: 6 }}>
-        {hasConfig ? (
-          <div style={{ width: w * scale, height: h * scale, overflow: 'hidden' }}>
+      <div
+        style={{
+          transform: isSelected ? 'translateY(-8px) rotate(-1.5deg)' : undefined,
+          transition: 'all 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
+          filter: isSelected ? `drop-shadow(0 12px 24px ${frame.borderColor ?? frame.accentColor}40)` : undefined,
+        }}
+        className="group-hover:-translate-y-2 group-hover:rotate-[-1deg] transition-all duration-300"
+      >
+        <div style={{ 
+          width: w * scale, 
+          height: h * scale, 
+          overflow: 'hidden', 
+          borderRadius: 8,
+          boxShadow: isSelected ? `0 0 0 3px ${frame.accentColor ?? 'var(--brand)'}` : '0 4px 12px rgba(0,0,0,0.05)',
+          transition: 'box-shadow 0.2s'
+        }}>
+          {hasConfig ? (
             <FramePreview config={frame.config!} scale={scale} />
-          </div>
-        ) : (
-          <LayoutPreview frame={frame} />
-        )}
+          ) : (
+            <LayoutPreview frame={frame} />
+          )}
+        </div>
       </div>
 
-      <div className="frame-name">{frame.emoji} {frame.name}</div>
-      <div className="frame-meta">{frame.photoCount} photos · {frame.layout.replace('-', ' ')}</div>
+      <div className="mt-2">
+        <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{frame.emoji} {frame.name}</div>
+        <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{frame.photoCount} photos · {frame.layout.replace('-', ' ')}</div>
+      </div>
+
+      {isSelected && (
+        <div className="mt-1 px-1 w-8">
+          <div
+            className="h-1 rounded-full mx-auto"
+            style={{ background: frame.accentColor ?? frame.borderColor }}
+          />
+        </div>
+      )}
     </button>
   );
 };
@@ -84,39 +109,53 @@ export default function FrameSelector({ selected, onSelect, userFrames = [] }: P
   const hasUserFrames = userFrames.length > 0;
 
   return (
-    <div className="w-full">
-      {/* User custom frames section */}
+    <div className="w-full animate-fadeIn">
+      <div className="text-center mb-10">
+        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Step 01</p>
+        <h2 className="font-display text-4xl font-bold" style={{ color: 'var(--ink)' }}>
+          Choose Your Frame
+        </h2>
+        <p className="mt-2 opacity-60 text-sm">Select a layout to begin your session</p>
+      </div>
+
       {hasUserFrames && (
-        <div className="mb-8">
-          <div className="section-label">My Frames</div>
-          <div className="pb-frames-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
-            {userFrames.map((frame) => (
+        <>
+          <div className="section-label mb-4">My Frames</div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto mb-10">
+            {userFrames.map((frame, i) => (
               <FrameCard
                 key={frame.id}
                 frame={frame}
+                index={i}
                 isSelected={selected?.id === frame.id}
                 onClick={() => onSelect(frame)}
                 isUserFrame
               />
             ))}
           </div>
-        </div>
+          <div className="section-label mb-4">Community Frames</div>
+        </>
       )}
 
-      {/* Public frames section */}
-      <div className="section-label">
-        {hasUserFrames ? 'Community Frames' : 'Choose a frame'}
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10, marginBottom: 32 }}>
-        {frames.map((frame) => (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
+        {frames.map((frame, i) => (
           <FrameCard
             key={frame.id}
             frame={frame}
+            index={hasUserFrames ? userFrames.length + i : i}
             isSelected={selected?.id === frame.id}
             onClick={() => onSelect(frame)}
           />
         ))}
       </div>
+
+      {selected && (
+        <div className="text-center mt-10 animate-fadeIn">
+          <p className="text-sm opacity-60">
+            {selected.emoji} <strong>{selected.name}</strong> selected — {selected.photoCount} photos
+          </p>
+        </div>
+      )}
     </div>
   );
 }

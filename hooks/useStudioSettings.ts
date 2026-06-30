@@ -1,5 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export interface StudioSettings {
   studioName: string;
@@ -13,34 +15,52 @@ const DEFAULT_SETTINGS: StudioSettings = {
   tagline: 'Capture the moment',
 };
 
-const STORAGE_KEY = 'photobooth_studio_settings';
+const DOC_ID = 'studio';
+const COLLECTION = 'public_settings';
 
 export function useStudioSettings() {
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load settings on mount
+  // Load settings on mount and listen to changes
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(stored) });
-      } catch (e) {
-        console.error('Failed to parse studio settings:', e);
+    const ref = doc(db, COLLECTION, DOC_ID);
+    const unsubscribe = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setSettings({ ...DEFAULT_SETTINGS, ...snap.data() as Partial<StudioSettings> });
+      } else {
+        setSettings(DEFAULT_SETTINGS);
       }
-    }
-    setIsLoaded(true);
+      setIsLoaded(true);
+    }, (error) => {
+      console.error('Failed to parse studio settings from Firestore:', error);
+      setIsLoaded(true); // Still set loaded on error so the app doesn't hang
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const updateSettings = (newSettings: Partial<StudioSettings>) => {
+  const updateSettings = async (newSettings: Partial<StudioSettings>) => {
     const updated = { ...settings, ...newSettings };
+    // Optimistic update
     setSettings(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    try {
+      const ref = doc(db, COLLECTION, DOC_ID);
+      await setDoc(ref, updated, { merge: true });
+    } catch (e) {
+      console.error('Failed to update studio settings in Firestore:', e);
+    }
   };
 
-  const resetSettings = () => {
+  const resetSettings = async () => {
+    // Optimistic update
     setSettings(DEFAULT_SETTINGS);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_SETTINGS));
+    try {
+      const ref = doc(db, COLLECTION, DOC_ID);
+      await setDoc(ref, DEFAULT_SETTINGS);
+    } catch (e) {
+      console.error('Failed to reset studio settings in Firestore:', e);
+    }
   };
 
   return {
