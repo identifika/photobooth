@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { loadUserFrame, createUserFrame, updateUserFrame } from '@/lib/user-frames';
-import { publishUserFrame, loadPublicFrame, updateAnyPublicFrame } from '@/lib/public-frames';
+import { loadPublicFrame, updateAnyPublicFrame } from '@/lib/public-frames';
+import { requestFramePublish, listUserPublishRequests, type PublishRequest } from '@/lib/publish-requests';
 import { isAdmin } from '@/hooks/useAdmin';
 import type { FrameConfig } from '@/lib/frame-types';
 import FrameEditor from '@/components/FrameEditor';
@@ -56,6 +57,7 @@ function EditorInner() {
   const [loaded, setLoaded] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState(false);
+  const [pendingRequest, setPendingRequest] = useState<PublishRequest | null>(null);
 
   const isEdit = !!frameId;
   const isPublicEdit = !!publicFrameId;
@@ -94,6 +96,11 @@ function EditorInner() {
           setCategoryId(frame.categoryId);
         }
         setLoaded(true);
+      });
+      // Load pending requests
+      listUserPublishRequests(user.uid).then((reqs) => {
+        const pending = reqs.find(req => req.frameId === frameId && req.status === 'pending');
+        if (pending) setPendingRequest(pending);
       });
       return;
     }
@@ -152,13 +159,22 @@ function EditorInner() {
         await updateUserFrame(user.uid, currentFrameId, { config, name: frameName, emoji: frameEmoji, categoryId });
       }
       
-      // Then publish to community
-      await publishUserFrame(user, { config, name: frameName });
+      // Then request publish to community
+      await requestFramePublish(currentFrameId, user, { config, name: frameName });
+      setPendingRequest({
+        id: 'temp-id',
+        frameId: currentFrameId,
+        user: { uid: user.uid, displayName: user.displayName },
+        frame: { config, name: frameName },
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      } as PublishRequest);
       setPublished(true);
       setTimeout(() => setPublished(false), 5000);
     } catch (err) {
       console.error('Publish failed:', err);
-      alert('Failed to publish frame. Check console.');
+      alert('Failed to send publish request. Check console.');
     } finally {
       setPublishing(false);
     }
@@ -232,7 +248,11 @@ function EditorInner() {
             <>
               {published ? (
                 <span className="text-xs text-green-600 font-medium flex items-center gap-1 animate-fadeIn">
-                  <Check className="w-3 h-3" /> Published to community
+                  <Check className="w-3 h-3" /> Publish request sent
+                </span>
+              ) : pendingRequest ? (
+                <span className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+                  Pending admin review
                 </span>
               ) : (
                 <Button
@@ -242,7 +262,7 @@ function EditorInner() {
                   className="flex items-center gap-1.5"
                 >
                   {publishing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
-                  {publishing ? 'Publishing...' : 'Publish to Community'}
+                  {publishing ? 'Requesting...' : 'Publish to Community'}
                 </Button>
               )}
               <Button onClick={handleSave} disabled={saving}>

@@ -8,9 +8,14 @@ import {
   listPublicFrames,
   createPublicFrame,
   deletePublicFrame,
-  publishUserFrame,
   type PublicFrame,
 } from '@/lib/public-frames';
+import {
+  requestFramePublish,
+  listUserPublishRequests,
+  listPendingRequests,
+  type PublishRequest,
+} from '@/lib/publish-requests';
 import type { Frame } from '@/lib/frames';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
@@ -52,13 +57,28 @@ export default function FramesPage() {
   const [publicFramesLoading, setPublicFramesLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [pendingPublishRequests, setPendingPublishRequests] = useState<Record<string, PublishRequest>>({});
+  const [pendingAdminRequestsCount, setPendingAdminRequestsCount] = useState(0);
 
-  // Load user frames
+  // Load user frames and their publish requests
   useEffect(() => {
     if (!user) return;
     setUserFramesLoading(true);
-    listUserFrames(user.uid)
-      .then(setUserFrames)
+    
+    Promise.all([
+      listUserFrames(user.uid),
+      listUserPublishRequests(user.uid)
+    ])
+      .then(([frames, requests]) => {
+        setUserFrames(frames);
+        const pendingMap: Record<string, PublishRequest> = {};
+        requests.forEach(req => {
+          if (req.status === 'pending') {
+            pendingMap[req.frameId] = req;
+          }
+        });
+        setPendingPublishRequests(pendingMap);
+      })
       .catch(console.error)
       .finally(() => setUserFramesLoading(false));
   }, [user]);
@@ -68,7 +88,12 @@ export default function FramesPage() {
     if (!isUserAdmin) return;
     setPublicFramesLoading(true);
     try {
-      setPublicFrames(await listPublicFrames());
+      const [frames, pendingReqs] = await Promise.all([
+        listPublicFrames(),
+        listPendingRequests()
+      ]);
+      setPublicFrames(frames);
+      setPendingAdminRequestsCount(pendingReqs.length);
     } catch (e) {
       console.error(e);
     }
@@ -102,11 +127,25 @@ export default function FramesPage() {
     }
     setPublishingId(frame.id);
     try {
-      await publishUserFrame(user, { config: frame.config, name: frame.name });
-      alert('Frame published to community!');
+      await requestFramePublish(frame.id, user, { config: frame.config, name: frame.name });
+      alert('Publish request sent! An admin will review your frame.');
+      
+      // Optimistically update the UI to show pending
+      setPendingPublishRequests(prev => ({
+        ...prev,
+        [frame.id]: {
+          id: 'temp-id',
+          frameId: frame.id,
+          user: { uid: user.uid, displayName: user.displayName },
+          frame: { config: frame.config, name: frame.name },
+          status: 'pending',
+          createdAt: new Date(),
+          updatedAt: new Date()
+        } as PublishRequest
+      }));
     } catch (e) {
       console.error(e);
-      alert('Failed to publish frame.');
+      alert('Failed to send publish request.');
     }
     setPublishingId(null);
   };
@@ -190,17 +229,30 @@ export default function FramesPage() {
                     </div>
                     
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handlePublishFrame(f)}
-                        disabled={publishingId === f.id}
-                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs transition"
-                        style={{ 
-                          background: publishingId === f.id ? 'var(--text-muted)' : 'var(--brand)',
-                          color: '#fff',
-                        }}
-                      >
-                        {publishingId === f.id ? 'Publishing...' : 'Publish'}
-                      </button>
+                      {pendingPublishRequests[f.id] ? (
+                        <div
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs transition"
+                          style={{ 
+                            background: 'var(--text-muted)',
+                            color: '#fff',
+                            cursor: 'default'
+                          }}
+                        >
+                          Pending Review
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handlePublishFrame(f)}
+                          disabled={publishingId === f.id}
+                          className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs transition"
+                          style={{ 
+                            background: publishingId === f.id ? 'var(--text-muted)' : 'var(--brand)',
+                            color: '#fff',
+                          }}
+                        >
+                          {publishingId === f.id ? 'Requesting...' : 'Publish'}
+                        </button>
+                      )}
                       <button
                         onClick={() => router.push(`/editor?id=${f.id}`)}
                         className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs border border-border hover:bg-accent transition"
@@ -231,9 +283,14 @@ export default function FramesPage() {
                 <Globe className="w-5 h-5 text-muted-foreground" />
                 <h2 className="font-bold text-lg text-foreground">Community Frames</h2>
               </div>
-              <Button onClick={() => {}} variant="outline" size="sm" disabled>
-                <Upload className="w-3 h-3 mr-1" />
-                Create Public
+              <Button onClick={() => router.push('/admin/reviews')} variant="outline" size="sm" className="relative">
+                <Globe className="w-3 h-3 mr-1" />
+                Review Requests
+                {pendingAdminRequestsCount > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                    {pendingAdminRequestsCount}
+                  </span>
+                )}
               </Button>
             </div>
 

@@ -6,7 +6,8 @@ import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { isAdmin } from '@/hooks/useAdmin';
 import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
-import { listPublicFramesByOwner, deletePublicFrameAsOwner, publishUserFrame, type PublicFrame } from '@/lib/public-frames';
+import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } from '@/lib/public-frames';
+import { requestFramePublish } from '@/lib/publish-requests';
 import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
@@ -118,14 +119,11 @@ export default function SettingsPage() {
     }
     setPublishingFrameId(frame.id);
     try {
-      await publishUserFrame(user, { config: frame.config, name: frame.name });
-      // Refresh published frames list
-      const published = await listPublicFramesByOwner(user.uid);
-      setMyPublishedFrames(published);
-      alert('Frame published to community!');
+      await requestFramePublish(frame.id, user, { config: frame.config, name: frame.name });
+      alert('Publish request sent! An admin will review your frame.');
     } catch (err) {
       console.error(err);
-      alert('Failed to publish frame. Check console.');
+      alert('Failed to send publish request. Check console.');
     }
     setPublishingFrameId(null);
   };
