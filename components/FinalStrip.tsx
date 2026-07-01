@@ -62,6 +62,18 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     ctx.closePath();
   }, []);
 
+  const formatDate = useCallback((date: Date, format: string): string => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate();
+    const m = date.getMonth();
+    const y = date.getFullYear();
+    return format
+      .replace('YYYY', String(y))
+      .replace('MMM', months[m])
+      .replace('MM', String(m + 1).padStart(2, '0'))
+      .replace('DD', String(d).padStart(2, '0'));
+  }, []);
+
   const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
     new Promise((res, rej) => {
       const img = new Image();
@@ -115,16 +127,16 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           else { dw = OUT_W; dh = OUT_W / imgRatio; dy = (OUT_H - dh) / 2; }
           ctx.drawImage(bgImg, dx, dy, dw, dh);
         } catch {
-          ctx.fillStyle = cfg.color ?? frame.color;
+          ctx.fillStyle = cfg.color ?? '#f5f0e8';
           ctx.fillRect(0, 0, OUT_W, OUT_H);
         }
       } else {
-        ctx.fillStyle = cfg.color ?? frame.color;
+        ctx.fillStyle = cfg.color ?? '#f5f0e8';
         ctx.fillRect(0, 0, OUT_W, OUT_H);
       }
       if (cfg.borderStyle !== 'ticket') {
         ctx.save();
-        ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
+        ctx.strokeStyle = cfg.borderColor ?? '#1a1410';
         ctx.lineWidth = 4 * scale;
         if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
         else if (cfg.borderStyle === 'dotted') {
@@ -137,7 +149,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
 
       // Accent bars
       const accentSz = cfg.accentSize ?? 4;
-      ctx.fillStyle = cfg.accentColor ?? frame.accentColor;
+      ctx.fillStyle = cfg.accentColor ?? '#e11d48';
       ctx.fillRect(0, 0, OUT_W, accentSz * scale);
       ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
 
@@ -197,17 +209,17 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           if (photoEl.borderWidth !== undefined) {
             if (photoEl.borderWidth > 0 || photoEl.borderStyle === 'ticket') {
               if (photoEl.borderWidth > 0 && photoEl.borderStyle !== 'ticket') {
-                  ctx.strokeStyle = photoEl.borderColor || '#000000';
-                  ctx.lineWidth = photoEl.borderWidth * scale;
-                  if (photoEl.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
-                  else if (photoEl.borderStyle === 'dotted') {
-                    ctx.setLineDash([6 * scale, 12 * scale]);
-                    ctx.lineCap = 'round';
-                  } else {
-                    ctx.setLineDash([]);
-                  }
-                  roundRect(ctx, x, y, w, h, el.borderRadius * scale);
-                  ctx.stroke();
+                ctx.strokeStyle = photoEl.borderColor || '#000000';
+                ctx.lineWidth = photoEl.borderWidth * scale;
+                if (photoEl.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
+                else if (photoEl.borderStyle === 'dotted') {
+                  ctx.setLineDash([6 * scale, 12 * scale]);
+                  ctx.lineCap = 'round';
+                } else {
+                  ctx.setLineDash([]);
+                }
+                roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+                ctx.stroke();
               }
             }
           } else if (!hasImage) {
@@ -228,6 +240,18 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
           const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
           ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+          ctx.restore();
+        }
+
+        if (el.type === 'date') {
+          const d = el as any;
+          ctx.save();
+          ctx.fillStyle = d.color;
+          ctx.font = `bold ${d.fontSize * scale}px "${d.font}", serif`;
+          ctx.textAlign = d.align === 'left' ? 'left' : d.align === 'right' ? 'right' : 'center';
+          const textX = d.align === 'left' ? x : d.align === 'right' ? x + w : x + w / 2;
+          const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
+          ctx.fillText(text, textX, y + d.fontSize * scale + 8);
           ctx.restore();
         }
 
@@ -445,12 +469,12 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         tempCanvas.width = PHOTO_W;
         tempCanvas.height = PHOTO_H;
         const ctx = tempCanvas.getContext('2d')!;
-        
+
         // object-fit: cover logic to avoid stretching
         const imgRatio = img.width / img.height;
         const canvasRatio = PHOTO_W / PHOTO_H;
         let dw = PHOTO_W, dh = PHOTO_H, dx = 0, dy = 0;
-        
+
         if (imgRatio > canvasRatio) {
           dh = PHOTO_H;
           dw = PHOTO_H * imgRatio;
@@ -460,7 +484,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           dh = PHOTO_W / imgRatio;
           dy = (PHOTO_H - dh) / 2;
         }
-        
+
         ctx.drawImage(img, dx, dy, dw, dh);
         gif.addFrame(tempCanvas, { delay: 500, copy: true });
       });
@@ -486,9 +510,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       const imgs = await Promise.all(photos.map(src => loadImage(src)));
       const pCanvas = document.createElement('canvas');
       const pCtx = pCanvas.getContext('2d')!;
-      
+
       const scale = 2; // High res
-      
+
       let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
       if (frame.config?.elements) {
         const photoSlots = frame.config.elements.filter(el => el.type === 'photo');
@@ -500,38 +524,38 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         }
       }
 
-      const P_WIDTH = 400 * scale; 
+      const P_WIDTH = 400 * scale;
       const paddingX = 12 * scale;
       const paddingTop = 24 * scale;
       const paddingBottom = 48 * scale;
-      
+
       const photoW = P_WIDTH - (paddingX * 2);
       const photoH = Math.round(photoW / currentAspectRatio);
       const P_HEIGHT = photoH + paddingTop + paddingBottom;
-      
+
       pCanvas.width = P_WIDTH;
       pCanvas.height = P_HEIGHT;
-      
+
       const urls: string[] = [];
-      
+
       for (let i = 0; i < imgs.length; i++) {
         const img = imgs[i];
         pCtx.clearRect(0, 0, P_WIDTH, P_HEIGHT);
-        
+
         pCtx.fillStyle = '#ffffff';
         pCtx.fillRect(0, 0, P_WIDTH, P_HEIGHT);
-        
+
         pCtx.fillStyle = `${frame.accentColor}99`; // roughly 60% opacity
         const tapeW = 64 * scale;
         const tapeH = 24 * scale;
         pCtx.fillRect(P_WIDTH / 2 - tapeW / 2, 0, tapeW, tapeH);
-        
+
         pCtx.save();
         pCtx.filter = 'sepia(10%) contrast(105%) brightness(98%)';
         pCtx.beginPath();
         pCtx.rect(paddingX, paddingTop, photoW, photoH);
         pCtx.clip();
-        
+
         const imgRatio = img.width / img.height;
         const slotRatio = photoW / photoH;
         let dw = photoW, dh = photoH, dx = paddingX, dy = paddingTop;
@@ -542,20 +566,20 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         }
         pCtx.drawImage(img, dx, dy, dw, dh);
         pCtx.restore();
-        
+
         pCtx.fillStyle = 'rgba(0,0,0,0.4)';
         pCtx.font = `italic ${12 * scale}px "Plus Jakarta Sans", "Inter", sans-serif`;
         pCtx.textAlign = 'left';
         pCtx.fillText(`${i + 1}/${imgs.length}`, paddingX, paddingTop + photoH + 20 * scale);
-        
+
         pCtx.fillStyle = 'rgba(0,0,0,0.7)';
         pCtx.font = `bold ${10 * scale}px "Plus Jakarta Sans", "Inter", sans-serif`;
         pCtx.textAlign = 'right';
         pCtx.fillText(frame.name.toUpperCase(), P_WIDTH - paddingX, paddingTop + photoH + 20 * scale);
-        
+
         urls.push(pCanvas.toDataURL('image/jpeg', 0.95));
       }
-      
+
       setPolaroidDataUrls(urls);
     } catch (err) {
       console.error('Polaroid generation failed:', err);
@@ -615,10 +639,10 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     setGeneratingClipGifs(false);
   }, [liveClips, convertClipToGif]);
 
-  useEffect(() => { 
-    renderStrip(); 
-    generateGif(); 
-    generateClipGifs(); 
+  useEffect(() => {
+    renderStrip();
+    generateGif();
+    generateClipGifs();
     generatePolaroids();
   }, [renderStrip, generateGif, generateClipGifs, generatePolaroids]);
 
@@ -671,18 +695,18 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           <div className="flex flex-col items-center justify-center mb-8 gap-4 w-full">
             {!showStrip ? (
               <div className="h-[520px] flex items-center justify-center">
-                  <button 
-                    onClick={() => setShowStrip(true)} 
-                    className="py-4 px-8 rounded-full font-bold tracking-widest text-lg transition-all hover:scale-105 bg-primary text-primary-foreground shadow-2xl animate-pulse"
-                  >
-                    🖨️ PRINT STRIP
-                  </button>
+                <button
+                  onClick={() => setShowStrip(true)}
+                  className="py-4 px-8 rounded-full font-bold tracking-widest text-lg transition-all hover:scale-105 bg-primary text-primary-foreground shadow-2xl animate-pulse"
+                >
+                  🖨️ PRINT STRIP
+                </button>
               </div>
             ) : (
-              <PhotoStrip 
-                stripDataUrl={stripDataUrl} 
-                trigger={showStrip} 
-                onComplete={() => setPrintComplete(true)} 
+              <PhotoStrip
+                stripDataUrl={stripDataUrl}
+                trigger={showStrip}
+                onComplete={() => setPrintComplete(true)}
               />
             )}
           </div>

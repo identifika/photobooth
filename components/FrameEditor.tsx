@@ -12,6 +12,7 @@ import type {
     FrameImageElement,
     FrameEmojiElement,
     FrameStickerElement,
+    FrameDateElement,
     LayoutType,
 } from '@/lib/frame-types';
 import { Input } from '@/components/ui/input';
@@ -78,10 +79,10 @@ const ALIGN_OPTIONS = [
 type AlignType = typeof ALIGN_OPTIONS[number]['type'];
 
 const LAYER_TYPE_ICON: Record<string, string> = {
-    photo: '📷', title: '✏️', image: '🖼', emoji: '✨', sticker: '🌟',
+    photo: '📷', title: '✏️', image: '🖼', emoji: '✨', sticker: '🌟', date: '📅',
 };
 const LAYER_TYPE_LABEL: Record<string, string> = {
-    photo: 'Photo Slot', title: 'Title', image: 'Image', emoji: 'Emoji Row', sticker: 'Sticker',
+    photo: 'Photo Slot', title: 'Title', image: 'Image', emoji: 'Emoji Row', sticker: 'Sticker', date: 'Date Stamp',
 };
 
 type AnyElement = FrameElement;
@@ -440,6 +441,21 @@ function makeEmojiRowElement(id: string, x: number, y: number, emoji: string): F
 }
 function makeStickerElement(id: string, x: number, y: number, emoji: string): FrameStickerElement {
     return { id, type: 'sticker', x, y, width: 48, height: 48, emoji, rotation: 0 };
+}
+function makeDateElement(id: string, x: number, y: number): FrameDateElement {
+    return { id, type: 'date', x, y, width: 180, height: 30, format: 'MMM DD, YYYY', font: 'Inter', color: getDefaultTitleColor(), fontSize: 14, align: 'center' };
+}
+
+function formatDate(date: Date, format: string): string {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate();
+    const m = date.getMonth();
+    const y = date.getFullYear();
+    return format
+        .replace('YYYY', String(y))
+        .replace('MMM', months[m])
+        .replace('MM', String(m + 1).padStart(2, '0'))
+        .replace('DD', String(d).padStart(2, '0'));
 }
 
 function centerPhotoGroup(photos: FramePhotoElement[], canvasW: number, canvasH: number): FramePhotoElement[] {
@@ -1010,6 +1026,7 @@ export default function FrameEditor({
         updateElements([...elements, el]);
         setSelectedIds(new Set([el.id]));
     };
+    const addDate = () => { pushHistory(); const el = makeDateElement(uid(), canvasW / 2 - 90, canvasH - 50); updateElements([...elements, el]); setSelectedIds(new Set([el.id])); };
 
     const deleteSelected = () => {
         if (selectedIds.size === 0) return;
@@ -1089,13 +1106,14 @@ export default function FrameEditor({
             { label: 'Add Image', action: addImage },
             { label: 'Add Emoji Row', action: addEmojiRow },
             { label: 'Add Emoji Sticker', action: () => addSticker('✨') },
+            { label: 'Add Date Stamp', action: addDate },
         ];
         if (clipboard) {
             items.push({ separator: true });
             items.push({ label: 'Paste', shortcut: '⌘V', action: pasteClipboard });
         }
         return items;
-    }, [addPhoto, addTitle, addImage, addEmojiRow, addSticker, clipboard, pasteClipboard]);
+    }, [addPhoto, addTitle, addImage, addEmojiRow, addSticker, addDate, clipboard, pasteClipboard]);
 
     const onElementContextMenu = useCallback((e: React.MouseEvent, id: string) => {
         e.preventDefault();
@@ -1231,6 +1249,22 @@ export default function FrameEditor({
                 </div>
             );
         }
+        if (el.type === 'date') {
+            const dt = el as FrameDateElement;
+            const now = new Date();
+            const dateStr = formatDate(now, dt.format);
+            return (
+                <div key={el.id} style={{
+                    ...baseStyle,
+                    display: 'flex', alignItems: 'center',
+                    justifyContent: dt.align === 'left' ? 'flex-start' : dt.align === 'right' ? 'flex-end' : 'center',
+                    fontFamily: `'${dt.font}', sans-serif`, fontSize: dt.fontSize, color: dt.color,
+                    fontWeight: 500, textAlign: dt.align, pointerEvents: dragging ? 'none' : 'auto', userSelect: 'none',
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
+                    {dateStr}{resizeHandle}
+                </div>
+            );
+        }
         return null;
     };
 
@@ -1261,6 +1295,7 @@ export default function FrameEditor({
                         <Button variant="outline" size="sm" onClick={addImage} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🖼 Image</Button>
                         <Button variant="outline" size="sm" onClick={addEmojiRow} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✨ Emoji Row</Button>
                         <Button variant="outline" size="sm" onClick={() => addSticker('✨')} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🌟 Emoji Sticker</Button>
+                        <Button variant="outline" size="sm" onClick={addDate} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📅 Date Stamp</Button>
                     </div>
                 </div>
 
@@ -1794,6 +1829,49 @@ export default function FrameEditor({
                                         <div><FieldLabel isDark={isDark}>X</FieldLabel><Input type="number" value={el.x} onChange={(e) => updateElement(el.id, { x: +e.target.value })} /></div>
                                         <div><FieldLabel isDark={isDark}>Y</FieldLabel><Input type="number" value={el.y} onChange={(e) => updateElement(el.id, { y: +e.target.value })} /></div>
                                     </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* ── Date Stamp properties ── */}
+                        {selected.type === 'date' && (() => {
+                            const el = selected as FrameDateElement;
+                            const now = new Date();
+                            return (
+                                <div className={`border-t pt-3 space-y-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+                                    <div className={`flex items-center justify-center rounded border h-12 ${isDark ? 'border-slate-700 bg-slate-800' : 'border-gray-100 bg-gray-50'}`}>
+                                        <span style={{ fontFamily: `'${el.font}', sans-serif`, fontSize: el.fontSize, color: el.color, fontWeight: 500 }}>
+                                            {formatDate(now, el.format)}
+                                        </span>
+                                    </div>
+                                    <div><FieldLabel isDark={isDark}>Format</FieldLabel>
+                                        <select value={el.format} onChange={(e) => updateElement(el.id, { format: e.target.value })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
+                                            <option value="MMM DD, YYYY">Jan 15, 2024</option>
+                                            <option value="DD/MM/YYYY">15/01/2024</option>
+                                            <option value="MM/DD/YYYY">01/15/2024</option>
+                                            <option value="YYYY-MM-DD">2024-01-15</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Font</FieldLabel>
+                                        <select value={el.font} onChange={(e) => updateElement(el.id, { font: e.target.value })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
+                                            {FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div><FieldLabel isDark={isDark}>Size</FieldLabel><Input type="number" value={el.fontSize} onChange={(e) => updateElement(el.id, { fontSize: +e.target.value })} /></div>
+                                        <div>
+                                            <FieldLabel isDark={isDark}>Align</FieldLabel>
+                                            <select value={el.align} onChange={(e) => updateElement(el.id, { align: e.target.value as 'left' | 'center' | 'right' })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
+                                                <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Color</FieldLabel>
+                                        <ColorField value={el.color} onChange={(v) => updateElement(el.id, { color: v })} isDark={isDark} />
+                                    </div>
+                                    <XYFields x={el.x} y={el.y} onX={(v) => updateElement(el.id, { x: v })} onY={(v) => updateElement(el.id, { y: v })} isDark={isDark} />
                                 </div>
                             );
                         })()}

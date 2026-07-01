@@ -52,6 +52,18 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
     ctx.closePath();
   }, []);
 
+  const formatDate = useCallback((date: Date, format: string): string => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = date.getDate();
+    const m = date.getMonth();
+    const y = date.getFullYear();
+    return format
+      .replace('YYYY', String(y))
+      .replace('MMM', months[m])
+      .replace('MM', String(m + 1).padStart(2, '0'))
+      .replace('DD', String(d).padStart(2, '0'));
+  }, []);
+
   const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
     new Promise((res, rej) => {
       const img = new Image();
@@ -105,16 +117,16 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
           else { dw = OUT_W; dh = OUT_W / imgRatio; dy = (OUT_H - dh) / 2; }
           ctx.drawImage(bgImg, dx, dy, dw, dh);
         } catch {
-          ctx.fillStyle = cfg.color ?? frame.color;
+          ctx.fillStyle = cfg.color ?? '#f5f0e8';
           ctx.fillRect(0, 0, OUT_W, OUT_H);
         }
       } else {
-        ctx.fillStyle = cfg.color ?? frame.color;
+        ctx.fillStyle = cfg.color ?? '#f5f0e8';
         ctx.fillRect(0, 0, OUT_W, OUT_H);
       }
       if (cfg.borderStyle !== 'ticket') {
         ctx.save();
-        ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
+        ctx.strokeStyle = cfg.borderColor ?? '#1a1410';
         ctx.lineWidth = 6;
         if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
         else if (cfg.borderStyle === 'dotted') {
@@ -127,7 +139,7 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
 
       // Accent bars
       const accentSz = cfg.accentSize ?? 4;
-      ctx.fillStyle = cfg.accentColor ?? frame.accentColor;
+      ctx.fillStyle = cfg.accentColor ?? '#e11d48';
       ctx.fillRect(0, 0, OUT_W, accentSz * scale);
       ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
 
@@ -220,6 +232,18 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
           ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
           const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
           ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+          ctx.restore();
+        }
+
+        if (el.type === 'date') {
+          const d = el as any;
+          ctx.save();
+          ctx.fillStyle = d.color;
+          ctx.font = `bold ${d.fontSize * scale}px "${d.font}", serif`;
+          ctx.textAlign = d.align === 'left' ? 'left' : d.align === 'right' ? 'right' : 'center';
+          const textX = d.align === 'left' ? x : d.align === 'right' ? x + w : x + w / 2;
+          const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
+          ctx.fillText(text, textX, y + d.fontSize * scale + 8);
           ctx.restore();
         }
 

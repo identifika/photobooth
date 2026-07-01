@@ -69,12 +69,28 @@ export interface FrameStickerElement {
   hidden?: boolean;
 }
 
+export interface FrameDateElement {
+  id: string;
+  type: 'date';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  format: string;
+  font: string;
+  color: string;
+  fontSize: number;
+  align: 'left' | 'center' | 'right';
+  hidden?: boolean;
+}
+
 export type FrameElement =
   | FramePhotoElement
   | FrameTitleElement
   | FrameImageElement
   | FrameEmojiElement
-  | FrameStickerElement;
+  | FrameStickerElement
+  | FrameDateElement;
 
 export interface FrameConfig {
   width?: number;

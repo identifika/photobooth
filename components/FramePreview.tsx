@@ -1,11 +1,23 @@
 'use client';
-import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, FrameStickerElement, FrameEmojiElement, FrameImageElement } from '@/lib/frame-types';
+import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, FrameStickerElement, FrameEmojiElement, FrameImageElement, FrameDateElement } from '@/lib/frame-types';
 
 const DEFAULT_W = 400;
 const DEFAULT_H = 600;
 
 function repeatEmoji(emoji: string, count: number, max = 40): string {
   return Array.from({ length: Math.min(Math.max(count, 0), max) }, () => emoji).join('');
+}
+
+function formatDate(date: Date, format: string): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const d = date.getDate();
+  const m = date.getMonth();
+  const y = date.getFullYear();
+  return format
+    .replace('YYYY', String(y))
+    .replace('MMM', months[m])
+    .replace('MM', String(m + 1).padStart(2, '0'))
+    .replace('DD', String(d).padStart(2, '0'));
 }
 
 interface Props {
@@ -119,6 +131,26 @@ export default function FramePreview({ config, scale = 0.5 }: Props) {
                 userSelect: 'none',
               }}>
                 {t.text || 'Title'}
+              </div>
+            );
+          }
+
+          if (el.type === 'date') {
+            const d = el as FrameDateElement;
+            const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
+            return (
+              <div key={el.id} style={{
+                ...base,
+                display: 'flex', alignItems: 'center',
+                justifyContent: d.align === 'left' ? 'flex-start' : d.align === 'right' ? 'flex-end' : 'center',
+                fontFamily: `'${d.font}', serif`,
+                fontSize: d.fontSize,
+                color: d.color,
+                fontWeight: 700,
+                textAlign: d.align,
+                userSelect: 'none',
+              }}>
+                {text}
               </div>
             );
           }

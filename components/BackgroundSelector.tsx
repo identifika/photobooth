@@ -300,7 +300,16 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           ctx.drawImage(fgImg, 0, 0);
           resolve(canvas.toDataURL('image/jpeg', 0.95));
         } else if (selectedBg.type === 'gradient' && selectedBg.src) {
-          ctx.fillStyle = '#FFFFFF';
+          const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+          const matches = Array.from(selectedBg.src.matchAll(/(#[A-Fa-f0-9]+)\s+(\d+)%/g));
+          if (matches.length > 0) {
+            for (const match of matches) {
+              grad.addColorStop(parseInt(match[2], 10) / 100, match[1]);
+            }
+            ctx.fillStyle = grad;
+          } else {
+            ctx.fillStyle = '#FFFFFF';
+          }
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(fgImg, 0, 0);
           resolve(canvas.toDataURL('image/jpeg', 0.95));

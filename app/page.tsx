@@ -104,7 +104,7 @@ export default function Home() {
 
   const handleAccept = (finalPhotoUrl: string, bgRemoved: boolean = false) => {
     if (!selectedFrame) return;
-    
+
     if (retakeIndex !== null) {
       // Replace the photo at the specific index
       const newPhotos = [...photos];
@@ -301,14 +301,14 @@ export default function Home() {
                     </>
                   )}
                   <button
-                    onClick={() => { 
-                      setShowUserMenu(false); 
+                    onClick={() => {
+                      setShowUserMenu(false);
                       if (isGuest) {
                         sessionStorage.removeItem('guest');
                         setIsGuest(false);
                         router.push('/login');
                       } else {
-                        signOut(); 
+                        signOut();
                       }
                     }}
                     style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-secondary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
@@ -418,7 +418,7 @@ export default function Home() {
       <div className="ticker" role="marquee">
         <div className="ticker-track">
           <span className="ticker-text">
-            {'📷 CAPTURE THE MOMENT · 🎞 PHOTOBOOTH STUDIO · ✨ MAKE MEMORIES · 🎭 STRIKE A POSE · 💫 SAY CHEESE · '.repeat(6)}
+            {'🎞 PHOTOBOOTH STUDIO · 📷 CAPTURE THE MOMENT · ✨ MAKE MEMORIES · 🎭 STRIKE A POSE · 💫 SAY CHEESE · '.repeat(6)}
           </span>
         </div>
       </div>
