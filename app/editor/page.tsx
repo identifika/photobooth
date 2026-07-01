@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Globe, Check, Loader2 } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 const EMPTY_CONFIG: FrameConfig = {
   width: 400,
@@ -39,6 +40,7 @@ function EditorInner() {
   const publicFrameId = searchParams.get('publicId');
   const { resolvedTheme } = useTheme();
   const { settings, isLoaded } = useStudioSettings();
+  const { alert } = useDialog();
   const isUserAdmin = user ? isAdmin(user.email) : false;
 
   const [config, setConfig] = useState<FrameConfig>(EMPTY_CONFIG);
@@ -137,7 +139,7 @@ function EditorInner() {
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       console.error('Save failed:', err);
-      alert('Failed to save frame. Check console.');
+      await alert('Failed to save frame. Check console.');
     } finally {
       setSaving(false);
     }
@@ -145,7 +147,7 @@ function EditorInner() {
 
   const handlePublish = useCallback(async () => {
     if (!user || !frameName.trim()) {
-      alert('Please give your frame a name before publishing.');
+      await alert('Please give your frame a name before publishing.');
       return;
     }
     setPublishing(true);
@@ -174,7 +176,7 @@ function EditorInner() {
       setTimeout(() => setPublished(false), 5000);
     } catch (err) {
       console.error('Publish failed:', err);
-      alert('Failed to send publish request. Check console.');
+      await alert('Failed to send publish request. Check console.');
     } finally {
       setPublishing(false);
     }

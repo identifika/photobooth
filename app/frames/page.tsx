@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Pencil, Trash2, Plus, Globe, Upload } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 const EMPTY_FRAME: Omit<Frame, 'id'> = {
   name: 'Untitled Frame',
@@ -39,6 +40,7 @@ export default function FramesPage() {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const { settings, isLoaded } = useStudioSettings();
+  const { alert, confirm } = useDialog();
 
   useEffect(() => {
     if (isLoaded && settings) {
@@ -110,25 +112,28 @@ export default function FramesPage() {
   };
 
   const handleDeleteUserFrame = async (id: string) => {
-    if (!user || !confirm('Delete this frame? This cannot be undone.')) return;
+    if (!user) return;
+    const isConfirmed = await confirm('Delete this frame? This cannot be undone.');
+    if (!isConfirmed) return;
     try {
       await deleteUserFrame(user.uid, id);
       setUserFrames((prev) => prev.filter((f) => f.id !== id));
     } catch (e) {
       console.error(e);
-      alert('Failed to delete frame.');
+      await alert('Failed to delete frame.');
     }
   };
 
   const handlePublishFrame = async (frame: UserFrame) => {
-    if (!user || !frame.name) {
-      alert('Please give the frame a name before publishing.');
+    if (!user) return;
+    if (!frame.name) {
+      await alert('Please give the frame a name before publishing.');
       return;
     }
     setPublishingId(frame.id);
     try {
       await requestFramePublish(frame.id, user, { config: frame.config, name: frame.name });
-      alert('Publish request sent! An admin will review your frame.');
+      await alert('Publish request sent! An admin will review your frame.');
       
       // Optimistically update the UI to show pending
       setPendingPublishRequests(prev => ({
@@ -145,13 +150,14 @@ export default function FramesPage() {
       }));
     } catch (e) {
       console.error(e);
-      alert('Failed to send publish request.');
+      await alert('Failed to send publish request.');
     }
     setPublishingId(null);
   };
 
   const handleDeletePublicFrame = async (id: string) => {
-    if (!confirm('Delete this community frame?')) return;
+    const isConfirmed = await confirm('Delete this community frame?');
+    if (!isConfirmed) return;
     try {
       await deletePublicFrame(id);
       await refreshPublic();

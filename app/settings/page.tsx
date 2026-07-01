@@ -9,6 +9,7 @@ import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-fram
 import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } from '@/lib/public-frames';
 import { requestFramePublish } from '@/lib/publish-requests';
 import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -17,6 +18,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const { settings, updateSettings, resetSettings, isLoaded } = useStudioSettings();
+  const { alert, confirm } = useDialog();
 
   const [studioName, setStudioName] = useState('');
   const [studioLogo, setStudioLogo] = useState('');
@@ -89,7 +91,9 @@ export default function SettingsPage() {
   };
 
   const handleDeleteFrame = async (frameId: string) => {
-    if (!user || !confirm('Unpublish this frame? It will be removed from the community.')) return;
+    if (!user) return;
+    const isConfirmed = await confirm('Unpublish this frame? It will be removed from the community.');
+    if (!isConfirmed) return;
     try {
       const deleted = await deletePublicFrameAsOwner(frameId, user.uid);
       if (deleted) {
@@ -97,33 +101,36 @@ export default function SettingsPage() {
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to delete frame. Check console.');
+      await alert('Failed to delete frame. Check console.');
     }
   };
 
   const handleDeleteCustomFrame = async (frameId: string) => {
-    if (!user || !confirm('Delete this frame? This cannot be undone.')) return;
+    if (!user) return;
+    const isConfirmed = await confirm('Delete this frame? This cannot be undone.');
+    if (!isConfirmed) return;
     try {
       await deleteUserFrame(user.uid, frameId);
       setMyCustomFrames((prev) => prev.filter((f) => f.id !== frameId));
     } catch (err) {
       console.error(err);
-      alert('Failed to delete frame. Check console.');
+      await alert('Failed to delete frame. Check console.');
     }
   };
 
   const handlePublishFrame = async (frame: UserFrame) => {
-    if (!user || !frame.name) {
-      alert('Please give the frame a name before publishing.');
+    if (!user) return;
+    if (!frame.name) {
+      await alert('Please give the frame a name before publishing.');
       return;
     }
     setPublishingFrameId(frame.id);
     try {
       await requestFramePublish(frame.id, user, { config: frame.config, name: frame.name });
-      alert('Publish request sent! An admin will review your frame.');
+      await alert('Publish request sent! An admin will review your frame.');
     } catch (err) {
       console.error(err);
-      alert('Failed to send publish request. Check console.');
+      await alert('Failed to send publish request. Check console.');
     }
     setPublishingFrameId(null);
   };

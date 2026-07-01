@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
+import { DialogProvider } from "@/components/ui/dialog-provider";
 
 export const metadata: Metadata = {
   title: {
@@ -32,7 +33,11 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <DialogProvider>
+              {children}
+            </DialogProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

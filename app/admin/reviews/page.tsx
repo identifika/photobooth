@@ -13,11 +13,13 @@ import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Globe, Check, X, Loader2 } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 export default function AdminReviewsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { settings, isLoaded } = useStudioSettings();
+  const { alert, confirm } = useDialog();
 
   useEffect(() => {
     if (isLoaded && settings) {
@@ -46,28 +48,30 @@ export default function AdminReviewsPage() {
   }, [user, loading, isUserAdmin, router]);
 
   const handleApprove = async (id: string) => {
-    if (!confirm('Approve this frame to be published to the community?')) return;
+    const isConfirmed = await confirm('Approve this frame to be published to the community?');
+    if (!isConfirmed) return;
     setProcessingId(id);
     try {
       await approvePublishRequest(id);
       setRequests(prev => prev.filter(req => req.id !== id));
     } catch (e) {
       console.error(e);
-      alert('Failed to approve request.');
+      await alert('Failed to approve request.');
     } finally {
       setProcessingId(null);
     }
   };
 
   const handleReject = async (id: string) => {
-    if (!confirm('Reject this frame publish request?')) return;
+    const isConfirmed = await confirm('Reject this frame publish request?');
+    if (!isConfirmed) return;
     setProcessingId(id);
     try {
       await rejectPublishRequest(id);
       setRequests(prev => prev.filter(req => req.id !== id));
     } catch (e) {
       console.error(e);
-      alert('Failed to reject request.');
+      await alert('Failed to reject request.');
     } finally {
       setProcessingId(null);
     }

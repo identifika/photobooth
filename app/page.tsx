@@ -85,6 +85,19 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', close);
   }, [showUserMenu]);
 
+  // Warn before refreshing if session is active
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (step !== 'select' && step !== 'final') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [step]);
+
   const handleFrameSelect = (frame: Frame) => {
     setSelectedFrame(frame);
   };

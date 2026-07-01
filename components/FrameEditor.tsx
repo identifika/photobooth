@@ -17,6 +17,7 @@ import type {
 } from '@/lib/frame-types';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 // ── Constants ──
 
@@ -621,6 +622,7 @@ export default function FrameEditor({
 }: Props) {
     const { resolvedTheme } = useTheme();
     const isDark = resolvedTheme === 'dark';
+    const { alert } = useDialog();
 
     const canvasRef = useRef<HTMLDivElement>(null);
     const centerPanelRef = useRef<HTMLDivElement>(null);
@@ -1053,7 +1055,7 @@ export default function FrameEditor({
             const url = await uploadFrameImage(file, 'frame-elements', currentUserId);
             updateElement(elementId, { src: url } as any);
         } catch (error: any) {
-            alert(error.message || 'Upload failed');
+            await alert(error.message || 'Upload failed');
         } finally {
             setUploadingIds((prev) => {
                 const next = new Set(prev);
@@ -1579,7 +1581,7 @@ export default function FrameEditor({
                                                         const url = await uploadFrameImage(f, 'frame-backgrounds', currentUserId);
                                                         setBgImage(url);
                                                     } catch (err: any) {
-                                                        alert(err.message || 'Upload failed');
+                                                        await alert(err.message || 'Upload failed');
                                                     } finally {
                                                         setBgUploading(false);
                                                     }
