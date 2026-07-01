@@ -2,6 +2,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
 import GIF from 'gif.js';
+import PhotoStrip from './PhotoStrip';
 
 interface Props {
   photos: string[];
@@ -20,6 +21,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
   const [liveClipGifs, setLiveClipGifs] = useState<(string | null | 'pending' | 'error')[]>([]);
   const [generatingClipGifs, setGeneratingClipGifs] = useState(false);
   const [polaroidDataUrls, setPolaroidDataUrls] = useState<string[]>([]);
+  const [showStrip, setShowStrip] = useState(false);
+  const [printComplete, setPrintComplete] = useState(false);
 
   const roundRect = useCallback((
     ctx: CanvasRenderingContext2D,
@@ -665,15 +668,23 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
       <div className="max-w-4xl mx-auto">
         {/* Main strip preview */}
         {stripDataUrl ? (
-          <div className="animate-slideUp flex justify-center mb-8">
-            <div style={{
-              display: 'inline-block',
-              boxShadow: frame.config?.borderStyle === 'ticket' ? 'none' : `0 24px 80px ${frame.borderColor}30, 0 8px 24px rgba(0,0,0,0.1)`,
-              filter: frame.config?.borderStyle === 'ticket' ? 'drop-shadow(0 8px 24px rgba(0,0,0,0.15))' : 'none',
-              transform: 'rotate(-0.5deg)',
-            }}>
-              <img src={stripDataUrl} alt="Photo strip" className="max-w-full" style={{ display: 'block', filter: 'sepia(8%) contrast(1.03)', maxWidth: 400, width: '100%' }} />
-            </div>
+          <div className="flex flex-col items-center justify-center mb-8 gap-4 w-full">
+            {!showStrip ? (
+              <div className="h-[520px] flex items-center justify-center">
+                  <button 
+                    onClick={() => setShowStrip(true)} 
+                    className="py-4 px-8 rounded-full font-bold tracking-widest text-lg transition-all hover:scale-105 bg-primary text-primary-foreground shadow-2xl animate-pulse"
+                  >
+                    🖨️ PRINT STRIP
+                  </button>
+              </div>
+            ) : (
+              <PhotoStrip 
+                stripDataUrl={stripDataUrl} 
+                trigger={showStrip} 
+                onComplete={() => setPrintComplete(true)} 
+              />
+            )}
           </div>
         ) : (
           <div className="flex items-center justify-center h-32 mb-8">
@@ -682,8 +693,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         )}
 
         {/* Live result preview - show first live clip GIF if available */}
-        {liveClipGifs.some(g => g && g !== 'pending' && g !== 'error') && (
-          <div className="mb-6">
+        {printComplete && liveClipGifs.some(g => g && g !== 'pending' && g !== 'error') && (
+          <div className="mb-6 animate-slideUp">
             <h3 className="text-sm font-medium mb-3 opacity-70">Live Preview</h3>
             <div className="flex gap-4 justify-center">
               {liveClipGifs.map((gifUrl, i) => (
@@ -708,8 +719,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         )}
 
         {/* Download one by one - individual photos */}
-        {polaroidDataUrls.length > 0 && (
-          <div className="mb-6">
+        {printComplete && polaroidDataUrls.length > 0 && (
+          <div className="mb-6 animate-slideUp" style={{ animationDelay: '0.1s' }}>
             <h3 className="text-sm font-medium mb-3 opacity-70">Download Polaroids</h3>
             <div className="flex gap-4 justify-center flex-wrap">
               {polaroidDataUrls.map((photoUrl, i) => (
@@ -728,8 +739,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         )}
 
         {/* GIF preview and download */}
-        {gifDataUrl && (
-          <div className="mb-6 text-center">
+        {printComplete && gifDataUrl && (
+          <div className="mb-6 text-center animate-slideUp" style={{ animationDelay: '0.2s' }}>
             <h3 className="text-sm font-medium mb-3 opacity-70">Animated GIF Preview</h3>
             <div className="inline-block rounded-sm overflow-hidden" style={{ boxShadow: `0 8px 24px ${frame.borderColor}20` }}>
               <img src={gifDataUrl} alt="Animated GIF" className="max-h-48" />
@@ -738,8 +749,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         )}
 
         {/* Action buttons */}
-        {stripDataUrl && (
-          <div className="flex flex-col sm:flex-row gap-3 animate-fadeIn delay-200">
+        {printComplete && stripDataUrl && (
+          <div className="flex flex-col sm:flex-row gap-3 animate-slideUp" style={{ animationDelay: '0.3s' }}>
             <button onClick={handleDownload} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloading ? 0.7 : 1 }}>
               {downloading ? '✓ Saved!' : '↓ Download Strip'}
             </button>

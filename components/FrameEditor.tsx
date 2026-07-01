@@ -180,6 +180,93 @@ function LayerControls({ index, total, onFront, onBack, onForward, onBackward, i
     );
 }
 
+export interface ContextMenuItem {
+    label?: string;
+    shortcut?: string;
+    danger?: boolean;
+    disabled?: boolean;
+    separator?: boolean;
+    action?: () => void;
+}
+
+export interface ContextMenuState {
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+}
+
+function ContextMenu({ menu, onClose, isDark }: { menu: ContextMenuState | null; onClose: () => void; isDark: boolean }) {
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (!menu) return;
+        const handler = (e: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+                onClose();
+            }
+        };
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('mousedown', handler);
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('scroll', onClose, { passive: true });
+        return () => {
+            window.removeEventListener('mousedown', handler);
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('scroll', onClose);
+        };
+    }, [menu, onClose]);
+
+    if (!menu) return null;
+
+    let left = menu.x;
+    let top = menu.y;
+    if (typeof window !== 'undefined') {
+        const menuWidth = 220;
+        const menuHeight = menu.items.length * 30 + 16;
+        if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 8;
+        if (top + menuHeight > window.innerHeight) top = window.innerHeight - menuHeight - 8;
+    }
+
+    return (
+        <div
+            ref={menuRef}
+            style={{
+                position: 'fixed', left, top, zIndex: 1000,
+                minWidth: 180,
+            }}
+            className={`py-1 rounded shadow-xl border text-sm ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}
+            onContextMenu={(e) => e.preventDefault()}
+        >
+            {menu.items.map((item, i) => {
+                if (item.separator) {
+                    return <div key={i} className={`my-1 border-t ${isDark ? 'border-slate-700' : 'border-gray-100'}`} />;
+                }
+                return (
+                    <button
+                        key={i}
+                        disabled={item.disabled}
+                        onClick={() => {
+                            if (!item.disabled && item.action) {
+                                item.action();
+                                onClose();
+                            }
+                        }}
+                        className={`w-full flex items-center justify-between px-4 py-1.5 text-left transition
+                            ${item.disabled ? 'opacity-50 cursor-not-allowed' : (isDark ? 'hover:bg-slate-700' : 'hover:bg-gray-100')}
+                            ${item.danger ? 'text-red-500 hover:text-red-600' : (isDark ? 'text-slate-200' : 'text-gray-700')}
+                        `}
+                    >
+                        <span>{item.label}</span>
+                        {item.shortcut && <span className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>{item.shortcut}</span>}
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 function RotationControl({ value, onChange, isDark }: { value: number; onChange: (v: number) => void; isDark: boolean }) {
     return (
         <div>
@@ -533,6 +620,9 @@ export default function FrameEditor({
     const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
     const [clipboard, setClipboard] = useState<AnyElement | null>(null);
 
+    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
     // ── Undo/Redo history ──
     const historyRef = useRef<FrameConfig[]>([]);
     const futureRef = useRef<FrameConfig[]>([]);
@@ -659,6 +749,15 @@ export default function FrameEditor({
         },
         [elements, updateElements],
     );
+
+    const duplicateElement = useCallback((id: string) => {
+        const el = elements.find((e) => e.id === id);
+        if (!el) return;
+        pushHistory();
+        const newEl: AnyElement = { ...el, id: uid(), x: el.x + 16, y: el.y + 16 };
+        updateElements([...elements, newEl]);
+        setSelectedIds(new Set([newEl.id]));
+    }, [elements, pushHistory, updateElements]);
 
     // ── Layer ordering ──
     const bringToFront = useCallback((id: string) => {
@@ -866,6 +965,11 @@ export default function FrameEditor({
                 if (el) { setClipboard(el); e.preventDefault(); }
                 return;
             }
+            if (mod && e.key === 'd' && selectedId && !isTyping) {
+                e.preventDefault();
+                duplicateElement(selectedId);
+                return;
+            }
             if (mod && e.key === 'v' && clipboard && !isTyping) {
                 e.preventDefault();
                 pushHistory();
@@ -893,7 +997,7 @@ export default function FrameEditor({
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [selectedId, selectedIds, clipboard, elements, updateElements, undo, redo, pushHistory, canvasW, canvasH]);
+    }, [selectedId, selectedIds, clipboard, elements, updateElements, undo, redo, pushHistory, canvasW, canvasH, duplicateElement]);
 
     // ── Add element handlers ──
     const addPhoto = () => { pushHistory(); const el = makePhotoSlot(uid(), 50, 80, 150, 112); updateElements([...elements, el]); setSelectedIds(new Set([el.id])); };
@@ -942,6 +1046,87 @@ export default function FrameEditor({
         }
     };
 
+    // ── Context Menu Builders and Handlers ──
+    const buildElementMenuItems = useCallback((id: string): ContextMenuItem[] => {
+        const el = elements.find((e) => e.id === id);
+        if (!el) return [];
+        const isHidden = (el as any).hidden === true;
+        const idx = elements.findIndex((e) => e.id === id);
+        const isTop = idx === elements.length - 1;
+        const isBottom = idx === 0;
+
+        return [
+            { label: 'Duplicate', shortcut: '⌘D', action: () => duplicateElement(id) },
+            { label: 'Copy', shortcut: '⌘C', action: () => setClipboard(el) },
+            { label: isHidden ? 'Show' : 'Hide', action: () => toggleElementVisibility(id) },
+            { separator: true },
+            { label: 'Bring to Front', disabled: isTop, action: () => bringToFront(id) },
+            { label: 'Send to Back', disabled: isBottom, action: () => sendToBack(id) },
+            { label: 'Bring Forward', disabled: isTop, action: () => bringForward(id) },
+            { label: 'Send Backward', disabled: isBottom, action: () => sendBackward(id) },
+            { separator: true },
+            { label: 'Delete', danger: true, shortcut: '⌫', action: () => deleteElementById(id) }
+        ];
+    }, [elements, duplicateElement, setClipboard, toggleElementVisibility, bringToFront, sendToBack, bringForward, sendBackward, deleteElementById]);
+
+    const buildMultiSelectMenuItems = useCallback((): ContextMenuItem[] => {
+        return [
+            { label: 'Align Left', action: () => alignSelected('left') },
+            { label: 'Center Horizontal', action: () => alignSelected('center-h') },
+            { label: 'Align Right', action: () => alignSelected('right') },
+            { label: 'Align Top', action: () => alignSelected('top') },
+            { label: 'Center Vertical', action: () => alignSelected('center-v') },
+            { label: 'Align Bottom', action: () => alignSelected('bottom') },
+            { separator: true },
+            { label: `Delete (${selectedIds.size})`, danger: true, shortcut: '⌫', action: deleteSelected }
+        ];
+    }, [alignSelected, deleteSelected, selectedIds.size]);
+
+    const buildCanvasMenuItems = useCallback((): ContextMenuItem[] => {
+        const items: ContextMenuItem[] = [
+            { label: 'Add Photo Slot', action: addPhoto },
+            { label: 'Add Title Text', action: addTitle },
+            { label: 'Add Image', action: addImage },
+            { label: 'Add Emoji Row', action: addEmojiRow },
+            { label: 'Add Emoji Sticker', action: () => addSticker('✨') },
+        ];
+        if (clipboard) {
+            items.push({ separator: true });
+            items.push({ label: 'Paste', shortcut: '⌘V', action: pasteClipboard });
+        }
+        return items;
+    }, [addPhoto, addTitle, addImage, addEmojiRow, addSticker, clipboard, pasteClipboard]);
+
+    const onElementContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!selectedIds.has(id)) {
+            setSelectedIds(new Set([id]));
+            setContextMenu({ x: e.clientX, y: e.clientY, items: buildElementMenuItems(id) });
+        } else {
+            if (selectedIds.size > 1) {
+                setContextMenu({ x: e.clientX, y: e.clientY, items: buildMultiSelectMenuItems() });
+            } else {
+                setContextMenu({ x: e.clientX, y: e.clientY, items: buildElementMenuItems(id) });
+            }
+        }
+    }, [selectedIds, buildElementMenuItems, buildMultiSelectMenuItems]);
+
+    const onCanvasContextMenu = useCallback((e: React.MouseEvent) => {
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedIds(new Set());
+        setContextMenu({ x: e.clientX, y: e.clientY, items: buildCanvasMenuItems() });
+    }, [buildCanvasMenuItems]);
+
+    const onLayerRowContextMenu = useCallback((e: React.MouseEvent, id: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedIds(new Set([id]));
+        setContextMenu({ x: e.clientX, y: e.clientY, items: buildElementMenuItems(id) });
+    }, [buildElementMenuItems]);
+
     // ── Render element ──
     const renderElement = (el: AnyElement) => {
         if ((el as any).hidden) return null;
@@ -985,7 +1170,7 @@ export default function FrameEditor({
                     borderRadius: photoEl.borderRadius,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 12, color: config.borderColor ?? '#1a1410', opacity: opacity * 0.5,
-                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()}>
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     📷{resizeHandle}
                 </div>
             );
@@ -999,7 +1184,7 @@ export default function FrameEditor({
                     justifyContent: t.align === 'left' ? 'flex-start' : t.align === 'right' ? 'flex-end' : 'center',
                     fontFamily: `'${t.font}', serif`, fontSize: t.fontSize, color: t.color,
                     fontWeight: 700, textAlign: t.align, pointerEvents: dragging ? 'none' : 'auto', userSelect: 'none',
-                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()}>
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     {t.text || 'Title'}{resizeHandle}
                 </div>
             );
@@ -1008,7 +1193,7 @@ export default function FrameEditor({
             const img = el as FrameImageElement;
             return (
                 <div key={el.id} style={{ ...baseStyle, overflow: 'hidden', border: isSelected ? 'none' : '1px dashed #ccc', borderRadius: 4 }}
-                    onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()}>
+                    onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     {img.src
                         ? <img src={img.src} alt="" style={{ width: '100%', height: '100%', objectFit: img.objectFit, pointerEvents: 'none' }} />
                         : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f9fafb', color: '#9ca3af', fontSize: 11 }}>🖼 Image</div>
@@ -1026,7 +1211,7 @@ export default function FrameEditor({
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     overflow: 'hidden', whiteSpace: 'nowrap',
                     fontSize: 18, letterSpacing: `${row.spacing}px`, userSelect: 'none',
-                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()}>
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     {repeatEmoji(row.emoji, count)}{resizeHandle}
                 </div>
             );
@@ -1041,7 +1226,7 @@ export default function FrameEditor({
                     fontSize, lineHeight: 1, userSelect: 'none',
                     border: isSelected ? '1.5px dashed #3b82f680' : 'none',
                     borderRadius: 4,
-                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()}>
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     {st.emoji}{resizeHandle}
                 </div>
             );
@@ -1121,6 +1306,7 @@ export default function FrameEditor({
                                                     setSelectedIds(new Set([el.id]));
                                                 }
                                             }}
+                                            onContextMenu={(e) => onLayerRowContextMenu(e, el.id)}
                                             className={[
                                                 'group flex items-center gap-1.5 px-1.5 py-1 text-xs cursor-pointer select-none transition relative',
                                                 isSelected ? (isDark ? 'bg-slate-600/60' : 'bg-blue-50') : (isDark ? 'hover:bg-slate-700/60' : 'hover:bg-gray-50'),
@@ -1257,6 +1443,7 @@ export default function FrameEditor({
                                 onPointerLeave={onPointerLeave}
                                 onClick={onCanvasClick}
                                 onMouseDown={(e) => e.stopPropagation()}
+                                onContextMenu={onCanvasContextMenu}
                             >
                                 <div className="absolute top-0 left-0 right-0" style={{ height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
 
@@ -1618,6 +1805,8 @@ export default function FrameEditor({
                     <Button variant="outline" onClick={onCancel} className={`w-full ${isDark ? 'border-slate-600' : ''}`}>Cancel</Button>
                 </div>
             </div>
+            
+            <ContextMenu menu={contextMenu} onClose={closeContextMenu} isDark={isDark} />
         </div>
     );
 }
