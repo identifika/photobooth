@@ -14,6 +14,7 @@ import {
 import { db } from '@/lib/firebase';
 import type { Frame } from '@/lib/frames';
 import type { FrameConfig } from '@/lib/frame-types';
+import { applyCdnToFrameConfig } from '@/lib/cdn';
 
 export interface PublicFrame extends Frame {
   ownerUid?: string;
@@ -35,7 +36,11 @@ function colRef() {
 export async function listPublicFrames(): Promise<PublicFrame[]> {
   const q = query(colRef(), orderBy('sortOrder', 'asc'));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PublicFrame));
+  return snap.docs.map((d) => {
+    const data = d.data() as Omit<PublicFrame, 'id'>;
+    if (data.config) data.config = applyCdnToFrameConfig(data.config);
+    return { id: d.id, ...data } as PublicFrame;
+  });
 }
 
 /** Create a new public frame. Returns new doc ID. */
@@ -83,14 +88,20 @@ export async function updateAnyPublicFrame(
 export async function listPublicFramesByOwner(ownerUid: string): Promise<PublicFrame[]> {
   const q = query(colRef(), where('ownerUid', '==', ownerUid));
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as PublicFrame));
+  return snap.docs.map((d) => {
+    const data = d.data() as Omit<PublicFrame, 'id'>;
+    if (data.config) data.config = applyCdnToFrameConfig(data.config);
+    return { id: d.id, ...data } as PublicFrame;
+  });
 }
 
 /** Load a single public frame by ID. */
 export async function loadPublicFrame(frameId: string): Promise<PublicFrame | null> {
   const snap = await getDoc(doc(db, COLLECTION, frameId));
   if (!snap.exists()) return null;
-  return { id: snap.id, ...snap.data() } as PublicFrame;
+  const data = snap.data() as Omit<PublicFrame, 'id'>;
+  if (data.config) data.config = applyCdnToFrameConfig(data.config);
+  return { id: snap.id, ...data } as PublicFrame;
 }
 
 /** Update a public frame (only if owner matches). Returns true if updated. */

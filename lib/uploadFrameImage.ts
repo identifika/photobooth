@@ -38,6 +38,7 @@ export async function uploadFrameImage(
     Bucket: BUCKET_NAME,
     Key: path,
     ContentType: file.type || 'application/octet-stream',
+    CacheControl: 'max-age=31536000, public',
   });
 
   // Generate a presigned URL instead of sending the file directly via the SDK.
@@ -50,6 +51,7 @@ export async function uploadFrameImage(
     body: file,
     headers: {
       'Content-Type': file.type || 'application/octet-stream',
+      'Cache-Control': 'max-age=31536000, public',
     },
   });
 
@@ -60,6 +62,14 @@ export async function uploadFrameImage(
   }
 
   // Construct the public URL
+  if (process.env.NEXT_PUBLIC_CDN_URL) {
+    // If a CDN is configured (e.g., Cloudflare, CloudFront, etc.)
+    // It is expected to point to the root of the bucket or wrap the MinIO server.
+    // Ensure no trailing slash in CDN URL before joining.
+    const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL.replace(/\/$/, '');
+    return `${cdnUrl}/${BUCKET_NAME}/${path}`;
+  }
+
   const protocol = process.env.NEXT_PUBLIC_MINIO_USE_SSL === 'true' ? 'https' : 'http';
   const endpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
   const port = process.env.NEXT_PUBLIC_MINIO_PORT;

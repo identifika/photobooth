@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import type { FrameConfig } from '@/lib/frame-types';
+import { applyCdnToFrameConfig } from '@/lib/cdn';
 
 export interface UserFrame {
   id: string;
@@ -28,7 +29,11 @@ export interface UserFrame {
 export async function listUserFrames(uid: string): Promise<UserFrame[]> {
   const q = query(collection(db, 'user_frames'), where('uid', '==', uid));
   const snap = await getDocs(q);
-  const frames = snap.docs.map((d) => ({ id: d.id, ...d.data() } as UserFrame));
+  const frames = snap.docs.map((d) => {
+    const data = d.data() as Omit<UserFrame, 'id'>;
+    if (data.config) data.config = applyCdnToFrameConfig(data.config) as FrameConfig;
+    return { id: d.id, ...data } as UserFrame;
+  });
   
   // Sort in memory to avoid requiring a composite index in Firestore
   frames.sort((a, b) => {
@@ -44,8 +49,9 @@ export async function listUserFrames(uid: string): Promise<UserFrame[]> {
 export async function loadUserFrame(uid: string, frameId: string): Promise<UserFrame | null> {
   const snap = await getDoc(doc(db, 'user_frames', frameId));
   if (!snap.exists()) return null;
-  const data = snap.data();
+  const data = snap.data() as Omit<UserFrame, 'id'>;
   if (data.uid !== uid) return null; // Security check
+  if (data.config) data.config = applyCdnToFrameConfig(data.config) as FrameConfig;
   return { id: snap.id, ...data } as UserFrame;
 }
 
