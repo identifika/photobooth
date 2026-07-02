@@ -7,6 +7,8 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const nextConfig: NextConfig = {
   ...((isTauri || isStatic) ? { output: 'export' } : {}),
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
+  // @ts-ignore - added to allow cross-origin dev testing from other devices on the same network
+  allowedDevOrigins: ['192.168.0.186', '4d52-103-156-227-0.ngrok-free.app'],
   turbopack: {},
   images: {
     unoptimized: true,

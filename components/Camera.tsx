@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
   frame: Frame;
@@ -25,6 +26,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
   const streamRef = useRef<MediaStream | null>(null);
   const liveFramesRef = useRef<string[]>([]);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isMobile = useIsMobile();
 
   const activeIndex = isRetake && retakeIndex !== undefined ? retakeIndex : photoIndex;
   
@@ -194,22 +196,22 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
 
   return (
     <div className="w-full animate-fadeIn">
-      <div className="text-center mb-8">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">
-          {isRetake ? 'Retake' : 'Step 02'}
-        </p>
-        <h2 className="font-display text-4xl font-bold">
-          {isRetake ? (
-            <>Retake Photo <span className="opacity-40">#{retakeIndex! + 1}</span></>
-          ) : (
-            <>Photo {photoIndex + 1} <span className="opacity-40">of {totalPhotos}</span></>
-          )}
-        </h2>
-        <p className="mt-2 opacity-60 text-sm">{frame.emoji} {frame.name}</p>
-      </div>
+    <div className="text-center mb-8">
+      <p className={`text-sm tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : ''}`}>
+        {isRetake ? 'Retake' : 'Step 02'}
+      </p>
+      <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
+        {isRetake ? (
+          <>Retake Photo <span className="opacity-40">#{retakeIndex! + 1}</span></>
+        ) : (
+          <>Photo {photoIndex + 1} <span className="opacity-40">of {totalPhotos}</span></>
+        )}
+      </h2>
+      <p className="mt-2 opacity-60 text-sm">{frame.emoji} {frame.name}</p>
+    </div>
 
-      {/* Progress dots */}
-      <div className="flex justify-center gap-3 mb-8">
+    {/* Progress dots */}
+    <div className="flex justify-center gap-3 mb-8">
         {Array.from({ length: totalPhotos }).map((_, i) => (
           <div key={i} style={{
             width: i === photoIndex ? 24 : 10,
@@ -234,7 +236,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
               style={{
                 aspectRatio: String(currentAspectRatio),
                 width: '100%',
-                maxWidth: `min(32rem, 55vh * ${currentAspectRatio})`,
+                maxWidth: isMobile ? `min(100%, 60vh * ${currentAspectRatio})` : `min(32rem, 55vh * ${currentAspectRatio})`,
                 border: `4px solid ${frame.borderColor}`,
                 boxShadow: `0 20px 60px ${frame.borderColor}30`,
               }}
@@ -306,7 +308,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
               {countdown !== null && (
                 <div className="absolute inset-0 flex items-center justify-center"
                   style={{ background: 'rgba(0,0,0,0.3)' }}>
-                  <div className="text-white font-display text-9xl font-black"
+                  <div className={`text-white font-display font-black ${isMobile ? 'text-6xl' : 'text-9xl'}`}
                     style={{ textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
                     {countdown}
                   </div>

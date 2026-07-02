@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDatePeerConnection } from "@/lib/useDatePeerConnection";
 import { Frame, FRAMES, layoutToConfig } from "@/lib/frames";
 import FinalStrip from "@/components/FinalStrip";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 export type CaptureMode = "merged" | "left" | "right";
 
@@ -53,6 +54,7 @@ export type CaptureMode = "merged" | "left" | "right";
     const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
+    const isMobile = useIsMobile();
 
     const { status, localStream, remoteStream, sendSync } = useDatePeerConnection({
       signalUrl,
@@ -295,9 +297,9 @@ export type CaptureMode = "merged" | "left" | "right";
   };
 
   const chatUI = status === "connected" ? (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    <div className={`fixed z-50 flex flex-col items-end ${isMobile ? 'bottom-0 left-0 right-0 px-3 pb-3' : 'bottom-6 right-6'}`}>
       {chatOpen ? (
-        <div className="w-80 h-[28rem] bg-surface-1 border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden mb-4">
+        <div className={`bg-surface-1 border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden mb-4 ${isMobile ? 'w-full h-[22rem]' : 'w-80 h-[28rem]'}`}>
           <div className="p-3 border-b border-border flex justify-between items-center bg-surface-2">
             <span className="font-mono text-xs font-bold tracking-widest uppercase text-foreground">Chat Session</span>
             <button onClick={() => setChatOpen(false)} className="opacity-50 hover:opacity-100 text-lg leading-none text-foreground">&times;</button>
@@ -370,10 +372,10 @@ export type CaptureMode = "merged" | "left" | "right";
   return (
     <div className="w-full animate-fadeIn max-w-3xl mx-auto flex flex-col items-center">
       <div className="text-center mb-8">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">
+        <p className={`tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
           Date Session
         </p>
-        <h2 className="font-display text-4xl font-bold">
+        <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
           {photos.length > 0 ? (
             <>Photo {photos.length + 1} <span className="opacity-40">of {activeFrame.photoCount}</span></>
           ) : (
@@ -402,7 +404,7 @@ export type CaptureMode = "merged" | "left" | "right";
         style={{
           aspectRatio: String(currentAspectRatio),
           width: '100%',
-          maxWidth: `min(32rem, 55vh * ${currentAspectRatio})`,
+          maxWidth: isMobile ? `min(100%, 60vh * ${currentAspectRatio})` : `min(32rem, 55vh * ${currentAspectRatio})`,
           border: `4px solid ${activeFrame.borderColor}`,
           boxShadow: `0 20px 60px ${activeFrame.borderColor}30`,
           background: activeFrame.color,
@@ -465,7 +467,7 @@ export type CaptureMode = "merged" | "left" | "right";
         {countdown !== null && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
             style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <div className="text-white font-display text-9xl font-black"
+            <div className={`text-white font-display font-black ${isMobile ? 'text-6xl' : 'text-9xl'}`}
               style={{ textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
               {countdown}
             </div>

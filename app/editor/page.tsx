@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Globe, Check, Loader2 } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
-import { useDialog } from '@/components/ui/dialog-provider';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const EMPTY_CONFIG: FrameConfig = {
   width: 400,
@@ -40,8 +40,20 @@ function EditorInner() {
   const publicFrameId = searchParams.get('publicId');
   const { resolvedTheme } = useTheme();
   const { settings, isLoaded } = useStudioSettings();
-  const { alert } = useDialog();
   const isUserAdmin = user ? isAdmin(user.email) : false;
+  const isMobile = useIsMobile();
+
+  if (isMobile) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-background px-6">
+        <div className="text-center">
+          <p className="text-4xl mb-4">🖥️</p>
+          <h2 className="font-display text-xl font-bold mb-2">Desktop Recommended</h2>
+          <p className="text-sm text-muted-foreground">The Frame Editor works best on a larger screen. Please use a tablet or desktop.</p>
+        </div>
+      </main>
+    );
+  }
 
   const [config, setConfig] = useState<FrameConfig>(EMPTY_CONFIG);
   const [frameName, setFrameName] = useState('');

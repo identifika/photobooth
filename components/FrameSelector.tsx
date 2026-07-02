@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Frame, loadPublicFrames } from '@/lib/frames';
 import FramePreview from '@/components/FramePreview';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
   selected: Frame | null;
@@ -93,6 +94,7 @@ const FrameCard = ({
 export default function FrameSelector({ selected, onSelect, userFrames = [] }: Props) {
   const [frames, setFrames] = useState<Frame[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     loadPublicFrames()
@@ -114,11 +116,11 @@ export default function FrameSelector({ selected, onSelect, userFrames = [] }: P
   return (
     <div className="w-full animate-fadeIn">
       <div className="text-center mb-10">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Step 01</p>
-        <h2 className="font-display text-4xl font-bold" style={{ color: 'var(--ink)' }}>
+        <p className={`tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>Step 01</p>
+        <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`} style={{ color: 'var(--ink)' }}>
           Choose Your Frame
         </h2>
-        <p className="mt-2 opacity-60 text-sm">Select a layout to begin your session</p>
+        <p className={`mt-2 opacity-60 ${isMobile ? 'text-xs' : 'text-sm'}`}>Select a layout to begin your session</p>
       </div>
 
       {hasUserFrames && (

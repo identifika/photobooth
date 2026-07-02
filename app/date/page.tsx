@@ -9,6 +9,7 @@ import { type Frame } from "@/lib/frames";
 import { listUserFrames, type UserFrame } from "@/lib/user-frames";
 import { useStudioSettings } from "@/hooks/useStudioSettings";
 import { ThemeToggle } from "@/hooks/useTheme";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 function userFrameToFrame(f: UserFrame): Frame {
   const photoCount = Math.max(1, f.config.elements?.filter((e) => e.type === "photo").length || 4);
@@ -36,6 +37,7 @@ export default function StartDatePage() {
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [userFrames, setUserFrames] = useState<UserFrame[]>([]);
   const [captureMode, setCaptureMode] = useState<"merged" | "alternating">("merged");
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (!user) { setUserFrames([]); return; }
@@ -60,31 +62,31 @@ export default function StartDatePage() {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 16 }}>
+        <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: isMobile ? 56 : 64, gap: isMobile ? 8 : 16 }}>
 
           {/* Logo */}
-          <button onClick={() => router.push('/')} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+          <button onClick={() => router.push('/')} className="flex items-center gap-2 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
             <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
-              style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand)', fontSize: 18 }}>
+              style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 8 : 10, background: 'var(--brand)', fontSize: isMobile ? 16 : 18 }}>
               {studioLogo}
             </div>
-            <div className="text-left">
-              <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>
+            <div className={`text-left ${isMobile ? 'hidden sm:block' : ''}`}>
+              <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
+              {!isMobile && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>}
             </div>
           </button>
           
-          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <div className="flex items-center" style={{ flexShrink: 0, gap: isMobile ? 4 : 8 }}>
             <ThemeToggle />
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col" style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px 80px', width: '100%' }}>
+      <main className="flex-1 flex flex-col" style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px', width: '100%' }}>
         <div className="text-center max-w-md mx-auto mb-12">
-          <h1 className="font-display text-3xl font-bold mb-2">Photobooth for Two</h1>
-          <p className="text-sm opacity-60">
+          <h1 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-3xl'}`}>Photobooth for Two</h1>
+          <p className={`opacity-60 mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
             Pick a frame, start a session, send your date the link, and take a photo together — wherever you both are.
           </p>
         </div>
@@ -96,8 +98,8 @@ export default function StartDatePage() {
         />
 
         {selectedFrame && (
-          <div className="fixed z-50 animate-fadeIn bg-[var(--surface-2)]/90 backdrop-blur-md border border-[var(--border)] rounded-xl p-4 shadow-xl" style={{ bottom: '80px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px' }}>
-              <button className="begin-btn w-full justify-center" onClick={handleStart} style={{ boxShadow: 'var(--shadow-md)' }}>
+          <div className={`fixed z-50 animate-fadeIn bg-[var(--surface-2)]/90 backdrop-blur-md border border-[var(--border)] shadow-xl ${isMobile ? 'bottom-6 left-4 right-4' : ''}`} style={isMobile ? {} : { bottom: '80px', left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px' }}>
+              <button className={`begin-btn w-full justify-center ${isMobile ? '!rounded-lg' : ''}`} onClick={handleStart} style={{ boxShadow: 'var(--shadow-md)', ...(isMobile ? { display: 'flex', width: '100%', padding: '0 16px' } : {}) }}>
                 Start session
                 <span className="arrow">→</span>
               </button>

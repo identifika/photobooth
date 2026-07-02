@@ -469,7 +469,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = PHOTO_W;
         tempCanvas.height = PHOTO_H;
-        const ctx = tempCanvas.getContext('2d')!;
+        const ctx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
 
         // object-fit: cover logic to avoid stretching
         const imgRatio = img.width / img.height;
@@ -487,7 +487,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         }
 
         ctx.drawImage(img, dx, dy, dw, dh);
-        gif.addFrame(tempCanvas, { delay: 500, copy: true });
+        // Pass ImageData directly to avoid gif.js creating a readback-expensive context
+        const imageData = ctx.getImageData(0, 0, PHOTO_W, PHOTO_H);
+        gif.addFrame(imageData, { delay: 500, copy: true });
       });
 
       await new Promise<void>((resolve, reject) => {
@@ -510,7 +512,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     try {
       const imgs = await Promise.all(photos.map(src => loadImage(src)));
       const pCanvas = document.createElement('canvas');
-      const pCtx = pCanvas.getContext('2d')!;
+      const pCtx = pCanvas.getContext('2d', { willReadFrequently: true })!;
 
       const scale = 2; // High res
 
@@ -600,7 +602,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     const canvas = document.createElement('canvas');
     canvas.width = firstImg.width;
     canvas.height = firstImg.height;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     for (const frameSrc of frames) {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const i = new Image();

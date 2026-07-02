@@ -10,6 +10,7 @@ import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } f
 import { requestFramePublish } from '@/lib/publish-requests';
 import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -19,6 +20,7 @@ export default function SettingsPage() {
   const { resolvedTheme } = useTheme();
   const { settings, updateSettings, resetSettings, isLoaded } = useStudioSettings();
   const { alert, confirm } = useDialog();
+  const isMobile = useIsMobile();
 
   const [studioName, setStudioName] = useState('');
   const [studioLogo, setStudioLogo] = useState('');
@@ -148,20 +150,20 @@ export default function SettingsPage() {
   return (
     <main className="min-h-screen" style={{ background: 'var(--bg)' }}>
       {/* Header */}
-      <header style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="flex items-center gap-3">
+      <header style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)', padding: isMobile ? '12px 12px' : '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="flex items-center gap-2">
           <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center" style={{ width: 32, height: 32, background: 'var(--brand)', borderRadius: 8 }}>
-              <span style={{ fontSize: 16 }}>{settings.studioLogo}</span>
+            <div className="flex items-center justify-center" style={{ width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, background: 'var(--brand)', borderRadius: 8 }}>
+              <span style={{ fontSize: isMobile ? 14 : 16 }}>{settings.studioLogo}</span>
             </div>
-            <h1 className="font-medium text-lg" style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
+            <h1 className={`font-medium ${isMobile ? 'text-base' : 'text-lg'}`} style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
           <ThemeToggle />
           <button 
             onClick={() => router.push('/')} 
-            className="text-sm"
+            className={`text-xs ${isMobile ? 'text-[11px]' : ''}`}
             style={{ color: 'var(--text-secondary)' }}
           >
             ← Back
@@ -169,7 +171,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: isMobile ? '16px 12px' : '32px 24px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
           
           {/* Studio Branding Section - ADMIN ONLY */}

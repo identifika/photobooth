@@ -13,6 +13,8 @@ import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-fram
 import { isAdmin } from '@/hooks/useAdmin';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { useDialog } from '@/components/ui/dialog-provider';
 
 type Step = 'select' | 'camera' | 'review' | 'background' | 'preview' | 'final';
 
@@ -60,6 +62,8 @@ export default function Home() {
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [photosBgRemoved, setPhotosBgRemoved] = useState<boolean[]>([]);
   const [isGuest, setIsGuest] = useState<boolean | null>(null);
+  const isMobile = useIsMobile();
+  const { alert } = useDialog();
 
   useEffect(() => {
     setIsGuest(sessionStorage.getItem('guest') === 'true');
@@ -223,17 +227,17 @@ export default function Home() {
     <>
       {/* Header */}
       <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 16 }}>
+        <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: isMobile ? 56 : 64, gap: isMobile ? 8 : 16 }}>
 
           {/* Logo */}
-          <button onClick={handleRestart} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+          <button onClick={handleRestart} className="flex items-center gap-2 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
             <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
-              style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand)', fontSize: 18 }}>
+              style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 8 : 10, background: 'var(--brand)', fontSize: isMobile ? 16 : 18 }}>
               {studioLogo}
             </div>
-            <div>
-              <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>
+            <div className={isMobile ? 'hidden sm:block' : ''}>
+              <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
+              {!isMobile && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>}
             </div>
           </button>
 
@@ -255,9 +259,9 @@ export default function Home() {
           </nav>
 
           {/* Header actions */}
-          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
+          <div className="flex items-center" style={{ flexShrink: 0, gap: isMobile ? 4 : 8 }}>
             <ThemeToggle />
-            {user && isAdmin(user.email) && (
+            {!isMobile && user && isAdmin(user.email) && (
               <>
                 <button className="btn ghost" onClick={() => router.push('/frames')}>Frames</button>
                 <button className="btn ghost" onClick={() => router.push('/settings')} aria-label="Settings">
@@ -268,11 +272,17 @@ export default function Home() {
                 </button>
               </>
             )}
-            <button className="btn ghost" onClick={() => router.push('/date')}>
-              Date Mode
+            <button className={`btn ghost ${isMobile ? '!px-2 !py-1 !text-xs' : ''}`} onClick={() => router.push('/date')}>
+              {isMobile ? '💕' : 'Date Mode'}
             </button>
             {!isGuest && (
-              <button className="btn primary" onClick={() => router.push('/editor')}>
+              <button className="btn primary" onClick={() => {
+                if (isMobile) {
+                  alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
+                } else {
+                  router.push('/editor');
+                }
+              }}>
                 <span style={{ fontSize: 14 }}>+</span>
                 <span className="hidden sm:inline">New frame</span>
               </button>
@@ -350,7 +360,7 @@ export default function Home() {
       </header>
 
       {/* Main content */}
-      <main style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px 80px' }}>
+      <main style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px' }}>
 
         {/* Frame badge */}
         {selectedFrame && step !== 'select' && (
@@ -369,8 +379,12 @@ export default function Home() {
               userFrames={userFrames.map(userFrameToFrame)}
             />
             {selectedFrame && (
-              <div className="fixed z-50 animate-fadeIn" style={{ bottom: '48px', right: '24px' }}>
-                <button className="begin-btn" onClick={handleStart} style={{ boxShadow: 'var(--shadow-md)' }}>
+              <div className={`fixed z-50 animate-fadeIn ${isMobile ? 'bottom-6 left-4 right-4' : ''}`} style={isMobile ? {} : { bottom: '48px', right: '24px' }}>
+                <button 
+                  className={`begin-btn ${isMobile ? 'w-full justify-center' : ''}`} 
+                  onClick={handleStart} 
+                  style={{ boxShadow: 'var(--shadow-md)', ...(isMobile ? { display: 'flex', width: '100%', padding: '0 16px' } : {}) }}
+                >
                   Begin session
                   <span className="arrow">→</span>
                 </button>
