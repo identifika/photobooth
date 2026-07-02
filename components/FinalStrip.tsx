@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import { drawFrameElements } from '@/lib/draw-frame';
 import GIF from 'gif.js';
 import PhotoStrip from './PhotoStrip';
 
