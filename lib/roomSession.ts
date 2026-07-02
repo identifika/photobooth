@@ -66,5 +66,6 @@ export function getOrJoinRoomSession(roomId: string): RoomSession {
 
 export function inviteLinkFor(roomId: string): string {
   if (typeof window === "undefined") return "";
-  return `${window.location.origin}/date/${roomId}`;
+  const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+  return `${base}/date?room=${roomId}`;
 }
