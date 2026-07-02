@@ -209,12 +209,37 @@ export function useDatePeerConnection(opts: {
           case "peer-joined": {
             remotePeerIdRef.current = msg.peer_id;
             setStatus("connecting");
-            
-            // Only the initiator creates the offer to avoid glare/race conditions
-            // where both sides send an offer simultaneously.
+
+            // If peer connection was closed (reconnect scenario), create a new one
+            if (!pcRef.current || pcRef.current.connectionState === "closed") {
+              const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+              pcRef.current = pc;
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current!));
+              }
+              pc.ontrack = (event) => setRemoteStream(event.streams[0]);
+              pc.onicecandidate = (event) => {
+                if (event.candidate && remotePeerIdRef.current) {
+                  send({ type: "ice-candidate", candidate: event.candidate.toJSON(), to: remotePeerIdRef.current, from: peerId });
+                }
+              };
+              pc.onconnectionstatechange = () => {
+                if (pc.connectionState === "connected") setStatus("connected");
+                if (pc.connectionState === "failed") setStatus("error");
+              };
+              // Recreate data channel for sync
+              const dc = pc.createDataChannel("sync");
+              dcRef.current = dc;
+              dc.onmessage = (e) => { try { handlePayload(JSON.parse(e.data)); } catch {} };
+              pc.ondatachannel = (event) => {
+                dcRef.current = event.channel;
+                event.channel.onmessage = (e) => { try { handlePayload(JSON.parse(e.data)); } catch {} };
+              };
+            }
+
             if (isInitiator) {
-              const offer = await pc.createOffer();
-              await pc.setLocalDescription(offer);
+              const offer = await pcRef.current!.createOffer();
+              await pcRef.current!.setLocalDescription(offer);
               send({ type: "offer", sdp: offer.sdp!, to: msg.peer_id, from: peerId });
             }
             break;
@@ -223,16 +248,39 @@ export function useDatePeerConnection(opts: {
           case "offer": {
             remotePeerIdRef.current = msg.from ?? remotePeerIdRef.current;
             setStatus("connecting");
-            await pc.setRemoteDescription({ type: "offer", sdp: msg.sdp });
+
+            // Create new peer connection if needed (reconnect scenario)
+            if (!pcRef.current || pcRef.current.connectionState === "closed") {
+              const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+              pcRef.current = pc;
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current!));
+              }
+              pc.ontrack = (event) => setRemoteStream(event.streams[0]);
+              pc.onicecandidate = (event) => {
+                if (event.candidate && remotePeerIdRef.current) {
+                  send({ type: "ice-candidate", candidate: event.candidate.toJSON(), to: remotePeerIdRef.current, from: peerId });
+                }
+              };
+              pc.onconnectionstatechange = () => {
+                if (pc.connectionState === "connected") setStatus("connected");
+                if (pc.connectionState === "failed") setStatus("error");
+              };
+              pc.ondatachannel = (event) => {
+                dcRef.current = event.channel;
+                event.channel.onmessage = (e) => { try { handlePayload(JSON.parse(e.data)); } catch {} };
+              };
+            }
+
+            await pcRef.current!.setRemoteDescription({ type: "offer", sdp: msg.sdp });
             
-            // Process any ICE candidates that arrived before the offer
             for (const c of iceQueue) {
-              await pc.addIceCandidate(c).catch(e => console.error(e));
+              await pcRef.current!.addIceCandidate(c).catch(e => console.error(e));
             }
             iceQueue.length = 0;
 
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
+            const answer = await pcRef.current!.createAnswer();
+            await pcRef.current!.setLocalDescription(answer);
             if (remotePeerIdRef.current) {
               send({ type: "answer", sdp: answer.sdp!, to: remotePeerIdRef.current, from: peerId });
             }
@@ -241,25 +289,23 @@ export function useDatePeerConnection(opts: {
 
           case "answer":
             remotePeerIdRef.current = msg.from ?? remotePeerIdRef.current;
-            await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+            await pcRef.current?.setRemoteDescription({ type: "answer", sdp: msg.sdp });
 
-            // Process any ICE candidates that arrived before the answer
             for (const c of iceQueue) {
-              await pc.addIceCandidate(c).catch(e => console.error(e));
+              await pcRef.current?.addIceCandidate(c).catch(e => console.error(e));
             }
             iceQueue.length = 0;
             break;
 
           case "ice-candidate":
             remotePeerIdRef.current = msg.from ?? remotePeerIdRef.current;
-            if (pc.remoteDescription) {
+            if (pcRef.current?.remoteDescription) {
               try {
-                await pc.addIceCandidate(msg.candidate);
+                await pcRef.current.addIceCandidate(msg.candidate);
               } catch (err) {
                 console.error("ICE candidate error", err);
               }
             } else {
-              // Queue candidates if the remote description hasn't been set yet
               iceQueue.push(msg.candidate);
             }
             break;
@@ -272,6 +318,13 @@ export function useDatePeerConnection(opts: {
             setStatus("peer-left");
             setRemoteStream(null);
             remotePeerIdRef.current = null;
+            // Don't close WebSocket — keep listening for a new peer to join
+            // Reset the peer connection so we can establish a new one
+            if (pcRef.current) {
+              pcRef.current.close();
+              pcRef.current = null;
+            }
+            dcRef.current = null;
             break;
         }
       };

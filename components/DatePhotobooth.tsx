@@ -287,14 +287,14 @@ export type CaptureMode = "merged" | "left" | "right";
   }
 
   const statusMessage: Record<string, string> = {
-    idle: "getting your camera ready…",
-    "waiting-for-peer": "waiting for your date to join…",
-    connecting: "connecting…",
-    connected: "connected",
-    "room-full": "this session already has two people in it",
-    "peer-left": "your date left the session",
-    error: "something went wrong — check camera/mic permissions",
-  };
+      "idle": "initializing…",
+      "waiting-for-peer": "waiting for your date to join…",
+      "connecting": "connecting…",
+      "connected": "connected",
+      "room-full": "room is full",
+      "peer-left": "your date disconnected — waiting for reconnect…",
+      "error": "connection error",
+    };
 
   const chatUI = status === "connected" ? (
     <div className={`fixed z-50 flex flex-col items-end ${isMobile ? 'bottom-0 left-0 right-0 px-3 pb-3' : 'bottom-6 right-6'}`}>
