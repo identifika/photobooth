@@ -1,8 +1,10 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import { drawFrameElements } from '@/lib/draw-frame';
 import GIF from 'gif.js';
 import PhotoStrip from './PhotoStrip';
+import { downloadFile } from '@/lib/download';
 
 interface Props {
   photos: string[];
@@ -468,7 +470,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = PHOTO_W;
         tempCanvas.height = PHOTO_H;
-        const ctx = tempCanvas.getContext('2d')!;
+        const ctx = tempCanvas.getContext('2d', { willReadFrequently: true })!;
 
         // object-fit: cover logic to avoid stretching
         const imgRatio = img.width / img.height;
@@ -486,7 +488,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         }
 
         ctx.drawImage(img, dx, dy, dw, dh);
-        gif.addFrame(tempCanvas, { delay: 500, copy: true });
+        // Pass ImageData directly to avoid gif.js creating a readback-expensive context
+        const imageData = ctx.getImageData(0, 0, PHOTO_W, PHOTO_H);
+        gif.addFrame(imageData, { delay: 500, copy: true });
       });
 
       await new Promise<void>((resolve, reject) => {
@@ -509,7 +513,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     try {
       const imgs = await Promise.all(photos.map(src => loadImage(src)));
       const pCanvas = document.createElement('canvas');
-      const pCtx = pCanvas.getContext('2d')!;
+      const pCtx = pCanvas.getContext('2d', { willReadFrequently: true })!;
 
       const scale = 2; // High res
 
@@ -599,7 +603,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     const canvas = document.createElement('canvas');
     canvas.width = firstImg.width;
     canvas.height = firstImg.height;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
     for (const frameSrc of frames) {
       const img = await new Promise<HTMLImageElement>((resolve, reject) => {
         const i = new Image();
@@ -646,37 +650,41 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     generatePolaroids();
   }, [renderStrip, generateGif, generateClipGifs, generatePolaroids]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     setDownloading(true);
-    const a = document.createElement('a');
-    a.href = stripDataUrl;
-    a.download = `photobooth-${frame.id}-${Date.now()}.jpg`;
-    a.click();
+    try {
+      await downloadFile(stripDataUrl, `photobooth-${frame.id}-${Date.now()}.jpg`);
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
     setTimeout(() => setDownloading(false), 1500);
   };
 
-  const handleDownloadGif = () => {
+  const handleDownloadGif = async () => {
     if (!gifDataUrl) return;
     setDownloadingGif(true);
-    const a = document.createElement('a');
-    a.href = gifDataUrl;
-    a.download = `photobooth-${frame.id}-${Date.now()}.gif`;
-    a.click();
+    try {
+      await downloadFile(gifDataUrl, `photobooth-${frame.id}-${Date.now()}.gif`);
+    } catch (err) {
+      console.error('Download GIF failed:', err);
+    }
     setTimeout(() => setDownloadingGif(false), 1500);
   };
 
-  const downloadClipGif = (gifUrl: string, index: number) => {
-    const a = document.createElement('a');
-    a.href = gifUrl;
-    a.download = `photobooth-${frame.id}-live${index + 1}-${Date.now()}.gif`;
-    a.click();
+  const downloadClipGif = async (gifUrl: string, index: number) => {
+    try {
+      await downloadFile(gifUrl, `photobooth-${frame.id}-live${index + 1}-${Date.now()}.gif`);
+    } catch (err) {
+      console.error('Download clip failed:', err);
+    }
   };
 
-  const handleDownloadPhoto = (photoUrl: string, index: number) => {
-    const a = document.createElement('a');
-    a.href = photoUrl;
-    a.download = `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`;
-    a.click();
+  const handleDownloadPhoto = async (photoUrl: string, index: number) => {
+    try {
+      await downloadFile(photoUrl, `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`);
+    } catch (err) {
+      console.error('Download photo failed:', err);
+    }
   };
 
   const hasLiveClips = liveClips && liveClips.some(c => c !== null && c.length > 0);

@@ -22,6 +22,7 @@ import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { Pencil, Trash2, Plus, Globe, Upload } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 const EMPTY_FRAME: Omit<Frame, 'id'> = {
   name: 'Untitled Frame',
@@ -41,6 +42,7 @@ export default function FramesPage() {
   const { resolvedTheme } = useTheme();
   const { settings, isLoaded } = useStudioSettings();
   const { alert, confirm } = useDialog();
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (isLoaded && settings) {
@@ -108,7 +110,27 @@ export default function FramesPage() {
 
   const handleCreateNew = async () => {
     if (!user) return;
+    if (isMobile) {
+      await alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
+      return;
+    }
     router.push('/editor');
+  };
+
+  const handleEditFrame = async (id: string) => {
+    if (isMobile) {
+      await alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
+      return;
+    }
+    router.push(`/editor?id=${id}`);
+  };
+
+  const handleEditPublicFrame = async (id: string) => {
+    if (isMobile) {
+      await alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
+      return;
+    }
+    router.push(`/editor?publicId=${id}`);
   };
 
   const handleDeleteUserFrame = async (id: string) => {
@@ -179,25 +201,25 @@ export default function FramesPage() {
   return (
     <main className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className={`border-b border-border flex items-center justify-between ${isMobile ? 'px-3 py-3' : 'px-6 py-4'}`}>
+        <div className="flex items-center gap-2">
           <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center" style={{ width: 28, height: 28, background: 'var(--primary)', borderRadius: 4 }}>
-              <span style={{ fontSize: 14 }}>🎨</span>
+            <div className="flex items-center justify-center" style={{ width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, background: 'var(--primary)', borderRadius: 4 }}>
+              <span style={{ fontSize: isMobile ? 12 : 14 }}>🎨</span>
             </div>
-            <h1 className="font-serif font-bold text-sm text-foreground m-0">My Frames</h1>
+            <h1 className={`font-serif font-bold text-foreground m-0 ${isMobile ? 'text-xs' : 'text-sm'}`}>My Frames</h1>
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
           <ThemeToggle />
-          <Button onClick={handleCreateNew} className="flex items-center gap-1.5">
-            <Plus className="w-3 h-3" />
-            New Frame
+          <Button onClick={handleCreateNew} className={`flex items-center gap-1.5 ${isMobile ? 'px-2 py-1 text-xs' : ''}`}>
+            <Plus className={isMobile ? 'w-3 h-3' : 'w-3 h-3'} />
+            {!isMobile && 'New Frame'}
           </Button>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8 space-y-12">
+      <div className={`max-w-6xl mx-auto space-y-12 ${isMobile ? 'px-3 py-4' : 'px-6 py-8'}`}>
         {/* User's Custom Frames */}
         <section>
           <div className="flex items-center justify-between mb-4">
@@ -212,7 +234,7 @@ export default function FramesPage() {
           ) : userFrames.length === 0 ? (
             <div className="text-center py-8 border border-dashed border-border rounded-lg">
               <p className="text-muted-foreground mb-3">No custom frames yet</p>
-              <Button onClick={() => router.push('/editor')} variant="outline" size="sm">
+              <Button onClick={handleCreateNew} variant="outline" size="sm">
                 <Plus className="w-3 h-3 mr-1" />
                 Create Your First Frame
               </Button>
@@ -260,7 +282,7 @@ export default function FramesPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => router.push(`/editor?id=${f.id}`)}
+                        onClick={() => handleEditFrame(f.id)}
                         className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded text-xs border border-border hover:bg-accent transition"
                       >
                         <Pencil className="w-3 h-3" />
@@ -319,7 +341,7 @@ export default function FramesPage() {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => router.push(`/editor?publicId=${f.id}`)}
+                            onClick={() => handleEditPublicFrame(f.id)}
                             className="p-1 rounded hover:bg-accent transition"
                             title="Edit"
                           >

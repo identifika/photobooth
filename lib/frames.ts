@@ -309,8 +309,7 @@ export const FRAMES: Frame[] = [
   },
 ];
 
-// Helper to convert legacy layout-based frame to FrameConfig with elements
-function layoutToConfig(layout: Frame['layout'], photoCount: number, width = 400, height = 600): FrameConfig {
+export function layoutToConfig(layout: Frame['layout'], photoCount: number, width = 400, height = 600): FrameConfig {
   const pad = 20;
   const gap = 8;
   const elements: FrameElement[] = [];

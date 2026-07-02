@@ -10,6 +10,8 @@ import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } f
 import { requestFramePublish } from '@/lib/publish-requests';
 import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { useIsMobile } from '@/hooks/useIsMobile';
+import { EmailAuthProvider, linkWithCredential } from 'firebase/auth';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -19,11 +21,36 @@ export default function SettingsPage() {
   const { resolvedTheme } = useTheme();
   const { settings, updateSettings, resetSettings, isLoaded } = useStudioSettings();
   const { alert, confirm } = useDialog();
+  const isMobile = useIsMobile();
 
   const [studioName, setStudioName] = useState('');
   const [studioLogo, setStudioLogo] = useState('');
   const [tagline, setTagline] = useState('');
   const [saved, setSaved] = useState(false);
+
+  // Set Password (for Google-only users)
+  const hasPasswordProvider = user?.providerData?.some(p => p.providerId === 'password') ?? false;
+  const hasGoogleProvider = user?.providerData?.some(p => p.providerId === 'google.com') ?? false;
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMsg, setPasswordMsg] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+
+  const handleSetPassword = async () => {
+    if (!user || !newPassword || newPassword.length < 6) return;
+    setPasswordLoading(true);
+    setPasswordError('');
+    setPasswordMsg('');
+    try {
+      const credential = EmailAuthProvider.credential(user.email!, newPassword);
+      await linkWithCredential(user, credential);
+      setPasswordMsg('Password set successfully! You can now sign in with email and password on the desktop app.');
+      setNewPassword('');
+    } catch (err: unknown) {
+      setPasswordError(err instanceof Error ? err.message.replace('Firebase: ', '') : 'Failed to set password');
+    }
+    setPasswordLoading(false);
+  };
 
   const isAuthorized = user && isAdmin(user.email);
 
@@ -148,20 +175,20 @@ export default function SettingsPage() {
   return (
     <main className="min-h-screen" style={{ background: 'var(--bg)' }}>
       {/* Header */}
-      <header style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)', padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="flex items-center gap-3">
+      <header style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)', padding: isMobile ? '12px 12px' : '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="flex items-center gap-2">
           <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center" style={{ width: 32, height: 32, background: 'var(--brand)', borderRadius: 8 }}>
-              <span style={{ fontSize: 16 }}>{settings.studioLogo}</span>
+            <div className="flex items-center justify-center" style={{ width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, background: 'var(--brand)', borderRadius: 8 }}>
+              <span style={{ fontSize: isMobile ? 14 : 16 }}>{settings.studioLogo}</span>
             </div>
-            <h1 className="font-medium text-lg" style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
+            <h1 className={`font-medium ${isMobile ? 'text-base' : 'text-lg'}`} style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
           </button>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
           <ThemeToggle />
           <button 
             onClick={() => router.push('/')} 
-            className="text-sm"
+            className={`text-xs ${isMobile ? 'text-[11px]' : ''}`}
             style={{ color: 'var(--text-secondary)' }}
           >
             ← Back
@@ -169,9 +196,58 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <div style={{ maxWidth: 640, margin: '0 auto', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 640, margin: '0 auto', padding: isMobile ? '16px 12px' : '32px 24px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
           
+          {/* Set Password — only for Google-only users */}
+          {hasGoogleProvider && !hasPasswordProvider && (
+            <section>
+              <h2 className="font-semibold text-lg mb-4" style={{ color: 'var(--text-primary)' }}>Set Password</h2>
+              <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 24 }}>
+                <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                  You signed in with Google. Set a password so you can also sign in on the desktop app.
+                </p>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="text-xs uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>New Password</label>
+                    <input
+                      type="password"
+                      placeholder="Min 6 characters"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      minLength={6}
+                      style={{
+                        width: '100%', height: 40, borderRadius: 8,
+                        border: '0.5px solid var(--border-strong)',
+                        background: 'var(--surface-2)',
+                        color: 'var(--text-primary)',
+                        padding: '0 12px', fontSize: 14, outline: 'none',
+                      }}
+                    />
+                  </div>
+                  <button
+                    onClick={handleSetPassword}
+                    disabled={passwordLoading || newPassword.length < 6}
+                    style={{
+                      height: 40, padding: '0 20px', borderRadius: 8,
+                      background: 'var(--brand)', border: 'none', color: '#fff',
+                      fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                      opacity: passwordLoading || newPassword.length < 6 ? 0.6 : 1,
+                    }}
+                  >
+                    {passwordLoading ? 'Saving...' : 'Set Password'}
+                  </button>
+                </div>
+                {passwordMsg && (
+                  <p style={{ fontSize: 13, color: 'var(--text-accent)', marginTop: 12 }}>{passwordMsg}</p>
+                )}
+                {passwordError && (
+                  <p style={{ fontSize: 13, color: 'var(--text-accent)', marginTop: 12 }}>{passwordError}</p>
+                )}
+              </div>
+            </section>
+          )}
+
           {/* Studio Branding Section - ADMIN ONLY */}
           {isAuthorized && (
             <section>

@@ -1,7 +1,7 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 
 export default function LoginPage() {
@@ -63,12 +63,7 @@ export default function LoginPage() {
         <div className="text-center mb-8 animate-fadeIn">
           <div
             className="mx-auto mb-5 flex items-center justify-center"
-            style={{ 
-              width: 72, height: 72, 
-              background: 'var(--brand)', 
-              borderRadius: 12,
-              fontSize: 32,
-            }}
+            style={{ width: 72, height: 72, background: 'var(--brand)', borderRadius: 12, fontSize: 32 }}
           >
             {studioLogo}
           </div>
@@ -77,12 +72,7 @@ export default function LoginPage() {
         </div>
 
         {/* Login Card */}
-        <div style={{ 
-          background: 'var(--surface-2)', 
-          border: '0.5px solid var(--border)', 
-          borderRadius: 12, 
-          padding: 24,
-        }}>
+        <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 24 }}>
           <h2 className="font-medium text-lg text-center mb-5" style={{ color: 'var(--text-primary)' }}>
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
@@ -90,9 +80,7 @@ export default function LoginPage() {
           {/* Email/Password form */}
           <form onSubmit={handleEmailAuth} className="space-y-3">
             <div>
-              <label className="text-xs uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>
-                Email
-              </label>
+              <label className="text-xs uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Email</label>
               <input
                 type="email"
                 placeholder="you@example.com"
@@ -104,16 +92,12 @@ export default function LoginPage() {
                   border: '0.5px solid var(--border-strong)',
                   background: 'var(--surface-2)',
                   color: 'var(--text-primary)',
-                  padding: '0 12px',
-                  fontSize: 14,
-                  outline: 'none',
+                  padding: '0 12px', fontSize: 14, outline: 'none',
                 }}
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>
-                Password
-              </label>
+              <label className="text-xs uppercase tracking-wider mb-1.5 block" style={{ color: 'var(--text-muted)' }}>Password</label>
               <input
                 type="password"
                 placeholder="Min 6 characters"
@@ -126,20 +110,13 @@ export default function LoginPage() {
                   border: '0.5px solid var(--border-strong)',
                   background: 'var(--surface-2)',
                   color: 'var(--text-primary)',
-                  padding: '0 12px',
-                  fontSize: 14,
-                  outline: 'none',
+                  padding: '0 12px', fontSize: 14, outline: 'none',
                 }}
               />
             </div>
 
             {error && (
-              <div style={{ 
-                background: 'var(--bg-accent)', 
-                border: '0.5px solid var(--border-accent)', 
-                borderRadius: 8, 
-                padding: '8px 12px',
-              }}>
+              <div style={{ background: 'var(--bg-accent)', border: '0.5px solid var(--border-accent)', borderRadius: 8, padding: '8px 12px' }}>
                 <p className="text-xs" style={{ color: 'var(--text-accent)' }}>{error}</p>
               </div>
             )}
@@ -150,12 +127,8 @@ export default function LoginPage() {
               className="w-full"
               style={{
                 height: 40, borderRadius: 8,
-                background: 'var(--brand)',
-                border: 'none',
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: 'pointer',
+                background: 'var(--brand)', border: 'none', color: '#fff',
+                fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}
             >
@@ -191,9 +164,7 @@ export default function LoginPage() {
               border: '0.5px solid var(--border-strong)',
               background: 'var(--surface-2)',
               color: 'var(--text-primary)',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
+              fontSize: 14, fontWeight: 500, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}
           >
@@ -217,9 +188,7 @@ export default function LoginPage() {
               border: '0.5px solid var(--border-strong)',
               background: 'transparent',
               color: 'var(--text-primary)',
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: 'pointer',
+              fontSize: 14, fontWeight: 500, cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               marginTop: 12,
             }}
@@ -231,15 +200,11 @@ export default function LoginPage() {
 
         <p className="text-center text-xs mt-6" style={{ color: 'var(--text-muted)' }}>
           By continuing, you agree to our{' '}
-          <a href="/terms" className="hover:underline" style={{ color: 'var(--text-primary)' }}>
-            Terms of Service
-          </a>
+          <a href="/terms" className="hover:underline" style={{ color: 'var(--text-primary)' }}>Terms of Service</a>
           {' '}and{' '}
-          <a href="/privacy" className="hover:underline" style={{ color: 'var(--text-primary)' }}>
-            Privacy Policy
-          </a>
+          <a href="/privacy" className="hover:underline" style={{ color: 'var(--text-primary)' }}>Privacy Policy</a>
         </p>
-        
+
         {/* Version Info */}
         <p className="text-center mt-6 text-[10px]" style={{ color: 'var(--text-muted)', opacity: 0.7 }}>
           {studioName || 'Photobooth'} v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}

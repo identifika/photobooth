@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Frame } from '@/lib/frames';
 import { removeBg } from '@/lib/remove-bg';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
   photoUrl: string;
@@ -17,6 +18,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
   const [processing, setProcessing] = useState(false);
   const [removeBgEnabled, setRemoveBgEnabled] = useState(false);
   const [transparentUrl, setTransparentUrl] = useState<string | null>(null);
+  const isMobile = useIsMobile();
 
   let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
   if (frame.config?.elements) {
@@ -58,22 +60,25 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
 
   const finalUrl = removeBgEnabled && transparentUrl ? transparentUrl : photoUrl;
 
+  const previewMaxWidth = isMobile ? '100%' : `min(24rem, 45vh * ${currentAspectRatio})`;
+
   return (
     <div className="w-full animate-slideUp">
-      <div className="text-center mb-8">
-        <p className="text-sm tracking-[0.25em] uppercase opacity-50 mb-2">Review</p>
-        <h2 className="font-display text-4xl font-bold">
+      <div className="text-center mb-6">
+        <p className={`tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>Review</p>
+        <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
           How&apos;s this one?
         </h2>
-        <p className="mt-2 opacity-60 text-sm">Photo {photoIndex + 1} of {totalPhotos}</p>
+        <p className={`mt-2 opacity-60 ${isMobile ? 'text-xs' : 'text-sm'}`}>Photo {photoIndex + 1} of {totalPhotos}</p>
       </div>
 
-      <div className="w-full flex flex-col items-center justify-center">
+      <div className={`w-full flex flex-col items-center justify-center ${isMobile ? 'px-4' : ''}`}>
         {/* Polaroid-style preview */}
-        <div className="relative animate-slideUp w-full transition-all duration-300" style={{
-          maxWidth: `min(24rem, 45vh * ${currentAspectRatio})`,
+        <div className="relative animate-slideUp transition-all duration-300" style={{
+          width: '100%',
+          maxWidth: previewMaxWidth,
           background: 'white',
-          padding: '12px 12px 48px',
+          padding: isMobile ? '8px 8px 36px' : '12px 12px 48px',
           boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.1)',
           transform: 'rotate(-1deg)',
         }}>
@@ -115,7 +120,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         </div>
 
         {/* Toggle Background Button */}
-        <div className="mt-6 flex justify-center w-full max-w-sm">
+        <div className={`flex justify-center w-full ${isMobile ? 'mt-4' : 'mt-6'}`}>
            <button
              onClick={handleToggleBg}
              disabled={processing}
@@ -126,16 +131,16 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-4 mt-8 w-full max-w-sm">
+        <div className={`flex gap-3 w-full ${isMobile ? 'mt-5 px-4' : 'mt-8 max-w-sm'}`}>
           <button
             onClick={onRetry}
-            className="flex-1 py-3.5 rounded-sm font-medium text-sm tracking-wide transition-all border-2 border-input text-foreground bg-transparent hover:bg-surface-0"
+            className="flex-1 py-3 rounded-sm font-medium text-sm tracking-wide transition-all border-2 border-input text-foreground bg-transparent hover:bg-surface-0"
           >
             ↺ Retake
           </button>
           <button
             onClick={() => onAccept(finalUrl, removeBgEnabled)}
-            className="flex-1 py-3.5 rounded-sm font-medium text-sm tracking-wide transition-all bg-primary text-primary-foreground hover:opacity-90"
+            className="flex-1 py-3 rounded-sm font-medium text-sm tracking-wide transition-all bg-primary text-primary-foreground hover:opacity-90"
           >
             {photoIndex + 1 === totalPhotos ? '✓ Done' : 'Use This →'}
           </button>
