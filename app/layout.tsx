@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { DialogProvider } from "@/components/ui/dialog-provider";
+import StatusBarConfig from "@/components/StatusBarConfig";
 
 export const metadata: Metadata = {
   title: {
@@ -32,6 +33,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
+        <StatusBarConfig />
         <ThemeProvider>
           <AuthProvider>
             <DialogProvider>

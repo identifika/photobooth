@@ -4,6 +4,7 @@ import { Frame } from '@/lib/frames';
 import { drawFrameElements } from '@/lib/draw-frame';
 import GIF from 'gif.js';
 import PhotoStrip from './PhotoStrip';
+import { downloadFile } from '@/lib/download';
 
 interface Props {
   photos: string[];
@@ -649,37 +650,41 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     generatePolaroids();
   }, [renderStrip, generateGif, generateClipGifs, generatePolaroids]);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     setDownloading(true);
-    const a = document.createElement('a');
-    a.href = stripDataUrl;
-    a.download = `photobooth-${frame.id}-${Date.now()}.jpg`;
-    a.click();
+    try {
+      await downloadFile(stripDataUrl, `photobooth-${frame.id}-${Date.now()}.jpg`);
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
     setTimeout(() => setDownloading(false), 1500);
   };
 
-  const handleDownloadGif = () => {
+  const handleDownloadGif = async () => {
     if (!gifDataUrl) return;
     setDownloadingGif(true);
-    const a = document.createElement('a');
-    a.href = gifDataUrl;
-    a.download = `photobooth-${frame.id}-${Date.now()}.gif`;
-    a.click();
+    try {
+      await downloadFile(gifDataUrl, `photobooth-${frame.id}-${Date.now()}.gif`);
+    } catch (err) {
+      console.error('Download GIF failed:', err);
+    }
     setTimeout(() => setDownloadingGif(false), 1500);
   };
 
-  const downloadClipGif = (gifUrl: string, index: number) => {
-    const a = document.createElement('a');
-    a.href = gifUrl;
-    a.download = `photobooth-${frame.id}-live${index + 1}-${Date.now()}.gif`;
-    a.click();
+  const downloadClipGif = async (gifUrl: string, index: number) => {
+    try {
+      await downloadFile(gifUrl, `photobooth-${frame.id}-live${index + 1}-${Date.now()}.gif`);
+    } catch (err) {
+      console.error('Download clip failed:', err);
+    }
   };
 
-  const handleDownloadPhoto = (photoUrl: string, index: number) => {
-    const a = document.createElement('a');
-    a.href = photoUrl;
-    a.download = `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`;
-    a.click();
+  const handleDownloadPhoto = async (photoUrl: string, index: number) => {
+    try {
+      await downloadFile(photoUrl, `photobooth-${frame.id}-photo${index + 1}-${Date.now()}.jpg`);
+    } catch (err) {
+      console.error('Download photo failed:', err);
+    }
   };
 
   const hasLiveClips = liveClips && liveClips.some(c => c !== null && c.length > 0);

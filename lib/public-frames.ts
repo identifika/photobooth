@@ -1,17 +1,4 @@
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
-  query,
-  orderBy,
-  where,
-} from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { fsGetAllCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument } from './firestore';
 import type { Frame } from '@/lib/frames';
 import type { FrameConfig } from '@/lib/frame-types';
 import { applyCdnToFrameConfig } from '@/lib/cdn';
@@ -28,16 +15,11 @@ export interface PublicFrame extends Frame {
 
 const COLLECTION = 'public_frames';
 
-function colRef() {
-  return collection(db, COLLECTION);
-}
-
-/** List all public frames sorted by sortOrder. */
+/** List all public frames. */
 export async function listPublicFrames(): Promise<PublicFrame[]> {
-  const q = query(colRef(), orderBy('sortOrder', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => {
-    const data = d.data() as Omit<PublicFrame, 'id'>;
+  const docs = await fsGetAllCollection(COLLECTION);
+  return docs.map((d) => {
+    const data = d.data as Omit<PublicFrame, 'id'>;
     if (data.config) data.config = applyCdnToFrameConfig(data.config);
     return { id: d.id, ...data } as PublicFrame;
   });
@@ -47,14 +29,11 @@ export async function listPublicFrames(): Promise<PublicFrame[]> {
 export async function createPublicFrame(
   data: Omit<Frame, 'id'> & { sortOrder?: number; active?: boolean },
 ): Promise<string> {
-  const ref = await addDoc(colRef(), {
+  return fsAddDocument(COLLECTION, {
     ...data,
     sortOrder: data.sortOrder ?? 0,
     active: data.active ?? true,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
   });
-  return ref.id;
 }
 
 /** Update a public frame. */
@@ -62,15 +41,12 @@ export async function updatePublicFrame(
   frameId: string,
   data: Partial<Omit<Frame, 'id'>> & { sortOrder?: number; active?: boolean },
 ): Promise<void> {
-  await updateDoc(doc(db, COLLECTION, frameId), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
+  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
 }
 
 /** Delete a public frame. */
 export async function deletePublicFrame(frameId: string): Promise<void> {
-  await deleteDoc(doc(db, COLLECTION, frameId));
+  await fsDeleteDocument(`${COLLECTION}/${frameId}`);
 }
 
 /** Update any public frame (admin only). */
@@ -78,30 +54,23 @@ export async function updateAnyPublicFrame(
   frameId: string,
   data: Partial<Omit<PublicFrame, 'id'>>,
 ): Promise<void> {
-  await updateDoc(doc(db, COLLECTION, frameId), {
-    ...data,
-    updatedAt: serverTimestamp(),
-  });
+  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
 }
 
 /** List public frames by owner. */
 export async function listPublicFramesByOwner(ownerUid: string): Promise<PublicFrame[]> {
-  const q = query(colRef(), where('ownerUid', '==', ownerUid));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => {
-    const data = d.data() as Omit<PublicFrame, 'id'>;
-    if (data.config) data.config = applyCdnToFrameConfig(data.config);
-    return { id: d.id, ...data } as PublicFrame;
-  });
+  // Get all and filter client-side (REST API filter is limited)
+  const all = await listPublicFrames();
+  return all.filter(f => f.ownerUid === ownerUid);
 }
 
 /** Load a single public frame by ID. */
 export async function loadPublicFrame(frameId: string): Promise<PublicFrame | null> {
-  const snap = await getDoc(doc(db, COLLECTION, frameId));
-  if (!snap.exists()) return null;
-  const data = snap.data() as Omit<PublicFrame, 'id'>;
+  const doc = await fsGetDocument(`${COLLECTION}/${frameId}`);
+  if (!doc) return null;
+  const data = doc.data as Omit<PublicFrame, 'id'>;
   if (data.config) data.config = applyCdnToFrameConfig(data.config);
-  return { id: snap.id, ...data } as PublicFrame;
+  return { id: doc.id, ...data } as PublicFrame;
 }
 
 /** Update a public frame (only if owner matches). Returns true if updated. */
@@ -110,13 +79,10 @@ export async function updatePublicFrameAsOwner(
   ownerUid: string,
   data: Partial<Omit<PublicFrame, 'id'>>,
 ): Promise<boolean> {
-  const ref = doc(db, COLLECTION, frameId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return false;
-  const frame = snap.data() as PublicFrame;
+  const frame = await loadPublicFrame(frameId);
+  if (!frame) return false;
   if (frame.ownerUid !== ownerUid) return false;
-  
-  await updateDoc(ref, { ...data, updatedAt: serverTimestamp() });
+  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
   return true;
 }
 
@@ -125,13 +91,10 @@ export async function deletePublicFrameAsOwner(
   frameId: string,
   ownerUid: string,
 ): Promise<boolean> {
-  const ref = doc(db, COLLECTION, frameId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return false;
-  const frame = snap.data() as PublicFrame;
+  const frame = await loadPublicFrame(frameId);
+  if (!frame) return false;
   if (frame.ownerUid !== ownerUid) return false;
-  
-  await deleteDoc(ref);
+  await fsDeleteDocument(`${COLLECTION}/${frameId}`);
   return true;
 }
 
@@ -140,7 +103,6 @@ export async function publishUserFrame(
   user: { uid: string; displayName: string | null },
   frame: { config: FrameConfig; name: string },
 ): Promise<string> {
-  // Infer layout from config.elements if not provided
   let layout: Frame['layout'] = 'strip-4';
   let photoCount = 4;
   let aspectRatio = 4 / 3;
@@ -149,7 +111,7 @@ export async function publishUserFrame(
     const photos = frame.config.elements.filter((e) => e.type === 'photo');
     photoCount = photos.length;
     if (photoCount === 1) {
-      layout = 'strip-2'; // Use 2-column layout for single photo
+      layout = 'strip-2';
       aspectRatio = 4 / 3;
     } else if (photoCount === 2) {
       layout = 'strip-2';
@@ -158,7 +120,6 @@ export async function publishUserFrame(
       layout = 'strip-3';
       aspectRatio = 4 / 3;
     } else if (photoCount === 4) {
-      // Check if grid or strip based on positions
       const firstPhoto = photos[0];
       const secondPhoto = photos[1];
       if (secondPhoto && Math.abs(firstPhoto.y - secondPhoto.y) < 50) {
@@ -171,7 +132,7 @@ export async function publishUserFrame(
     }
   }
 
-  const data: Omit<PublicFrame, 'id'> = {
+  const data = {
     ...frame,
     description: `Custom frame: ${frame.name}`,
     layout,
@@ -186,10 +147,7 @@ export async function publishUserFrame(
     config: frame.config,
     sortOrder: 0,
     active: true,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
   };
 
-  const ref = await addDoc(colRef(), data);
-  return ref.id;
+  return fsAddDocument(COLLECTION, data as unknown as Record<string, unknown>);
 }

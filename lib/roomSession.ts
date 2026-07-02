@@ -66,6 +66,9 @@ export function getOrJoinRoomSession(roomId: string): RoomSession {
 
 export function inviteLinkFor(roomId: string): string {
   if (typeof window === "undefined") return "";
-  const base = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+  const IS_NATIVE = 'Capacitor' in window || '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
+  // On native: origin is tauri://localhost or http://localhost — use the public web URL
+  // On web: use whatever domain the user is currently on
+  const base = IS_NATIVE ? 'https://pika.identifika.my.id' : window.location.origin;
   return `${base}/date?room=${roomId}`;
 }
