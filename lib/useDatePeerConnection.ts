@@ -27,7 +27,7 @@ const ICE_SERVERS: RTCIceServer[] = [
 ];
 
 // Fetch fresh TURN credentials from Turnix via server-side route
-async function getIceServers(): Promise<RTCIceServer[]> {
+async function getIceServers(): Promise<{ iceServers: RTCIceServer[]; ttlSeconds: number }> {
   try {
     // On native (Capacitor/Tauri), API routes don't exist in static export
     // so we must hit the hosted web app's API endpoint instead
@@ -42,14 +42,17 @@ async function getIceServers(): Promise<RTCIceServer[]> {
 
     if (!res.ok) {
       console.warn("TURN credential error:", res.status);
-      return ICE_SERVERS;
+      return { iceServers: ICE_SERVERS, ttlSeconds: 120 };
     }
 
     const data = await res.json();
-    return data.iceServers?.length > 0 ? data.iceServers : ICE_SERVERS;
+    return {
+      iceServers: data.iceServers?.length > 0 ? data.iceServers : ICE_SERVERS,
+      ttlSeconds: data.ttlSeconds ?? 120,
+    };
   } catch (err) {
     console.warn("TURN fetch failed, using STUN only:", err);
-    return ICE_SERVERS;
+    return { iceServers: ICE_SERVERS, ttlSeconds: 120 };
   }
 }
 
@@ -70,6 +73,7 @@ export function useDatePeerConnection(opts: {
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [credentialExpiresAt, setCredentialExpiresAt] = useState<Date | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -141,7 +145,8 @@ export function useDatePeerConnection(opts: {
       setLocalStream(stream);
 
       // Fetch fresh TURN credentials from Turnix
-      const iceServers = await getIceServers();
+      const { iceServers, ttlSeconds } = await getIceServers();
+      setCredentialExpiresAt(new Date(Date.now() + ttlSeconds * 1000));
       const pc = new RTCPeerConnection({ iceServers });
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
@@ -240,7 +245,8 @@ export function useDatePeerConnection(opts: {
 
             // If peer connection was closed (reconnect scenario), create a new one
             if (!pcRef.current || pcRef.current.connectionState === "closed") {
-              const iceServers = await getIceServers();
+              const { iceServers, ttlSeconds } = await getIceServers();
+              setCredentialExpiresAt(new Date(Date.now() + ttlSeconds * 1000));
               const pc = new RTCPeerConnection({ iceServers });
               pcRef.current = pc;
               if (localStreamRef.current) {
@@ -280,7 +286,8 @@ export function useDatePeerConnection(opts: {
 
             // Create new peer connection if needed (reconnect scenario)
             if (!pcRef.current || pcRef.current.connectionState === "closed") {
-              const iceServers = await getIceServers();
+              const { iceServers, ttlSeconds } = await getIceServers();
+              setCredentialExpiresAt(new Date(Date.now() + ttlSeconds * 1000));
               const pc = new RTCPeerConnection({ iceServers });
               pcRef.current = pc;
               if (localStreamRef.current) {
@@ -380,5 +387,5 @@ export function useDatePeerConnection(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signalUrl, roomId, peerId]);
 
-  return { status, localStream, remoteStream, sendSync };
+  return { status, localStream, remoteStream, sendSync, credentialExpiresAt };
 }

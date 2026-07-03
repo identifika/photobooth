@@ -1,6 +1,13 @@
 
 import { NextResponse } from 'next/server';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { z } from 'zod';
+
+const ShareRequestSchema = z.object({
+  sessionId: z.string().min(1).refine(val => !val.includes('/') && !val.includes('..'), {
+    message: "Invalid session ID format",
+  }),
+});
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
@@ -14,16 +21,14 @@ const s3 = new S3Client({
 
 export async function POST(request: Request) {
   try {
-    const { sessionId } = await request.json();
+    const json = await request.json();
+    const result = ShareRequestSchema.safeParse(json);
 
-    if (!sessionId) {
-      return NextResponse.json({ error: 'Missing session ID' }, { status: 400 });
+    if (!result.success) {
+      return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
 
-    // Ensure they don't try to list the whole bucket
-    if (sessionId.includes('/') || sessionId.includes('..')) {
-      return NextResponse.json({ error: 'Invalid session ID' }, { status: 400 });
-    }
+    const { sessionId } = result.data;
 
     const bucket = process.env.S3_BUCKET_NAME;
 

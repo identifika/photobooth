@@ -572,7 +572,7 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
                     <button
                       key={preset.id}
                       onClick={() => handlePresetSelect(preset)}
-                      className={`relative p-3 rounded-xl border text-left transition-all ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
+                      className={`relative p-3 rounded-xl border text-left min-h-[56px] transition-all hover:scale-[1.02] active:scale-[0.98] touch-manipulation ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
                       style={{ borderColor: isActive ? frame.borderColor : undefined }}
                     >
                       <div className="flex items-center gap-3">
@@ -604,18 +604,20 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
                         {adjustments[slider.key]}
                       </span>
                     </div>
-                    <input
-                      type="range"
-                      min={slider.min}
-                      max={slider.max}
-                      value={adjustments[slider.key]}
-                      onChange={e => handleAdjustmentChange(slider.key, Number(e.target.value))}
-                      className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                      style={{
-                        background: `linear-gradient(to right, ${frame.accentColor} 0%, ${frame.accentColor} ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 100%)`,
-                        accentColor: frame.borderColor,
-                      }}
-                    />
+                    <div className="py-2 flex items-center min-h-[44px]">
+                      <input
+                        type="range"
+                        min={slider.min}
+                        max={slider.max}
+                        value={adjustments[slider.key]}
+                        onChange={e => handleAdjustmentChange(slider.key, Number(e.target.value))}
+                        className="w-full h-2 rounded-full appearance-none cursor-pointer touch-none"
+                        style={{
+                          background: `linear-gradient(to right, ${frame.accentColor} 0%, ${frame.accentColor} ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 ${((adjustments[slider.key] - slider.min) / (slider.max - slider.min)) * 100}%, ${frame.borderColor}20 100%)`,
+                          accentColor: frame.borderColor,
+                        }}
+                      />
+                    </div>
                   </div>
                 ))}
               </div>

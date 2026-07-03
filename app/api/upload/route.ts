@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
+import { z } from 'zod';
+
+const UploadRequestSchema = z.object({
+  image: z.string().min(1, "Missing image data"),
+  sessionId: z.string().optional(),
+  filename: z.string().optional(),
+});
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
@@ -14,11 +21,14 @@ const s3 = new S3Client({
 
 export async function POST(request: Request) {
   try {
-    const { image, sessionId, filename: customFilename } = await request.json();
+    const json = await request.json();
+    const result = UploadRequestSchema.safeParse(json);
 
-    if (!image || typeof image !== 'string') {
-      return NextResponse.json({ error: 'Invalid image data' }, { status: 400 });
+    if (!result.success) {
+      return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
+
+    const { image, sessionId, filename: customFilename } = result.data;
 
     // Parse base64
     const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);

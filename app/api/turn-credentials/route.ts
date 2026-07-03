@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
 
     return NextResponse.json(
-      { iceServers: data.iceServers ?? [] },
+      { iceServers: data.iceServers ?? [], ttlSeconds: CREDENTIAL_TTL_SECONDS },
       {
         headers: {
           'Cache-Control': `private, max-age=${CREDENTIAL_TTL_SECONDS - 10}`,

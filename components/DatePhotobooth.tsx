@@ -8,6 +8,8 @@ import StripPreview from "@/components/StripPreview";
 import BackgroundSelector, { EditorSyncData } from "@/components/BackgroundSelector";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import PhotoReview from "./PhotoReview";
+import ChatPanel, { ChatMessage } from "./ChatPanel";
+import DualCameraView from "./DualCameraView";
 
 export type CaptureMode = "left" | "right" | "merged";
 
@@ -57,24 +59,23 @@ export default function DatePhotobooth({
   const [sessionEndedByHost, setSessionEndedByHost] = useState(false);
 
   // Chat state
-  const [messages, setMessages] = useState<{ message: string, from: "left" | "right", timestamp: number }[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState("");
   const [unreadChat, setUnreadChat] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Hold pending snapshots from both sides for the current photo index
   const pendingSnapshots = useRef<{ left?: string, right?: string }>({});
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
   const isMobile = useIsMobile();
 
-  const { status, localStream, remoteStream, sendSync } = useDatePeerConnection({
+  const { status, localStream, remoteStream, sendSync, credentialExpiresAt } = useDatePeerConnection({
     signalUrl,
     roomId,
     peerId,
@@ -155,26 +156,27 @@ export default function DatePhotobooth({
 
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+    // Always attach stream to the persistent audio element so voice continues across steps
+    if (remoteAudioRef.current && remoteStream) {
+      remoteAudioRef.current.srcObject = remoteStream;
+    }
   }, [remoteStream, step]);
 
+  // Live countdown of ICE credential TTL — visible only while waiting for guest
+  const [credentialSecondsLeft, setCredentialSecondsLeft] = useState<number | null>(null);
   useEffect(() => {
-    if (chatOpen && chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (!credentialExpiresAt || status !== "waiting-for-peer") {
+      setCredentialSecondsLeft(null);
+      return;
     }
-  }, [messages, chatOpen]);
-
-  useEffect(() => {
-    if (chatOpen) setUnreadChat(false);
-  }, [chatOpen]);
-
-  function sendMessage(e: React.FormEvent) {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-    const msg = { kind: "chat-message" as const, message: chatInput, from: isMe, timestamp: Date.now() };
-    setMessages(prev => [...prev, msg]);
-    sendSync(msg);
-    setChatInput("");
-  }
+    const tick = () => {
+      const diff = Math.max(0, Math.round((credentialExpiresAt.getTime() - Date.now()) / 1000));
+      setCredentialSecondsLeft(diff);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [credentialExpiresAt, status]);
 
   function handleModeChange(mode: CaptureMode) {
     if (isMe === "left") {
@@ -367,8 +369,25 @@ export default function DatePhotobooth({
     "error": "connection error",
   };
 
+  const chatUI = status === "connected" ? (
+    <ChatPanel
+      isMobile={isMobile}
+      messages={messages}
+      isMe={isMe}
+      chatOpen={chatOpen}
+      setChatOpen={setChatOpen}
+      unreadChat={unreadChat}
+      onSendMessage={(text) => {
+        sendSync({ kind: "chat-message", message: text, from: isMe, timestamp: Date.now() });
+        setMessages(prev => [...prev, { message: text, from: isMe, timestamp: Date.now() }]);
+      }}
+    />
+  ) : null;
+
+  let mainContent;
+
   if (sessionEndedByHost) {
-    return (
+    mainContent = (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 w-full">
         <div className="bg-surface-1 border border-border p-8 rounded-2xl shadow-xl max-w-sm w-full text-center animate-in zoom-in fade-in duration-300">
           <h2 className="text-xl font-semibold text-foreground mb-3">Session Ended</h2>
@@ -384,62 +403,8 @@ export default function DatePhotobooth({
         </div>
       </div>
     );
-  }
-
-  const chatUI = status === "connected" ? (
-    <div className={`fixed z-50 flex flex-col items-end ${isMobile ? 'bottom-0 left-0 right-0 px-3 pb-3' : 'bottom-6 right-6'}`}>
-      {chatOpen ? (
-        <div className={`bg-surface-1 border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden mb-4 ${isMobile ? 'w-full h-[22rem]' : 'w-80 h-[28rem]'}`}>
-          <div className="p-3 border-b border-border flex justify-between items-center bg-surface-2">
-            <span className="font-mono text-xs font-bold tracking-widest uppercase text-foreground">Chat Session</span>
-            <button onClick={() => setChatOpen(false)} className="opacity-50 hover:opacity-100 text-lg leading-none text-foreground">&times;</button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-            {messages.length === 0 ? (
-              <div className="text-center opacity-50 text-xs mt-4 text-foreground">No messages yet. Say hi!</div>
-            ) : (
-              messages.map((m, i) => (
-                <div key={i} className={`flex flex-col ${m.from === isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`px-3 py-1.5 text-sm max-w-[85%] break-words ${m.from === isMe ? 'bg-foreground text-background rounded-2xl rounded-br-sm' : 'bg-surface-0 text-foreground rounded-2xl rounded-bl-sm border border-border'
-                    }`}>
-                    {m.message}
-                  </div>
-                </div>
-              ))
-            )}
-            <div ref={chatEndRef} />
-          </div>
-          <form onSubmit={sendMessage} className="p-2 border-t border-border flex gap-2">
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type a message..."
-              className="flex-1 bg-surface-2 border border-border rounded-full px-3 py-1.5 text-sm focus:outline-none focus:border-foreground text-foreground"
-            />
-            <button type="submit" disabled={!chatInput.trim()} className="bg-foreground text-background rounded-full px-4 py-1.5 text-sm font-medium disabled:opacity-50 transition-opacity">
-              Send
-            </button>
-          </form>
-        </div>
-      ) : (
-        <button
-          onClick={() => setChatOpen(true)}
-          className="w-12 h-12 bg-surface-1 border border-border rounded-full shadow-lg flex items-center justify-center hover:bg-surface-2 transition-colors relative text-foreground"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-          {unreadChat && (
-            <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-surface-1"></span>
-          )}
-        </button>
-      )}
-    </div>
-  ) : null;
-
-  if (step === "photo-review" && pendingPhoto) {
-    return (
+  } else if (step === "photo-review" && pendingPhoto) {
+    mainContent = (
       <div className="w-full max-w-3xl mx-auto relative">
         <PhotoReview
           photoUrl={pendingPhoto}
@@ -452,10 +417,8 @@ export default function DatePhotobooth({
         {chatUI}
       </div>
     );
-  }
-
-  if (step === "review") {
-    return (
+  } else if (step === "review") {
+    mainContent = (
       <div className="w-full max-w-3xl mx-auto relative">
         <StripPreview
           photos={photos}
@@ -473,10 +436,8 @@ export default function DatePhotobooth({
         {chatUI}
       </div>
     );
-  }
-
-  if (step === "enhance") {
-    return (
+  } else if (step === "enhance") {
+    mainContent = (
       <div className="w-full relative">
         <BackgroundSelector
           photos={photos}
@@ -495,10 +456,8 @@ export default function DatePhotobooth({
         {chatUI}
       </div>
     );
-  }
-
-  if (step === "final") {
-    return (
+  } else if (step === "final") {
+    mainContent = (
       <div className="w-full max-w-3xl mx-auto relative">
         <FinalStrip
           photos={compositedPhotos || photos}
@@ -524,220 +483,177 @@ export default function DatePhotobooth({
         {chatUI}
       </div>
     );
+  } else {
+    const currentAspectRatio = activeFrame.layout === 'grid-2x2' ? 1 : 4 / 3;
+    mainContent = (
+      <div className="w-full animate-fadeIn max-w-3xl mx-auto flex flex-col items-center">
+        <div className="text-center mb-8">
+          <p className={`tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
+            Date Session
+          </p>
+          <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
+            {photos.length > 0 ? (
+              <>Photo {photos.length + 1} <span className="opacity-40">of {activeFrame.photoCount}</span></>
+            ) : (
+              <>Ready</>
+            )}
+          </h2>
+          <p className="mt-2 opacity-60 text-sm">{activeFrame.emoji} {activeFrame.name}</p>
+          <p className="mt-1 opacity-40 text-xs">{statusMessage[status] ?? status}</p>
+        </div>
+
+        {/* ICE credential countdown — host only, while waiting for guest */}
+        {isMe === "left" && status === "waiting-for-peer" && credentialSecondsLeft !== null && (
+          <div className={`flex items-center gap-2 px-4 py-2 rounded-full border text-xs font-mono mb-2 transition-colors ${
+            credentialSecondsLeft <= 30
+              ? 'border-red-500/40 bg-red-500/10 text-red-400'
+              : 'border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${credentialSecondsLeft <= 30 ? 'bg-red-400 animate-pulse' : 'bg-amber-400 animate-pulse'}`} />
+            <span>
+              Link valid for{' '}
+              <span className={`font-bold tabular-nums ${credentialSecondsLeft <= 30 ? 'text-red-300' : 'text-[var(--text-primary)]'}`}>
+                {String(Math.floor(credentialSecondsLeft / 60)).padStart(2, '0')}:{String(credentialSecondsLeft % 60).padStart(2, '0')}
+              </span>
+            </span>
+            {credentialSecondsLeft === 0 && (
+              <span className="ml-1 text-red-400">— refresh the page to reconnect</span>
+            )}
+          </div>
+        )}
+
+        {/* Progress dots */}
+        <div className="flex justify-center gap-3 mb-8">
+          {Array.from({ length: activeFrame.photoCount }).map((_, i) => (
+            <div key={i} style={{
+              width: i === photos.length ? 24 : 10,
+              height: 10,
+              borderRadius: 5,
+              background: i < photos.length ? activeFrame.accentColor : i === photos.length ? activeFrame.borderColor : `${activeFrame.borderColor}30`,
+              transition: 'all 0.3s ease',
+            }} />
+          ))}
+        </div>
+
+        {/* Camera viewfinder */}
+        <DualCameraView
+          currentAspectRatio={currentAspectRatio}
+          isMobile={isMobile}
+          activeFrame={activeFrame}
+          captureMode={captureMode}
+          isMe={isMe}
+          localVideoRef={localVideoRef}
+          remoteVideoRef={remoteVideoRef}
+          countdown={countdown}
+          isCapturing={isCapturing}
+          photoCount={photos.length}
+        />
+
+        {/* Controls & Shutter */}
+        <div className="flex flex-col items-center mt-8 gap-4">
+          {isMe === "left" && status === "connected" && countdown === null && !isCapturing && (
+            <div className="flex bg-[var(--surface-3)] rounded-full p-1 gap-1 border border-[var(--border)] mb-2 shadow-sm">
+              <button
+                onClick={() => handleModeChange("left")}
+                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+              >
+                You
+              </button>
+              <button
+                onClick={() => handleModeChange("merged")}
+                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+              >
+                Both
+              </button>
+              <button
+                onClick={() => handleModeChange("right")}
+                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+              >
+                Date
+              </button>
+            </div>
+          )}
+
+          {isMe === "left" ? (
+            <button
+              onClick={triggerSharedCapture}
+              disabled={status !== "connected" || countdown !== null || isCapturing}
+              className="relative"
+              style={{ cursor: status === "connected" && countdown === null && !isCapturing ? 'pointer' : 'not-allowed' }}
+            >
+              <div style={{
+                width: 80, height: 80,
+                borderRadius: '50%',
+                background: 'var(--surface-2)',
+                border: `4px solid ${activeFrame.borderColor}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.2s',
+                opacity: status === "connected" && countdown === null && !isCapturing ? 1 : 0.5,
+                boxShadow: `0 4px 20px ${activeFrame.borderColor}30`,
+              }}>
+                <div style={{
+                  width: 44, height: 44,
+                  borderRadius: '50%',
+                  background: countdown !== null || isCapturing ? 'var(--accent)' : activeFrame.borderColor,
+                  transition: 'background 0.3s',
+                }} />
+              </div>
+
+              {/* Pulse rings when counting or capturing */}
+              {(countdown !== null || isCapturing) && (
+                <>
+                  {[1, 2].map(r => (
+                    <div key={r} style={{
+                      position: 'absolute',
+                      inset: -r * 12,
+                      borderRadius: '50%',
+                      border: `2px solid ${activeFrame.accentColor}`,
+                      animation: `pulse-ring 1s ease-out ${r * 0.2}s infinite`,
+                    }} />
+                  ))}
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="px-6 py-3 border border-[var(--border)] rounded-full font-mono text-sm tracking-wide opacity-50">
+              waiting for host...
+            </div>
+          )}
+          <p className="text-xs opacity-40 tracking-widest uppercase">
+            {isCapturing && countdown === null ? 'Recording motion...' : countdown !== null ? `Shooting in ${countdown}...` : isMe === "left" && status === "connected" ? 'Press to take next photo' : ''}
+          </p>
+
+          {isMe === "left" && status === "connected" && photos.length > 0 && countdown === null && !isCapturing && (
+            <button
+              onClick={() => {
+                setPhotos([]);
+                setCompositedPhotos(undefined);
+                setEditorSyncData(undefined);
+                setCaptureMode("merged");
+                sendSync({ kind: "restart-session" });
+              }}
+              className="mt-4 px-4 py-2 border border-[var(--border)] rounded-full text-xs opacity-60 hover:opacity-100 hover:bg-[var(--surface-2)] transition-all"
+            >
+              ↺ Restart session
+            </button>
+          )}
+        </div>
+
+        <canvas ref={canvasRef} className="hidden" />
+
+        {chatUI}
+      </div>
+    );
   }
 
-  const currentAspectRatio = activeFrame.layout === 'grid-2x2' ? 1 : 4 / 3;
-
   return (
-    <div className="w-full animate-fadeIn max-w-3xl mx-auto flex flex-col items-center">
-      <div className="text-center mb-8">
-        <p className={`tracking-[0.25em] uppercase opacity-50 mb-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
-          Date Session
-        </p>
-        <h2 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-4xl'}`}>
-          {photos.length > 0 ? (
-            <>Photo {photos.length + 1} <span className="opacity-40">of {activeFrame.photoCount}</span></>
-          ) : (
-            <>Ready</>
-          )}
-        </h2>
-        <p className="mt-2 opacity-60 text-sm">{activeFrame.emoji} {activeFrame.name}</p>
-        <p className="mt-1 opacity-40 text-xs">{statusMessage[status] ?? status}</p>
-      </div>
-
-      {/* Progress dots */}
-      <div className="flex justify-center gap-3 mb-8">
-        {Array.from({ length: activeFrame.photoCount }).map((_, i) => (
-          <div key={i} style={{
-            width: i === photos.length ? 24 : 10,
-            height: 10,
-            borderRadius: 5,
-            background: i < photos.length ? activeFrame.accentColor : i === photos.length ? activeFrame.borderColor : `${activeFrame.borderColor}30`,
-            transition: 'all 0.3s ease',
-          }} />
-        ))}
-      </div>
-
-      {/* Camera viewfinder */}
-      <div className="relative overflow-hidden rounded-sm shadow-2xl transition-all duration-300 flex"
-        style={{
-          aspectRatio: String(currentAspectRatio),
-          width: '100%',
-          maxWidth: isMobile ? `min(100%, 60vh * ${currentAspectRatio})` : `min(32rem, 55vh * ${currentAspectRatio})`,
-          border: `4px solid ${activeFrame.borderColor}`,
-          boxShadow: `0 20px 60px ${activeFrame.borderColor}30`,
-          background: activeFrame.color,
-        }}
-      >
-        <div className="w-1/2 h-full relative" style={{ display: captureMode === 'right' ? 'none' : 'block', width: captureMode === 'merged' ? '50%' : '100%' }}>
-          <video
-            ref={isMe === "left" ? localVideoRef : remoteVideoRef}
-            autoPlay
-            muted={isMe === "left"}
-            playsInline
-            className="w-full h-full object-cover"
-            style={{ transform: 'scaleX(-1)', display: 'block' }}
-          />
-          <div className="absolute bottom-2 left-2 text-[10px] font-mono opacity-50 text-white bg-black/30 px-2 py-0.5 rounded">
-            {isMe === "left" ? "YOU" : "DATE"}
-          </div>
-        </div>
-        <div className="w-1/2 h-full relative" style={{ display: captureMode === 'left' ? 'none' : 'block', width: captureMode === 'merged' ? '50%' : '100%', borderLeft: captureMode === 'merged' ? `2px solid ${activeFrame.borderColor}` : 'none' }}>
-          <video
-            ref={isMe === "left" ? remoteVideoRef : localVideoRef}
-            autoPlay
-            muted={isMe !== "left"}
-            playsInline
-            className="w-full h-full object-cover"
-            style={{ transform: 'scaleX(-1)', display: 'block' }}
-          />
-          <div className="absolute bottom-2 left-2 text-[10px] font-mono opacity-50 text-white bg-black/30 px-2 py-0.5 rounded">
-            {isMe === "left" ? "DATE" : "YOU"}
-          </div>
-        </div>
-
-        {/* Live / Capturing indicator */}
-        {countdown !== null && (
-          <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <span className="text-white text-[10px] font-medium tracking-wide">LIVE</span>
-          </div>
-        )}
-        {isCapturing && countdown === null && (
-          <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
-            style={{ background: 'rgba(251,191,36,0.3)', border: '1px solid rgba(251,191,36,0.6)' }}>
-            <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-            <span className="text-yellow-200 text-[10px] font-medium tracking-wide">RECORDING</span>
-          </div>
-        )}
-
-        {/* Viewfinder corners */}
-        {['top-2 left-2', 'top-2 right-2', 'bottom-2 left-2', 'bottom-2 right-2'].map((pos, i) => (
-          <div key={i} className={`absolute ${pos} w-6 h-6`} style={{
-            borderTop: i < 2 ? `3px solid ${activeFrame.accentColor}` : 'none',
-            borderBottom: i >= 2 ? `3px solid ${activeFrame.accentColor}` : 'none',
-            borderLeft: i % 2 === 0 ? `3px solid ${activeFrame.accentColor}` : 'none',
-            borderRight: i % 2 === 1 ? `3px solid ${activeFrame.accentColor}` : 'none',
-          }} />
-        ))}
-
-        {/* Countdown */}
-        {countdown !== null && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none"
-            style={{ background: 'rgba(0,0,0,0.3)' }}>
-            <div className={`text-white font-display font-black ${isMobile ? 'text-6xl' : 'text-9xl'}`}
-              style={{ textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
-              {countdown}
-            </div>
-          </div>
-        )}
-
-        {/* Photo label */}
-        <div className="absolute bottom-3 left-0 right-0 text-center">
-          <span className="text-xs px-3 py-1 rounded-full"
-            style={{ background: `${activeFrame.borderColor}cc`, color: activeFrame.color, letterSpacing: '0.15em' }}>
-            PHOTO {Math.min(photos.length + 1, activeFrame.photoCount)}/{activeFrame.photoCount}
-          </span>
-        </div>
-      </div>
-
-      {/* Controls & Shutter */}
-      <div className="flex flex-col items-center mt-8 gap-4">
-        {isMe === "left" && status === "connected" && countdown === null && !isCapturing && (
-          <div className="flex bg-[var(--surface-3)] rounded-full p-1 gap-1 border border-[var(--border)] mb-2 shadow-sm">
-            <button
-              onClick={() => handleModeChange("left")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                }`}
-            >
-              You
-            </button>
-            <button
-              onClick={() => handleModeChange("merged")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                }`}
-            >
-              Both
-            </button>
-            <button
-              onClick={() => handleModeChange("right")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                }`}
-            >
-              Date
-            </button>
-          </div>
-        )}
-
-        {isMe === "left" ? (
-          <button
-            onClick={triggerSharedCapture}
-            disabled={status !== "connected" || countdown !== null || isCapturing}
-            className="relative"
-            style={{ cursor: status === "connected" && countdown === null && !isCapturing ? 'pointer' : 'not-allowed' }}
-          >
-            <div style={{
-              width: 80, height: 80,
-              borderRadius: '50%',
-              background: 'var(--surface-2)',
-              border: `4px solid ${activeFrame.borderColor}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.2s',
-              opacity: status === "connected" && countdown === null && !isCapturing ? 1 : 0.5,
-              boxShadow: `0 4px 20px ${activeFrame.borderColor}30`,
-            }}>
-              <div style={{
-                width: 44, height: 44,
-                borderRadius: '50%',
-                background: countdown !== null || isCapturing ? 'var(--accent)' : activeFrame.borderColor,
-                transition: 'background 0.3s',
-              }} />
-            </div>
-
-            {/* Pulse rings when counting or capturing */}
-            {(countdown !== null || isCapturing) && (
-              <>
-                {[1, 2].map(r => (
-                  <div key={r} style={{
-                    position: 'absolute',
-                    inset: -r * 12,
-                    borderRadius: '50%',
-                    border: `2px solid ${activeFrame.accentColor}`,
-                    animation: `pulse-ring 1s ease-out ${r * 0.2}s infinite`,
-                  }} />
-                ))}
-              </>
-            )}
-          </button>
-        ) : (
-          <div className="px-6 py-3 border border-[var(--border)] rounded-full font-mono text-sm tracking-wide opacity-50">
-            waiting for host...
-          </div>
-        )}
-        <p className="text-xs opacity-40 tracking-widest uppercase">
-          {isCapturing && countdown === null ? 'Recording motion...' : countdown !== null ? `Shooting in ${countdown}...` : isMe === "left" && status === "connected" ? 'Press to take next photo' : ''}
-        </p>
-
-        {isMe === "left" && status === "connected" && photos.length > 0 && countdown === null && !isCapturing && (
-          <button
-            onClick={() => {
-              setPhotos([]);
-              setCompositedPhotos(undefined);
-              setEditorSyncData(undefined);
-              setCaptureMode("merged");
-              sendSync({ kind: "restart-session" });
-            }}
-            className="mt-4 px-4 py-2 border border-[var(--border)] rounded-full text-xs opacity-60 hover:opacity-100 hover:bg-[var(--surface-2)] transition-all"
-          >
-            ↺ Restart session
-          </button>
-        )}
-      </div>
-
-      <canvas ref={canvasRef} className="hidden" />
-
-      {chatUI}
-    </div>
+    <>
+      {/* Persistent remote audio to ensure conversation continues across steps */}
+      <audio ref={remoteAudioRef} autoPlay playsInline style={{ display: 'none' }} />
+      {mainContent}
+    </>
   );
 }
