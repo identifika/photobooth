@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useDatePeerConnection } from "@/lib/useDatePeerConnection";
 import { Frame, FRAMES, layoutToConfig } from "@/lib/frames";
 import FinalStrip from "@/components/FinalStrip";
+import StripPreview from "@/components/StripPreview";
+import EditEnhance from "@/components/EditEnhance";
 import { useIsMobile } from "@/hooks/useIsMobile";
 
 export type CaptureMode = "merged" | "left" | "right";
@@ -11,290 +13,308 @@ export type CaptureMode = "merged" | "left" | "right";
   type SyncPayload =
   | { kind: "sync-frame"; frame: Frame; mode: CaptureMode }
   | { kind: "sync-mode"; mode: CaptureMode }
+  | { kind: "sync-step"; step: "capture" | "review" | "enhance" | "final" }
+  | { kind: "sync-filter"; filter: string }
+  | { kind: "retake-photo"; index: number }
   | { kind: "capture-countdown"; startAt: number; duration: number; index: number; mode: CaptureMode }
   | { kind: "provide-snapshot"; index: number; dataUrl: string; from: "left" | "right" }
   | { kind: "chat-message"; message: string; from: "left" | "right"; timestamp: number }
   | { kind: "restart-session" };
 
-  const DEFAULT_FRAME = FRAMES.find((f) => f.layout === "strip-2") || FRAMES[1];
+const DEFAULT_FRAME = FRAMES.find((f) => f.layout === "strip-2") || FRAMES[1];
 
-  export default function DatePhotobooth({
+export default function DatePhotobooth({
+  signalUrl,
+  roomId,
+  peerId,
+  isMe,
+  initialFrame,
+}: {
+  signalUrl: string;
+  roomId: string;
+  peerId: string;
+  isMe: "left" | "right";
+  initialFrame?: Frame;
+}) {
+  const [frame, setFrame] = useState<Frame | null>(initialFrame || null);
+  const [captureMode, setCaptureMode] = useState<CaptureMode>("merged");
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [step, setStep] = useState<"capture" | "review" | "enhance" | "final">("capture");
+  const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
+  const [selectedFilter, setSelectedFilter] = useState<string>("");
+
+  // Chat state
+  const [messages, setMessages] = useState<{ message: string, from: "left" | "right", timestamp: number }[]>([]);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [unreadChat, setUnreadChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Hold pending snapshots from both sides for the current photo index
+  const pendingSnapshots = useRef<{ left?: string, right?: string }>({});
+
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
+  const isMobile = useIsMobile();
+
+  const { status, localStream, remoteStream, sendSync } = useDatePeerConnection({
     signalUrl,
     roomId,
     peerId,
-    isMe,
-    initialFrame,
-  }: {
-    signalUrl: string;
-    roomId: string;
-    peerId: string;
-    isMe: "left" | "right";
-    initialFrame?: Frame;
-  }) {
-    const [frame, setFrame] = useState<Frame | null>(initialFrame || null);
-    const [captureMode, setCaptureMode] = useState<CaptureMode>("merged");
-    const [countdown, setCountdown] = useState<number | null>(null);
-    const [isCapturing, setIsCapturing] = useState(false);
-    const [photos, setPhotos] = useState<string[]>([]);
-    const [completed, setCompleted] = useState(false);
-    
-    // Chat state
-    const [messages, setMessages] = useState<{message: string, from: "left" | "right", timestamp: number}[]>([]);
-    const [chatOpen, setChatOpen] = useState(false);
-    const [chatInput, setChatInput] = useState("");
-    const [unreadChat, setUnreadChat] = useState(false);
-    const chatEndRef = useRef<HTMLDivElement>(null);
-
-    // Hold pending snapshots from both sides for the current photo index
-    const pendingSnapshots = useRef<{ left?: string, right?: string }>({});
-
-    const localVideoRef = useRef<HTMLVideoElement>(null);
-    const remoteVideoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-    const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
-    const isMobile = useIsMobile();
-
-    const { status, localStream, remoteStream, sendSync } = useDatePeerConnection({
-      signalUrl,
-      roomId,
-      peerId,
-      isInitiator: isMe === "left",
-      onSync: (payload) => {
-        const p = payload as SyncPayload;
-        if (p.kind === "sync-frame") {
-          if (isMe === "right") {
-            setFrame(p.frame);
-            setCaptureMode(p.mode);
-          }
-        } else if (p.kind === "sync-mode") {
-          if (isMe === "right") {
-            setCaptureMode(p.mode);
-          }
-        } else if (p.kind === "capture-countdown") {
-          if (!isCapturing) {
-            setIsCapturing(true);
-          }
+    isInitiator: isMe === "left",
+    onSync: (payload) => {
+      const p = payload as SyncPayload;
+      if (p.kind === "sync-frame") {
+        if (isMe === "right") {
+          setFrame(p.frame);
           setCaptureMode(p.mode);
-          runCountdown(p.startAt, p.duration, p.index, p.mode);
-        } else if (p.kind === "provide-snapshot") {
-          handleReceivedSnapshot(p.index, p.from, p.dataUrl);
-        } else if (p.kind === "chat-message") {
-          setMessages(prev => [...prev, p]);
-          setUnreadChat(prev => chatOpen ? false : true);
-        } else if (p.kind === "restart-session") {
-          setPhotos([]);
-          setCompleted(false);
-          setCaptureMode("merged");
-          setCountdown(null);
-          setIsCapturing(false);
-          pendingSnapshots.current = {};
         }
-      },
-    });
-
-    // Sync frame to guest when connected
-    useEffect(() => {
-      if (status === "connected" && isMe === "left" && frame) {
-        sendSync({ kind: "sync-frame", frame, mode: captureMode });
-      }
-    }, [status, isMe, frame, sendSync]);
-
-    useEffect(() => {
-      if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream;
-    }, [localStream, completed]);
-
-    useEffect(() => {
-      if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
-    }, [remoteStream, completed]);
-
-    useEffect(() => {
-      if (chatOpen && chatEndRef.current) {
-        chatEndRef.current.scrollIntoView({ behavior: "smooth" });
-      }
-    }, [messages, chatOpen]);
-
-    useEffect(() => {
-      if (chatOpen) setUnreadChat(false);
-    }, [chatOpen]);
-
-    function sendMessage(e: React.FormEvent) {
-      e.preventDefault();
-      if (!chatInput.trim()) return;
-      const msg = { kind: "chat-message" as const, message: chatInput, from: isMe, timestamp: Date.now() };
-      setMessages(prev => [...prev, msg]);
-      sendSync(msg);
-      setChatInput("");
-    }
-
-    function handleModeChange(mode: CaptureMode) {
-      if (isMe === "left") {
-        setCaptureMode(mode);
-        sendSync({ kind: "sync-mode", mode });
-      }
-    }
-
-    // Capture the local video stream in high resolution
-    function captureLocalHighResSnapshot(): Promise<string> {
-      return new Promise((resolve) => {
-        const video = localVideoRef.current;
-        if (!video || !canvasRef.current) return resolve("");
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve("");
-
-        // 4:3 high res snapshot
-        const W = 1600;
-        const H = 1200;
-        canvas.width = W;
-        canvas.height = H;
-
-        // Crop to fill WxH
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(0, 0, W, H);
-        ctx.clip();
-
-        const vRatio = video.videoWidth / video.videoHeight;
-        const sRatio = W / H;
-        let sw = W, sh = H, sx = 0, sy = 0;
-        if (vRatio > sRatio) {
-          sh = H; sw = H * vRatio; sx = -(sw - W) / 2;
-        } else {
-          sw = W; sh = W / vRatio; sy = -(sh - H) / 2;
+      } else if (p.kind === "sync-mode") {
+        if (isMe === "right") {
+          setCaptureMode(p.mode);
         }
+      } else if (p.kind === "capture-countdown") {
+        if (!isCapturing) {
+          setIsCapturing(true);
+        }
+        setCaptureMode(p.mode);
+        runCountdown(p.startAt, p.duration, p.index, p.mode);
+      } else if (p.kind === "provide-snapshot") {
+        handleReceivedSnapshot(p.index, p.from, p.dataUrl);
+      } else if (p.kind === "chat-message") {
+        setMessages(prev => [...prev, p]);
+        setUnreadChat(prev => chatOpen ? false : true);
+      } else if (p.kind === "restart-session") {
+        setPhotos([]);
+        setStep("capture");
+        setRetakeIndex(null);
+        setSelectedFilter("");
+        setCaptureMode("merged");
+        setCountdown(null);
+        setIsCapturing(false);
+        pendingSnapshots.current = {};
+      } else if (p.kind === "sync-step") {
+        setStep(p.step);
+      } else if (p.kind === "retake-photo") {
+        setRetakeIndex(p.index);
+        setStep("capture");
+      } else if (p.kind === "sync-filter") {
+        setSelectedFilter(p.filter);
+      }
+    },
+  });
 
-        ctx.translate(sx + sw / 2, sy + sh / 2);
-        ctx.scale(-1, 1);
-        ctx.translate(-(sx + sw / 2), -(sy + sh / 2));
-
-        ctx.drawImage(video, sx, sy, sw, sh);
-        ctx.restore();
-
-        // 0.8 quality keeps the JPEG small enough for rapid WebRTC transfer (usually ~60KB)
-        resolve(canvas.toDataURL("image/jpeg", 0.8));
-      });
+  // Sync frame to guest when connected
+  useEffect(() => {
+    if (status === "connected" && isMe === "left" && frame) {
+      sendSync({ kind: "sync-frame", frame, mode: captureMode });
     }
+  }, [status, isMe, frame, sendSync]);
 
-    function stitchCompositeSnapshot(leftDataUrl: string, rightDataUrl: string): Promise<string> {
-      return new Promise((resolve) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return resolve("");
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return resolve("");
+  useEffect(() => {
+    if (localVideoRef.current && localStream) localVideoRef.current.srcObject = localStream;
+  }, [localStream, step]);
 
-        const W = 1600;
-        const H = 1200;
-        canvas.width = W;
-        canvas.height = H;
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) remoteVideoRef.current.srcObject = remoteStream;
+  }, [remoteStream, step]);
 
-        let loaded = 0;
-        const imgL = new Image();
-        const imgR = new Image();
-        
-        const draw = () => {
-          loaded++;
-          if (loaded === 2) {
-            // Draw left image cropped to left half
-            ctx.drawImage(imgL, W/4, 0, W/2, H, 0, 0, W/2, H);
-            // Draw right image cropped to right half
-            ctx.drawImage(imgR, W/4, 0, W/2, H, W/2, 0, W/2, H);
-            resolve(canvas.toDataURL("image/jpeg", 0.9));
-          }
-        };
-
-        imgL.onload = draw;
-        imgR.onload = draw;
-        imgL.src = leftDataUrl;
-        imgR.src = rightDataUrl;
-      });
+  useEffect(() => {
+    if (chatOpen && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
+  }, [messages, chatOpen]);
 
-    async function handleReceivedSnapshot(index: number, from: "left" | "right", dataUrl: string) {
-      pendingSnapshots.current[from] = dataUrl;
-      checkAndFinalizeSnapshot(index);
+  useEffect(() => {
+    if (chatOpen) setUnreadChat(false);
+  }, [chatOpen]);
+
+  function sendMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!chatInput.trim()) return;
+    const msg = { kind: "chat-message" as const, message: chatInput, from: isMe, timestamp: Date.now() };
+    setMessages(prev => [...prev, msg]);
+    sendSync(msg);
+    setChatInput("");
+  }
+
+  function handleModeChange(mode: CaptureMode) {
+    if (isMe === "left") {
+      setCaptureMode(mode);
+      sendSync({ kind: "sync-mode", mode });
     }
+  }
 
-    async function checkAndFinalizeSnapshot(index: number) {
-      const { left, right } = pendingSnapshots.current;
-      let finalSnapshotUrl = "";
+  // Capture the local video stream in high resolution
+  function captureLocalHighResSnapshot(): Promise<string> {
+    return new Promise((resolve) => {
+      const video = localVideoRef.current;
+      if (!video || !canvasRef.current) return resolve("");
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve("");
 
-      if (captureMode === "merged") {
-        if (!left || !right) return; // Wait for both
-        finalSnapshotUrl = await stitchCompositeSnapshot(left, right);
+      // 4:3 high res snapshot
+      const W = 1600;
+      const H = 1200;
+      canvas.width = W;
+      canvas.height = H;
+
+      // Crop to fill WxH
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.clip();
+
+      const vRatio = video.videoWidth / video.videoHeight;
+      const sRatio = W / H;
+      let sw = W, sh = H, sx = 0, sy = 0;
+      if (vRatio > sRatio) {
+        sh = H; sw = H * vRatio; sx = -(sw - W) / 2;
       } else {
-        if (captureMode === "left" && !left) return;
-        if (captureMode === "right" && !right) return;
-        finalSnapshotUrl = captureMode === "left" ? left! : right!;
+        sw = W; sh = W / vRatio; sy = -(sh - H) / 2;
       }
 
-      // Reset pending for next photo
-      pendingSnapshots.current = {};
+      ctx.translate(sx + sw / 2, sy + sh / 2);
+      ctx.scale(-1, 1);
+      ctx.translate(-(sx + sw / 2), -(sy + sh / 2));
 
-      setPhotos(prev => {
-        const next = [...prev];
-        next[index] = finalSnapshotUrl;
-        if (next.length >= activeFrame.photoCount) {
-          setCompleted(true);
-          setIsCapturing(false);
-        } else {
-          setIsCapturing(false);
+      ctx.drawImage(video, sx, sy, sw, sh);
+      ctx.restore();
+
+      // 0.8 quality keeps the JPEG small enough for rapid WebRTC transfer (usually ~60KB)
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    });
+  }
+
+  function stitchCompositeSnapshot(leftDataUrl: string, rightDataUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return resolve("");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve("");
+
+      const W = 1600;
+      const H = 1200;
+      canvas.width = W;
+      canvas.height = H;
+
+      let loaded = 0;
+      const imgL = new Image();
+      const imgR = new Image();
+
+      const draw = () => {
+        loaded++;
+        if (loaded === 2) {
+          // Draw left image cropped to left half
+          ctx.drawImage(imgL, W / 4, 0, W / 2, H, 0, 0, W / 2, H);
+          // Draw right image cropped to right half
+          ctx.drawImage(imgR, W / 4, 0, W / 2, H, W / 2, 0, W / 2, H);
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
         }
-        return next;
-      });
+      };
+
+      imgL.onload = draw;
+      imgR.onload = draw;
+      imgL.src = leftDataUrl;
+      imgR.src = rightDataUrl;
+    });
+  }
+
+  async function handleReceivedSnapshot(index: number, from: "left" | "right", dataUrl: string) {
+    pendingSnapshots.current[from] = dataUrl;
+    checkAndFinalizeSnapshot(index);
+  }
+
+  async function checkAndFinalizeSnapshot(index: number) {
+    const { left, right } = pendingSnapshots.current;
+    let finalSnapshotUrl = "";
+
+    if (captureMode === "merged") {
+      if (!left || !right) return; // Wait for both
+      finalSnapshotUrl = await stitchCompositeSnapshot(left, right);
+    } else {
+      if (captureMode === "left" && !left) return;
+      if (captureMode === "right" && !right) return;
+      finalSnapshotUrl = captureMode === "left" ? left! : right!;
     }
 
-    function runCountdown(startAt: number, duration: number, index: number, mode: CaptureMode): Promise<void> {
-      return new Promise((resolve) => {
-        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
-        countdownTimerRef.current = setInterval(async () => {
-          const remaining = Math.ceil((startAt + duration - Date.now()) / 1000);
-          if (remaining <= 0) {
-            clearInterval(countdownTimerRef.current!);
-            setCountdown(null);
+    // Reset pending for next photo
+    pendingSnapshots.current = {};
 
-            // Time's up! Capture our own local high-res camera
-            const localDataUrl = await captureLocalHighResSnapshot();
-            
-            // Send it to the other peer
-            sendSync({ kind: "provide-snapshot", index, dataUrl: localDataUrl, from: isMe });
-            
-            // Register our own snapshot locally
-            pendingSnapshots.current[isMe] = localDataUrl;
-            
-            // Trigger check
-            checkAndFinalizeSnapshot(index);
-            
-            resolve();
-          } else {
-            setCountdown(remaining);
-          }
-        }, 100);
-      });
-    }
+    setPhotos(prev => {
+      const next = [...prev];
+      next[index] = finalSnapshotUrl;
+      
+      if (retakeIndex !== null) {
+        if (isMe === "left") sendSync({ kind: "sync-step", step: "review" });
+        setStep("review");
+        setRetakeIndex(null);
+      } else if (next.length >= activeFrame.photoCount) {
+        setStep("review");
+        if (isMe === "left") sendSync({ kind: "sync-step", step: "review" });
+      }
+      setIsCapturing(false);
+      return next;
+    });
+  }
+
+  function runCountdown(startAt: number, duration: number, index: number, mode: CaptureMode): Promise<void> {
+    return new Promise((resolve) => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = setInterval(async () => {
+        const remaining = Math.ceil((startAt + duration - Date.now()) / 1000);
+        if (remaining <= 0) {
+          clearInterval(countdownTimerRef.current!);
+          setCountdown(null);
+
+          // Time's up! Capture our own local high-res camera
+          const localDataUrl = await captureLocalHighResSnapshot();
+
+          // Send it to the other peer
+          sendSync({ kind: "provide-snapshot", index, dataUrl: localDataUrl, from: isMe });
+
+          // Register our own snapshot locally
+          pendingSnapshots.current[isMe] = localDataUrl;
+
+          // Trigger check
+          checkAndFinalizeSnapshot(index);
+
+          resolve();
+        } else {
+          setCountdown(remaining);
+        }
+      }, 100);
+    });
+  }
 
   async function triggerSharedCapture() {
     if (!activeFrame) return;
-    if (photos.length >= activeFrame.photoCount) return;
-    setIsCapturing(true);
+    const targetIndex = retakeIndex !== null ? retakeIndex : photos.length;
+    if (targetIndex >= activeFrame.photoCount) return;
 
-    const currentIndex = photos.length;
+    const startAt = Date.now() + 1000;
     const duration = 3000;
-    const startAt = Date.now();
-    sendSync({ kind: "capture-countdown", startAt, duration, index: currentIndex, mode: captureMode });
-    await runCountdown(startAt, duration, currentIndex, captureMode);
+
+    sendSync({ kind: "capture-countdown", startAt, duration, index: targetIndex, mode: captureMode });
+    runCountdown(startAt, duration, targetIndex, captureMode);
   }
 
   const statusMessage: Record<string, string> = {
-      "idle": "initializing…",
-      "waiting-for-peer": "waiting for your date to join…",
-      "connecting": "connecting…",
-      "connected": "connected",
-      "room-full": "room is full",
-      "peer-left": "your date disconnected — waiting for reconnect…",
-      "error": "connection error",
-    };
+    "idle": "initializing…",
+    "waiting-for-peer": "waiting for your date to join…",
+    "connecting": "connecting…",
+    "connected": "connected",
+    "room-full": "room is full",
+    "peer-left": "your date disconnected — waiting for reconnect…",
+    "error": "connection error",
+  };
 
   const chatUI = status === "connected" ? (
     <div className={`fixed z-50 flex flex-col items-end ${isMobile ? 'bottom-0 left-0 right-0 px-3 pb-3' : 'bottom-6 right-6'}`}>
@@ -310,9 +330,8 @@ export type CaptureMode = "merged" | "left" | "right";
             ) : (
               messages.map((m, i) => (
                 <div key={i} className={`flex flex-col ${m.from === isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`px-3 py-1.5 text-sm max-w-[85%] break-words ${
-                    m.from === isMe ? 'bg-foreground text-background rounded-2xl rounded-br-sm' : 'bg-surface-0 text-foreground rounded-2xl rounded-bl-sm border border-border'
-                  }`}>
+                  <div className={`px-3 py-1.5 text-sm max-w-[85%] break-words ${m.from === isMe ? 'bg-foreground text-background rounded-2xl rounded-br-sm' : 'bg-surface-0 text-foreground rounded-2xl rounded-bl-sm border border-border'
+                    }`}>
                     {m.message}
                   </div>
                 </div>
@@ -349,15 +368,60 @@ export type CaptureMode = "merged" | "left" | "right";
     </div>
   ) : null;
 
-  if (completed) {
+  if (step === "review") {
+    return (
+      <div className="w-full max-w-3xl mx-auto relative">
+        <StripPreview
+          photos={photos}
+          frame={activeFrame}
+          onRetakePhoto={(index) => {
+            setRetakeIndex(index);
+            setStep("capture");
+            sendSync({ kind: "retake-photo", index });
+          }}
+          onConfirm={() => {
+            setStep("enhance");
+            sendSync({ kind: "sync-step", step: "enhance" });
+          }}
+        />
+        {chatUI}
+      </div>
+    );
+  }
+
+  if (step === "enhance") {
+    return (
+      <div className="w-full max-w-3xl mx-auto relative">
+        <EditEnhance
+          photos={photos}
+          frame={activeFrame}
+          selectedFilter={selectedFilter}
+          onSelectFilter={(f: string) => {
+            setSelectedFilter(f);
+            sendSync({ kind: "sync-filter", filter: f });
+          }}
+          onConfirm={() => {
+            setStep("final");
+            sendSync({ kind: "sync-step", step: "final" });
+          }}
+        />
+        {chatUI}
+      </div>
+    );
+  }
+
+  if (step === "final") {
     return (
       <div className="w-full max-w-3xl mx-auto relative">
         <FinalStrip
           photos={photos}
           frame={activeFrame}
+          filter={selectedFilter}
           onRestart={() => {
             setPhotos([]);
-            setCompleted(false);
+            setStep("capture");
+            setRetakeIndex(null);
+            setSelectedFilter("");
             setCaptureMode("merged");
             sendSync({ kind: "restart-session" });
           }}
@@ -489,25 +553,22 @@ export type CaptureMode = "merged" | "left" | "right";
           <div className="flex bg-[var(--surface-3)] rounded-full p-1 gap-1 border border-[var(--border)] mb-2 shadow-sm">
             <button
               onClick={() => handleModeChange("left")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${
-                captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                }`}
             >
               You
             </button>
             <button
               onClick={() => handleModeChange("merged")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${
-                captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                }`}
             >
               Both
             </button>
             <button
               onClick={() => handleModeChange("right")}
-              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${
-                captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+              className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                }`}
             >
               Date
             </button>

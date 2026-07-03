@@ -4,16 +4,18 @@ import { Frame } from '@/lib/frames';
 import { drawFrameElements } from '@/lib/draw-frame';
 import GIF from 'gif.js';
 import PhotoStrip from './PhotoStrip';
+import { ENHANCE_FILTERS } from './EditEnhance';
 import { downloadFile } from '@/lib/download';
 
 interface Props {
   photos: string[];
   liveClips?: (string[] | null)[];
   frame: Frame;
+  filter?: string;
   onRestart: () => void;
 }
 
-export default function FinalStrip({ photos, liveClips, frame, onRestart }: Props) {
+export default function FinalStrip({ photos, liveClips, frame, filter, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -89,6 +91,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
+
+    const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
 
     // ── Elements-based rendering (frame editor config) ──
     const cfg = frame.config;
@@ -201,7 +205,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
             let dw = w, dh = h, dx = x, dy = y;
             if (imgRatio > slotRatio) { dh = h; dw = h * imgRatio; dx = x - (dw - w) / 2; }
             else { dw = w; dh = w / imgRatio; dy = y - (dh - h) / 2; }
+            if (filterCss !== 'none') ctx.filter = filterCss;
             ctx.drawImage(img, dx, dy, dw, dh);
+            if (filterCss !== 'none') ctx.filter = 'none';
             ctx.restore();
             photoIdx++;
           }
@@ -383,7 +389,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         ctx.beginPath();
         ctx.rect(x, y, PHOTO_W, PHOTO_H);
         ctx.clip();
+        if (filterCss !== 'none') ctx.filter = filterCss;
         ctx.drawImage(img, x, y, PHOTO_W, PHOTO_H);
+        if (filterCss !== 'none') ctx.filter = 'none';
         ctx.restore();
       });
     } else if (is2) {
@@ -404,7 +412,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         ctx.beginPath();
         ctx.rect(x, y, PHOTO_W, PHOTO_H);
         ctx.clip();
+        if (filterCss !== 'none') ctx.filter = filterCss;
         ctx.drawImage(img, x, y, PHOTO_W, PHOTO_H);
+        if (filterCss !== 'none') ctx.filter = 'none';
         ctx.restore();
       });
       drawHoleRow(PADDING + HOLE_SIZE + HOLE_MARGIN + PHOTO_H + 6);
@@ -427,18 +437,21 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         ctx.beginPath();
         ctx.rect(x, y, w, PHOTO_H);
         ctx.clip();
+        if (filterCss !== 'none') ctx.filter = filterCss;
         ctx.drawImage(img, x, y, w, PHOTO_H);
+        if (filterCss !== 'none') ctx.filter = 'none';
         ctx.restore();
       });
     }
 
     setStripDataUrl(canvas.toDataURL('image/png'));
-  }, [photos, frame, roundRect, loadImage]);
+  }, [photos, frame, filter, roundRect, loadImage]);
 
   const generateGif = useCallback(async () => {
     setGeneratingGif(true);
     try {
       const PHOTO_W = 600;
+      const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
       let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
       if (frame.config?.elements) {
         const photoSlots = frame.config.elements.filter(el => el.type === 'photo');
@@ -487,7 +500,9 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
           dy = (PHOTO_H - dh) / 2;
         }
 
+        if (filterCss !== 'none') ctx.filter = filterCss;
         ctx.drawImage(img, dx, dy, dw, dh);
+        if (filterCss !== 'none') ctx.filter = 'none';
         // Pass ImageData directly to avoid gif.js creating a readback-expensive context
         const imageData = ctx.getImageData(0, 0, PHOTO_W, PHOTO_H);
         gif.addFrame(imageData, { delay: 500, copy: true });
@@ -507,13 +522,15 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     } finally {
       setGeneratingGif(false);
     }
-  }, [photos, frame, loadImage]);
+  }, [photos, frame, filter, loadImage]);
 
   const generatePolaroids = useCallback(async () => {
     try {
       const imgs = await Promise.all(photos.map(src => loadImage(src)));
       const pCanvas = document.createElement('canvas');
       const pCtx = pCanvas.getContext('2d', { willReadFrequently: true })!;
+      
+      const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
 
       const scale = 2; // High res
 
@@ -555,7 +572,8 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
         pCtx.fillRect(P_WIDTH / 2 - tapeW / 2, 0, tapeW, tapeH);
 
         pCtx.save();
-        pCtx.filter = 'sepia(10%) contrast(105%) brightness(98%)';
+        const baseFilter = 'sepia(10%) contrast(105%) brightness(98%)';
+        pCtx.filter = filterCss !== 'none' ? `${baseFilter} ${filterCss}` : baseFilter;
         pCtx.beginPath();
         pCtx.rect(paddingX, paddingTop, photoW, photoH);
         pCtx.clip();
@@ -588,7 +606,7 @@ export default function FinalStrip({ photos, liveClips, frame, onRestart }: Prop
     } catch (err) {
       console.error('Polaroid generation failed:', err);
     }
-  }, [photos, frame, loadImage]);
+  }, [photos, frame, filter, loadImage]);
 
   const convertClipToGif = useCallback(async (frames: string[]): Promise<string> => {
     if (frames.length === 0) throw new Error('No frames to convert');
