@@ -206,6 +206,9 @@
     @apply bg-background text-foreground;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
   }
 }
 

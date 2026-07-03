@@ -5,16 +5,19 @@ import { useDatePeerConnection } from "@/lib/useDatePeerConnection";
 import { Frame, FRAMES, layoutToConfig } from "@/lib/frames";
 import FinalStrip from "@/components/FinalStrip";
 import StripPreview from "@/components/StripPreview";
-import EditEnhance from "@/components/EditEnhance";
+import BackgroundSelector, { EditorSyncData } from "@/components/BackgroundSelector";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import PhotoReview from "./PhotoReview";
 
-export type CaptureMode = "merged" | "left" | "right";
+export type CaptureMode = "left" | "right" | "merged";
 
   type SyncPayload =
   | { kind: "sync-frame"; frame: Frame; mode: CaptureMode }
   | { kind: "sync-mode"; mode: CaptureMode }
-  | { kind: "sync-step"; step: "capture" | "review" | "enhance" | "final" }
+  | { kind: "sync-step"; step: "capture" | "photo-review" | "review" | "enhance" | "final"; filter?: string; compositedPhotos?: string[] }
+  | { kind: "photo-decision"; action: "accept" | "retry"; photoUrl?: string }
   | { kind: "sync-filter"; filter: string }
+  | { kind: "sync-editor"; data: EditorSyncData }
   | { kind: "sync-upload"; url: string }
   | { kind: "retake-photo"; index: number }
   | { kind: "capture-countdown"; startAt: number; duration: number; index: number; mode: CaptureMode }
@@ -42,10 +45,13 @@ export default function DatePhotobooth({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [photos, setPhotos] = useState<string[]>([]);
-  const [step, setStep] = useState<"capture" | "review" | "enhance" | "final">("capture");
+  const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
+  const [step, setStep] = useState<"capture" | "photo-review" | "review" | "enhance" | "final">("capture");
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<string>("");
   const [uploadedUrl, setUploadedUrl] = useState<string | undefined>();
+  const [editorSyncData, setEditorSyncData] = useState<EditorSyncData | undefined>();
+  const [compositedPhotos, setCompositedPhotos] = useState<string[] | undefined>();
 
   // Chat state
   const [messages, setMessages] = useState<{ message: string, from: "left" | "right", timestamp: number }[]>([]);
@@ -94,6 +100,8 @@ export default function DatePhotobooth({
         setUnreadChat(prev => chatOpen ? false : true);
       } else if (p.kind === "restart-session") {
         setPhotos([]);
+        setCompositedPhotos(undefined);
+        setEditorSyncData(undefined);
         setStep("capture");
         setRetakeIndex(null);
         setSelectedFilter("");
@@ -104,11 +112,17 @@ export default function DatePhotobooth({
         pendingSnapshots.current = {};
       } else if (p.kind === "sync-step") {
         setStep(p.step);
+        if (p.filter !== undefined) setSelectedFilter(p.filter);
+        if (p.compositedPhotos !== undefined) setPhotos(p.compositedPhotos);
+      } else if (p.kind === "photo-decision") {
+        handlePhotoDecision(p.action, p.photoUrl, false);
       } else if (p.kind === "retake-photo") {
         setRetakeIndex(p.index);
         setStep("capture");
       } else if (p.kind === "sync-filter") {
         setSelectedFilter(p.filter);
+      } else if (p.kind === "sync-editor") {
+        setEditorSyncData(p.data);
       } else if (p.kind === "sync-upload") {
         setUploadedUrl(p.url);
       }
@@ -253,21 +267,40 @@ export default function DatePhotobooth({
     // Reset pending for next photo
     pendingSnapshots.current = {};
 
-    setPhotos(prev => {
-      const next = [...prev];
-      next[index] = finalSnapshotUrl;
-      
-      if (retakeIndex !== null) {
-        if (isMe === "left") sendSync({ kind: "sync-step", step: "review" });
-        setStep("review");
-        setRetakeIndex(null);
-      } else if (next.length >= activeFrame.photoCount) {
-        setStep("review");
-        if (isMe === "left") sendSync({ kind: "sync-step", step: "review" });
-      }
-      setIsCapturing(false);
-      return next;
-    });
+    setPendingPhoto(finalSnapshotUrl);
+    setStep("photo-review");
+    setIsCapturing(false);
+  }
+
+  function handlePhotoDecision(action: "accept" | "retry", photoUrl?: string, broadcast = true) {
+    if (broadcast) {
+      sendSync({ kind: "photo-decision", action, photoUrl });
+    }
+
+    if (action === "retry") {
+      setPendingPhoto(null);
+      setStep("capture");
+    } else if (action === "accept" && photoUrl) {
+      setPhotos(prev => {
+        const next = [...prev];
+        const targetIndex = retakeIndex !== null ? retakeIndex : next.length;
+        next[targetIndex] = photoUrl;
+        
+        if (retakeIndex !== null) {
+          if (isMe === "left" && broadcast) sendSync({ kind: "sync-step", step: "review" });
+          setStep("review");
+          setRetakeIndex(null);
+        } else if (next.length >= activeFrame.photoCount) {
+          setStep("review");
+          if (isMe === "left" && broadcast) sendSync({ kind: "sync-step", step: "review" });
+        } else {
+          setStep("capture");
+          if (isMe === "left" && broadcast) sendSync({ kind: "sync-step", step: "capture" });
+        }
+        return next;
+      });
+      setPendingPhoto(null);
+    }
   }
 
   function runCountdown(startAt: number, duration: number, index: number, mode: CaptureMode): Promise<void> {
@@ -373,6 +406,22 @@ export default function DatePhotobooth({
     </div>
   ) : null;
 
+  if (step === "photo-review" && pendingPhoto) {
+    return (
+      <div className="w-full max-w-3xl mx-auto relative">
+        <PhotoReview
+          photoUrl={pendingPhoto}
+          photoIndex={retakeIndex !== null ? retakeIndex : photos.length}
+          totalPhotos={activeFrame.photoCount}
+          frame={activeFrame}
+          onAccept={(url) => handlePhotoDecision("accept", url)}
+          onRetry={() => handlePhotoDecision("retry")}
+        />
+        {chatUI}
+      </div>
+    );
+  }
+
   if (step === "review") {
     return (
       <div className="w-full max-w-3xl mx-auto relative">
@@ -396,18 +445,19 @@ export default function DatePhotobooth({
 
   if (step === "enhance") {
     return (
-      <div className="w-full max-w-3xl mx-auto relative">
-        <EditEnhance
+      <div className="w-full relative">
+        <BackgroundSelector
           photos={photos}
           frame={activeFrame}
-          selectedFilter={selectedFilter}
-          onSelectFilter={(f: string) => {
-            setSelectedFilter(f);
-            sendSync({ kind: "sync-filter", filter: f });
+          syncData={editorSyncData}
+          onSync={(data) => {
+            setEditorSyncData(data);
+            sendSync({ kind: "sync-editor", data });
           }}
-          onConfirm={() => {
+          onComplete={(newCompositedPhotos) => {
+            setCompositedPhotos(newCompositedPhotos);
             setStep("final");
-            sendSync({ kind: "sync-step", step: "final" });
+            sendSync({ kind: "sync-step", step: "final", compositedPhotos: newCompositedPhotos });
           }}
         />
         {chatUI}
@@ -419,7 +469,7 @@ export default function DatePhotobooth({
     return (
       <div className="w-full max-w-3xl mx-auto relative">
         <FinalStrip
-          photos={photos}
+          photos={compositedPhotos || photos}
           frame={activeFrame}
           filter={selectedFilter}
           uploadedUrl={uploadedUrl}
@@ -429,6 +479,8 @@ export default function DatePhotobooth({
           }}
           onRestart={() => {
             setPhotos([]);
+            setCompositedPhotos(undefined);
+            setEditorSyncData(undefined);
             setStep("capture");
             setRetakeIndex(null);
             setSelectedFilter("");
@@ -639,6 +691,8 @@ export default function DatePhotobooth({
           <button
             onClick={() => {
               setPhotos([]);
+              setCompositedPhotos(undefined);
+              setEditorSyncData(undefined);
               setCaptureMode("merged");
               sendSync({ kind: "restart-session" });
             }}

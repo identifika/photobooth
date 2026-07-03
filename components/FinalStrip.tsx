@@ -26,6 +26,8 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
   const [generatingGif, setGeneratingGif] = useState(false);
   const [downloadingGif, setDownloadingGif] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [internalUploadedUrl, setInternalUploadedUrl] = useState<string | undefined>();
+  const displayUploadedUrl = uploadedUrl || internalUploadedUrl;
   const [liveClipGifs, setLiveClipGifs] = useState<(string | null | 'pending' | 'error')[]>([]);
   const [generatingClipGifs, setGeneratingClipGifs] = useState(false);
   const [polaroidDataUrls, setPolaroidDataUrls] = useState<string[]>([]);
@@ -533,7 +535,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       const imgs = await Promise.all(photos.map(src => loadImage(src)));
       const pCanvas = document.createElement('canvas');
       const pCtx = pCanvas.getContext('2d', { willReadFrequently: true })!;
-      
+
       const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
 
       const scale = 2; // High res
@@ -669,19 +671,74 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
     if (!stripDataUrl) return;
     setUploading(true);
     try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: stripDataUrl }),
-      });
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
-      if (data.url && onUploadComplete) {
-        onUploadComplete(data.url);
+      const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+
+      const uploadPromises = [];
+
+      // Upload strip
+      uploadPromises.push(
+        fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: stripDataUrl, sessionId, filename: 'strip.png' }),
+        }).then(r => r.json())
+      );
+
+      // Upload GIF
+      if (gifDataUrl) {
+        uploadPromises.push(
+          fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: gifDataUrl, sessionId, filename: 'strip.gif' }),
+          }).then(r => r.json())
+        );
+      }
+
+      // Upload Polaroids
+      if (polaroidDataUrls && polaroidDataUrls.length > 0) {
+        polaroidDataUrls.forEach((pUrl, i) => {
+          uploadPromises.push(
+            fetch('/api/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ image: pUrl, sessionId, filename: `photo_${i + 1}.png` }),
+            }).then(r => r.json())
+          );
+        });
+      }
+
+      // Upload live clips
+      if (liveClipGifs && liveClipGifs.length > 0) {
+        liveClipGifs.forEach((gUrl, i) => {
+          if (gUrl && gUrl !== 'pending' && gUrl !== 'error') {
+            uploadPromises.push(
+              fetch('/api/upload', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: gUrl, sessionId, filename: `live_${i + 1}.gif` }),
+              }).then(r => r.json())
+            );
+          }
+        });
+      }
+
+      const results = await Promise.all(uploadPromises);
+      const stripResult = results[0];
+
+      if (!stripResult || stripResult.error) throw new Error('Upload failed');
+      
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+      const shareUrl = `${appUrl}/share?s=${sessionId}`;
+
+      if (onUploadComplete) {
+        onUploadComplete(shareUrl);
+      } else {
+        setInternalUploadedUrl(shareUrl);
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to upload image.');
+      alert('Failed to upload images.');
     } finally {
       setUploading(false);
     }
@@ -825,15 +882,15 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         )}
 
         {/* Upload Result / QR Code */}
-        {uploadedUrl && (
+        {displayUploadedUrl && (
           <div className="mb-8 text-center animate-slideUp" style={{ animationDelay: '0.1s' }}>
             <h3 className="text-sm font-medium mb-3 opacity-70">Scan to Download</h3>
             <div className="inline-block p-4 bg-white rounded-xl shadow-lg border border-border">
-              <QRCodeSVG value={uploadedUrl} size={160} />
+              <QRCodeSVG value={displayUploadedUrl} size={160} />
             </div>
             <div className="mt-3">
-              <a href={uploadedUrl} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
-                {uploadedUrl}
+              <a href={displayUploadedUrl} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
+                {displayUploadedUrl}
               </a>
             </div>
           </div>
@@ -842,9 +899,9 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         {/* Action buttons */}
         {printComplete && stripDataUrl && (
           <div className="flex flex-col sm:flex-row gap-3 animate-slideUp" style={{ animationDelay: '0.3s' }}>
-            {!uploadedUrl && onUploadComplete && (
-              <button 
-                onClick={handleUpload} 
+            {!displayUploadedUrl && (
+              <button
+                onClick={handleUpload}
                 disabled={uploading}
                 className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background"
                 style={{ opacity: uploading ? 0.7 : 1 }}

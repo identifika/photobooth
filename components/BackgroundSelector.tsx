@@ -1,32 +1,42 @@
 'use client';
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { removeBg } from '@/lib/remove-bg';
 import { Frame } from '@/lib/frames';
+
+export interface EditorSyncData {
+  activeTab: Tab;
+  adjustments: ImageAdjustments;
+  selectedPreset: string;
+  selectedBg: BackgroundOption;
+  isRemovingBg?: boolean;
+}
 
 interface Props {
   photos: string[];
   frame: Frame;
   onComplete: (compositedPhotos: string[]) => void;
+  syncData?: EditorSyncData;
+  onSync?: (data: EditorSyncData) => void;
 }
 
-type BgType = 'original' | 'green' | 'gradient' | 'folder' | 'upload';
-type Tab = 'presets' | 'adjustments' | 'background';
+export type BgType = 'original' | 'green' | 'gradient' | 'folder' | 'upload';
+export type Tab = 'presets' | 'adjustments' | 'background';
 
-interface BackgroundOption {
+export interface BackgroundOption {
   type: BgType;
   id: string;
   name: string;
   src?: string;
 }
 
-interface FilterPreset {
+export interface FilterPreset {
   id: string;
   name: string;
   emoji: string;
   adjustments: ImageAdjustments;
 }
 
-interface ImageAdjustments {
+export interface ImageAdjustments {
   brightness: number;   // 0-200, default 100
   contrast: number;     // 0-200, default 100
   saturation: number;   // 0-200, default 100
@@ -91,7 +101,7 @@ function buildCssFilter(adj: ImageAdjustments): string {
   return parts.length > 0 ? parts.join(' ') : 'none';
 }
 
-export default function BackgroundSelector({ photos, frame, onComplete }: Props) {
+export default function BackgroundSelector({ photos, frame, syncData, onSync, onComplete }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('presets');
   const [selectedPhotoIdx, setSelectedPhotoIdx] = useState(0);
 
@@ -110,6 +120,38 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
   // Filter state
   const [adjustments, setAdjustments] = useState<ImageAdjustments>({ ...DEFAULT_ADJUSTMENTS });
   const [selectedPreset, setSelectedPreset] = useState<string>('none');
+
+  const isApplyingSync = useRef(false);
+
+  useEffect(() => {
+    if (!syncData) return;
+    isApplyingSync.current = true;
+
+    if (syncData.activeTab) setActiveTab(syncData.activeTab);
+    if (syncData.selectedPreset) setSelectedPreset(syncData.selectedPreset);
+    if (syncData.selectedBg) setSelectedBg(syncData.selectedBg);
+    if (syncData.adjustments) setAdjustments(syncData.adjustments);
+    
+    // We only trigger remove backgrounds if we aren't already removing/removed.
+    if (syncData.isRemovingBg && !backgroundsRemoved && !isRemovingBg) {
+      handleRemoveBackgrounds();
+    }
+
+    // Short timeout to let react state settle before we enable broadcasting again
+    const t = setTimeout(() => { isApplyingSync.current = false; }, 50);
+    return () => clearTimeout(t);
+  }, [syncData, backgroundsRemoved, isRemovingBg]);
+
+  useEffect(() => {
+    if (isApplyingSync.current || !onSync) return;
+    onSync({
+      activeTab,
+      selectedPreset,
+      selectedBg,
+      adjustments,
+      isRemovingBg
+    });
+  }, [activeTab, selectedPreset, selectedBg, adjustments, isRemovingBg]);
 
   const handleRemoveBackgrounds = async () => {
     if (backgroundsRemoved) return;
@@ -453,9 +495,9 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         <h2 className="font-display text-4xl font-bold">Edit & Enhance</h2>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6 max-w-6xl mx-auto h-[75vh] min-h-[500px]">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6 max-w-6xl mx-auto md:h-[75vh] md:min-h-[500px]">
         {/* Left Column: Hero Viewer & Carousel */}
-        <div className="flex-1 flex flex-col gap-4 bg-[var(--surface-2)] rounded-2xl border border-border p-4 shadow-sm overflow-hidden relative">
+        <div className="flex-1 flex flex-col gap-3 sm:gap-4 bg-[var(--surface-2)] rounded-2xl border border-border p-3 sm:p-4 shadow-sm overflow-hidden relative h-[55vh] min-h-[320px] md:h-auto">
 
           {/* Removing overlay */}
           {isRemovingBg && (
@@ -471,7 +513,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           )}
 
           {/* Hero Viewer */}
-          <div className="flex-1 flex items-center justify-center relative overflow-hidden bg-black/5 rounded-xl">
+          <div className="flex-1 min-h-0 flex items-center justify-center relative overflow-hidden bg-black/5 rounded-xl">
             {renderPreview(transparentPhotos[selectedPhotoIdx], photos[selectedPhotoIdx], selectedPhotoIdx, true)}
           </div>
 
@@ -490,8 +532,8 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
                 <button
                   key={i}
                   onClick={() => setSelectedPhotoIdx(i)}
-                  className={`relative rounded-lg overflow-hidden transition-all shrink-0 bg-surface-0 ${i === selectedPhotoIdx ? 'shadow-md' : 'opacity-50 hover:opacity-100 ring-1 ring-border/50'}`}
-                  style={{ height: 64, aspectRatio: String(thumbAspect), boxShadow: i === selectedPhotoIdx ? `0 0 0 2px ${frame.borderColor}` : undefined }}
+                  className={`relative rounded-lg overflow-hidden transition-all shrink-0 bg-surface-0 h-12 sm:h-16 ${i === selectedPhotoIdx ? 'shadow-md' : 'opacity-50 hover:opacity-100 ring-1 ring-border/50'}`}
+                  style={{ aspectRatio: String(thumbAspect), boxShadow: i === selectedPhotoIdx ? `0 0 0 2px ${frame.borderColor}` : undefined }}
                 >
                   {renderPreview(transparentPhotos[i], photos[i], i, false)}
                   <div className="absolute top-0.5 left-0.5 bg-black/60 text-white text-[9px] px-1.5 py-[1px] rounded-full">
@@ -504,7 +546,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
         </div>
 
         {/* Right Column: Controls */}
-        <div className="w-full md:w-[400px] flex flex-col bg-[var(--surface-2)] rounded-2xl border border-border shadow-sm overflow-hidden h-full">
+        <div className="w-full md:w-[400px] flex flex-col bg-[var(--surface-2)] rounded-2xl border border-border shadow-sm overflow-hidden max-h-[65vh] md:max-h-none md:h-full">
 
           {/* Tabs */}
           <div className="flex border-b border-border bg-surface-0/50">
@@ -521,7 +563,7 @@ export default function BackgroundSelector({ photos, frame, onComplete }: Props)
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-5 relative">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 relative">
             {activeTab === 'presets' && (
               <div className="grid grid-cols-2 gap-3 animate-fadeIn">
                 {FILTER_PRESETS.map(preset => {
