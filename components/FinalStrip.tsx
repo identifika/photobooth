@@ -6,22 +6,26 @@ import GIF from 'gif.js';
 import PhotoStrip from './PhotoStrip';
 import { ENHANCE_FILTERS } from './EditEnhance';
 import { downloadFile } from '@/lib/download';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface Props {
   photos: string[];
   liveClips?: (string[] | null)[];
   frame: Frame;
   filter?: string;
+  uploadedUrl?: string;
+  onUploadComplete?: (url: string) => void;
   onRestart: () => void;
 }
 
-export default function FinalStrip({ photos, liveClips, frame, filter, onRestart }: Props) {
+export default function FinalStrip({ photos, liveClips, frame, filter, uploadedUrl, onUploadComplete, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
   const [gifDataUrl, setGifDataUrl] = useState('');
   const [generatingGif, setGeneratingGif] = useState(false);
   const [downloadingGif, setDownloadingGif] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [liveClipGifs, setLiveClipGifs] = useState<(string | null | 'pending' | 'error')[]>([]);
   const [generatingClipGifs, setGeneratingClipGifs] = useState(false);
   const [polaroidDataUrls, setPolaroidDataUrls] = useState<string[]>([]);
@@ -661,6 +665,28 @@ export default function FinalStrip({ photos, liveClips, frame, filter, onRestart
     setGeneratingClipGifs(false);
   }, [liveClips, convertClipToGif]);
 
+  const handleUpload = async () => {
+    if (!stripDataUrl) return;
+    setUploading(true);
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: stripDataUrl }),
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const data = await res.json();
+      if (data.url && onUploadComplete) {
+        onUploadComplete(data.url);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Failed to upload image.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   useEffect(() => {
     renderStrip();
     generateGif();
@@ -798,9 +824,34 @@ export default function FinalStrip({ photos, liveClips, frame, filter, onRestart
           </div>
         )}
 
+        {/* Upload Result / QR Code */}
+        {uploadedUrl && (
+          <div className="mb-8 text-center animate-slideUp" style={{ animationDelay: '0.1s' }}>
+            <h3 className="text-sm font-medium mb-3 opacity-70">Scan to Download</h3>
+            <div className="inline-block p-4 bg-white rounded-xl shadow-lg border border-border">
+              <QRCodeSVG value={uploadedUrl} size={160} />
+            </div>
+            <div className="mt-3">
+              <a href={uploadedUrl} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline">
+                {uploadedUrl}
+              </a>
+            </div>
+          </div>
+        )}
+
         {/* Action buttons */}
         {printComplete && stripDataUrl && (
           <div className="flex flex-col sm:flex-row gap-3 animate-slideUp" style={{ animationDelay: '0.3s' }}>
+            {!uploadedUrl && onUploadComplete && (
+              <button 
+                onClick={handleUpload} 
+                disabled={uploading}
+                className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background"
+                style={{ opacity: uploading ? 0.7 : 1 }}
+              >
+                {uploading ? '⏳ Uploading...' : '☁️ Upload & Share'}
+              </button>
+            )}
             <button onClick={handleDownload} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloading ? 0.7 : 1 }}>
               {downloading ? '✓ Saved!' : '↓ Download Strip'}
             </button>

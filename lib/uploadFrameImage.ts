@@ -1,22 +1,7 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-
-const minioClient = new S3Client({
-  endpoint: `http${process.env.NEXT_PUBLIC_MINIO_USE_SSL === 'true' ? 's' : ''}://${process.env.NEXT_PUBLIC_MINIO_ENDPOINT}${process.env.NEXT_PUBLIC_MINIO_PORT && process.env.NEXT_PUBLIC_MINIO_PORT !== '80' && process.env.NEXT_PUBLIC_MINIO_PORT !== '443' ? ':' + process.env.NEXT_PUBLIC_MINIO_PORT : ''}`,
-  region: 'us-east-1', // MinIO requires a region, us-east-1 is the standard default
-  credentials: {
-    accessKeyId: process.env.NEXT_PUBLIC_MINIO_ACCESS_KEY || '',
-    secretAccessKey: process.env.NEXT_PUBLIC_MINIO_SECRET_KEY || '',
-  },
-  forcePathStyle: true, // Required for MinIO
-  requestChecksumCalculation: "WHEN_REQUIRED",
-  responseChecksumValidation: "WHEN_REQUIRED",
-});
-
-const BUCKET_NAME = process.env.NEXT_PUBLIC_MINIO_BUCKET || 'photobooth';
+const BUCKET_NAME = 'photobooth';
 
 /**
- * Uploads an image file to MinIO Storage under a per-purpose, per-user
+ * Uploads an image file to S3 under a per-purpose, per-user
  * (when available) path and returns its public download URL.
  *
  * @param file        The File object selected by the user
@@ -34,16 +19,21 @@ export async function uploadFrameImage(
   const uniqueName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
   const path = `${pathPrefix}/${ownerId}/${uniqueName}`;
 
-  const command = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
-    Key: path,
-    ContentType: file.type || 'application/octet-stream',
-    CacheControl: 'max-age=31536000, public',
+  // Fetch the presigned URL from our API route instead of building it client-side
+  const presignRes = await fetch('/api/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: path,
+      contentType: file.type || 'application/octet-stream',
+    }),
   });
 
-  // Generate a presigned URL instead of sending the file directly via the SDK.
-  // This avoids signature mismatch errors caused by browser-injected headers or binary handling.
-  const presignedUrl = await getSignedUrl(minioClient, command, { expiresIn: 3600 });
+  if (!presignRes.ok) {
+    throw new Error('Failed to get upload URL');
+  }
+
+  const { url: presignedUrl, bucket } = await presignRes.json();
 
   // Use the native fetch API to upload the file to the presigned URL
   const response = await fetch(presignedUrl, {
@@ -63,24 +53,15 @@ export async function uploadFrameImage(
 
   // Construct the public URL
   if (process.env.NEXT_PUBLIC_CDN_URL) {
-    // If a CDN is configured (e.g., Cloudflare, CloudFront, etc.)
-    // It is expected to point to the root of the bucket or wrap the MinIO server.
     // Ensure no trailing slash in CDN URL before joining.
     const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL.replace(/\/$/, '');
-    return `${cdnUrl}/${BUCKET_NAME}/${path}`;
+    return `${cdnUrl}/${bucket}/${path}`;
   }
 
-  const protocol = process.env.NEXT_PUBLIC_MINIO_USE_SSL === 'true' ? 'https' : 'http';
-  const endpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
-  const port = process.env.NEXT_PUBLIC_MINIO_PORT;
-  
-  // If standard ports, don't include them in the URL to make it cleaner
-  const portStr = (port && port !== '80' && port !== '443') ? `:${port}` : '';
-  
-  // pathStyle URLs look like: https://endpoint:port/bucket/key
-  const url = `${protocol}://${endpoint}${portStr}/${BUCKET_NAME}/${path}`;
-  
-  return url;
+  // Fallback if no CDN is configured
+  const s3Endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT || '';
+  const cleanEndpoint = s3Endpoint.replace(/\/$/, '');
+  return `${cleanEndpoint}/${bucket}/${path}`;
 }
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB raw file cap

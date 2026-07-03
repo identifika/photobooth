@@ -15,6 +15,7 @@ export type CaptureMode = "merged" | "left" | "right";
   | { kind: "sync-mode"; mode: CaptureMode }
   | { kind: "sync-step"; step: "capture" | "review" | "enhance" | "final" }
   | { kind: "sync-filter"; filter: string }
+  | { kind: "sync-upload"; url: string }
   | { kind: "retake-photo"; index: number }
   | { kind: "capture-countdown"; startAt: number; duration: number; index: number; mode: CaptureMode }
   | { kind: "provide-snapshot"; index: number; dataUrl: string; from: "left" | "right" }
@@ -44,6 +45,7 @@ export default function DatePhotobooth({
   const [step, setStep] = useState<"capture" | "review" | "enhance" | "final">("capture");
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [selectedFilter, setSelectedFilter] = useState<string>("");
+  const [uploadedUrl, setUploadedUrl] = useState<string | undefined>();
 
   // Chat state
   const [messages, setMessages] = useState<{ message: string, from: "left" | "right", timestamp: number }[]>([]);
@@ -95,6 +97,7 @@ export default function DatePhotobooth({
         setStep("capture");
         setRetakeIndex(null);
         setSelectedFilter("");
+        setUploadedUrl(undefined);
         setCaptureMode("merged");
         setCountdown(null);
         setIsCapturing(false);
@@ -106,6 +109,8 @@ export default function DatePhotobooth({
         setStep("capture");
       } else if (p.kind === "sync-filter") {
         setSelectedFilter(p.filter);
+      } else if (p.kind === "sync-upload") {
+        setUploadedUrl(p.url);
       }
     },
   });
@@ -417,11 +422,17 @@ export default function DatePhotobooth({
           photos={photos}
           frame={activeFrame}
           filter={selectedFilter}
+          uploadedUrl={uploadedUrl}
+          onUploadComplete={(url) => {
+            setUploadedUrl(url);
+            sendSync({ kind: "sync-upload", url });
+          }}
           onRestart={() => {
             setPhotos([]);
             setStep("capture");
             setRetakeIndex(null);
             setSelectedFilter("");
+            setUploadedUrl(undefined);
             setCaptureMode("merged");
             sendSync({ kind: "restart-session" });
           }}

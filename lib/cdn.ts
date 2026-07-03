@@ -7,12 +7,13 @@ export function applyCdnToUrl(url?: string): string | undefined {
   if (!url) return url;
   
   const cdnUrl = process.env.NEXT_PUBLIC_CDN_URL;
-  const minioEndpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
+  const s3Endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT;
   
-  if (cdnUrl && minioEndpoint && url.includes(minioEndpoint)) {
+  if (cdnUrl && s3Endpoint && url.includes(s3Endpoint)) {
     try {
       const parsedUrl = new URL(url);
-      if (parsedUrl.hostname === minioEndpoint) {
+      const parsedS3Endpoint = new URL(s3Endpoint);
+      if (parsedUrl.hostname === parsedS3Endpoint.hostname) {
          // Replace the origin (e.g., https://minio...app) with CDN URL
          const safeCdn = cdnUrl.replace(/\/$/, '');
          return url.replace(parsedUrl.origin, safeCdn);
