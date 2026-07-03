@@ -23,7 +23,8 @@ export type CaptureMode = "left" | "right" | "merged";
   | { kind: "capture-countdown"; startAt: number; duration: number; index: number; mode: CaptureMode }
   | { kind: "provide-snapshot"; index: number; dataUrl: string; from: "left" | "right" }
   | { kind: "chat-message"; message: string; from: "left" | "right"; timestamp: number }
-  | { kind: "restart-session" };
+  | { kind: "restart-session" }
+  | { kind: "session-ended" };
 
 const DEFAULT_FRAME = FRAMES.find((f) => f.layout === "strip-2") || FRAMES[1];
 
@@ -52,6 +53,8 @@ export default function DatePhotobooth({
   const [uploadedUrl, setUploadedUrl] = useState<string | undefined>();
   const [editorSyncData, setEditorSyncData] = useState<EditorSyncData | undefined>();
   const [compositedPhotos, setCompositedPhotos] = useState<string[] | undefined>();
+  
+  const [sessionEndedByHost, setSessionEndedByHost] = useState(false);
 
   // Chat state
   const [messages, setMessages] = useState<{ message: string, from: "left" | "right", timestamp: number }[]>([]);
@@ -125,9 +128,19 @@ export default function DatePhotobooth({
         setEditorSyncData(p.data);
       } else if (p.kind === "sync-upload") {
         setUploadedUrl(p.url);
+      } else if (p.kind === "session-ended") {
+        setSessionEndedByHost(true);
       }
     },
   });
+
+  useEffect(() => {
+    const handleRequestEnd = () => {
+      sendSync({ kind: "session-ended" });
+    };
+    window.addEventListener('request-end-session', handleRequestEnd);
+    return () => window.removeEventListener('request-end-session', handleRequestEnd);
+  }, [sendSync]);
 
   // Sync frame to guest when connected
   useEffect(() => {
@@ -346,13 +359,32 @@ export default function DatePhotobooth({
 
   const statusMessage: Record<string, string> = {
     "idle": "initializing…",
-    "waiting-for-peer": "waiting for your date to join…",
-    "connecting": "connecting…",
+    "waiting-for-peer": "waiting for your partner to join…",
+    "connecting": "connecting to your partner…",
     "connected": "connected",
     "room-full": "room is full",
-    "peer-left": "your date disconnected — waiting for reconnect…",
+    "peer-left": "your partner disconnected — waiting for reconnect…",
     "error": "connection error",
   };
+
+  if (sessionEndedByHost) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 w-full">
+        <div className="bg-surface-1 border border-border p-8 rounded-2xl shadow-xl max-w-sm w-full text-center animate-in zoom-in fade-in duration-300">
+          <h2 className="text-xl font-semibold text-foreground mb-3">Session Ended</h2>
+          <p className="text-foreground/70 mb-8">
+            The host has ended this date session. You can safely return to the home screen.
+          </p>
+          <button 
+            onClick={() => window.location.href = '/date'} 
+            className="w-full px-6 py-3 bg-primary text-primary-foreground rounded-full font-medium hover:opacity-90 transition-opacity"
+          >
+            Return Home
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const chatUI = status === "connected" ? (
     <div className={`fixed z-50 flex flex-col items-end ${isMobile ? 'bottom-0 left-0 right-0 px-3 pb-3' : 'bottom-6 right-6'}`}>

@@ -41,6 +41,22 @@ function DateRoomView({ roomId }: { roomId: string }) {
   const [session, setSession] = useState<RoomSession | null>(null);
   const [inviteLink, setInviteLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [showEndDialog, setShowEndDialog] = useState(false);
+
+  const handleHomeClick = () => {
+    if (session?.role === 'host') {
+      setShowEndDialog(true);
+    } else {
+      window.location.href = '/date';
+    }
+  };
+
+  const confirmEndSession = () => {
+    window.dispatchEvent(new Event('request-end-session'));
+    setTimeout(() => {
+      window.location.href = '/date';
+    }, 100);
+  };
 
   useEffect(() => {
     setSession(getOrJoinRoomSession(roomId));
@@ -63,7 +79,7 @@ function DateRoomView({ roomId }: { roomId: string }) {
     <div className="min-h-screen bg-background flex flex-col">
       <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 16 }}>
-          <button onClick={() => router.push('/date')} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+          <button onClick={handleHomeClick} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
             <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
               style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand)', fontSize: 18 }}>
               {studioLogo}
@@ -111,6 +127,31 @@ function DateRoomView({ roomId }: { roomId: string }) {
           </span>
         </div>
       </div>
+
+      {showEndDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div className="bg-surface-1 border border-border p-6 rounded-2xl shadow-2xl max-w-sm w-full animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-semibold mb-2">End Session?</h3>
+            <p className="text-foreground/70 text-sm mb-6">
+              Are you sure you want to leave? This will end the date session and disconnect your partner.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowEndDialog(false)}
+                className="px-4 py-2 rounded-full text-sm font-medium hover:bg-surface-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEndSession}
+                className="px-4 py-2 rounded-full text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                End Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
