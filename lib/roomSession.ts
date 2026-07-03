@@ -26,7 +26,7 @@ function uuidv4() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
     return v.toString(16);
   });
@@ -69,6 +69,6 @@ export function inviteLinkFor(roomId: string): string {
   const IS_NATIVE = 'Capacitor' in window || '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
   // On native: origin is tauri://localhost or http://localhost — use the public web URL
   // On web: use whatever domain the user is currently on
-  const base = IS_NATIVE ? 'https://pika.identifika.my.id' : window.location.origin;
+  const base = IS_NATIVE ? 'https://pikabooth.web.id' : window.location.origin;
   return `${base}/date?room=${roomId}`;
 }
