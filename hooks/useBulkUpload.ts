@@ -18,6 +18,39 @@ export function useBulkUpload({
   const [uploading, setUploading] = useState(false);
   const [internalUploadedUrl, setInternalUploadedUrl] = useState<string | undefined>();
 
+  /** Upload a single image with automatic retry on network/5xx errors. */
+  const uploadWithRetry = async (body: object, retries = 3): Promise<any> => {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        // Retry on server errors (502/503/504/500 with ECONNRESET code)
+        if (res.status >= 500) {
+          const data = await res.json().catch(() => ({}));
+          lastErr = new Error(data.error ?? `HTTP ${res.status}`);
+          if (attempt < retries - 1) {
+            await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
+            console.warn(`Upload attempt ${attempt + 1} got ${res.status}, retrying...`);
+            continue;
+          }
+          throw lastErr;
+        }
+        return res.json();
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < retries - 1) {
+          await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
+          console.warn(`Upload attempt ${attempt + 1} failed (${err?.message}), retrying...`);
+        }
+      }
+    }
+    throw lastErr;
+  };
+
   const handleUpload = async () => {
     if (!stripDataUrl) return;
     setUploading(true);
@@ -26,23 +59,15 @@ export function useBulkUpload({
 
       const uploadPromises = [];
 
-      // Upload strip
+      // Upload strip (required)
       uploadPromises.push(
-        fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image: stripDataUrl, sessionId, filename: 'strip.png' }),
-        }).then(r => r.json())
+        uploadWithRetry({ image: stripDataUrl, sessionId, filename: 'strip.png' })
       );
 
       // Upload GIF
       if (gifDataUrl) {
         uploadPromises.push(
-          fetch('/api/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image: gifDataUrl, sessionId, filename: 'strip.gif' }),
-          }).then(r => r.json())
+          uploadWithRetry({ image: gifDataUrl, sessionId, filename: 'strip.gif' })
         );
       }
 
@@ -50,11 +75,7 @@ export function useBulkUpload({
       if (polaroidDataUrls && polaroidDataUrls.length > 0) {
         polaroidDataUrls.forEach((pUrl, i) => {
           uploadPromises.push(
-            fetch('/api/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ image: pUrl, sessionId, filename: `photo_${i + 1}.png` }),
-            }).then(r => r.json())
+            uploadWithRetry({ image: pUrl, sessionId, filename: `photo_${i + 1}.png` })
           );
         });
       }
@@ -64,11 +85,7 @@ export function useBulkUpload({
         liveClipGifs.forEach((gUrl, i) => {
           if (gUrl && gUrl !== 'pending' && gUrl !== 'error') {
             uploadPromises.push(
-              fetch('/api/upload', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: gUrl, sessionId, filename: `live_${i + 1}.gif` }),
-              }).then(r => r.json())
+              uploadWithRetry({ image: gUrl, sessionId, filename: `live_${i + 1}.gif` })
             );
           }
         });
@@ -89,7 +106,7 @@ export function useBulkUpload({
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to upload images.');
+      alert('Upload failed. Please check your connection and try again.');
     } finally {
       setUploading(false);
     }

@@ -50,21 +50,41 @@ export async function POST(request: Request) {
     const key = sessionId ? `${sessionId}/${finalFilename}` : finalFilename;
     const bucket = process.env.S3_BUCKET_NAME;
 
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: buffer,
-        ContentType: contentType,
-        CacheControl: 'public, max-age=31536000, immutable',
-      })
-    );
+    // Retry S3 upload up to 3 times with exponential backoff (handles ECONNRESET / transient network drops)
+    const MAX_RETRIES = 3;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            Body: buffer,
+            ContentType: contentType,
+            CacheControl: 'public, max-age=31536000, immutable',
+          })
+        );
+        lastError = null;
+        break; // success — exit retry loop
+      } catch (err: any) {
+        lastError = err;
+        const isRetryable = err?.code === 'ECONNRESET' || err?.name === 'NetworkError' ||
+          err?.message?.includes('ECONNRESET') || err?.message?.includes('aborted') ||
+          err?.message?.includes('socket hang up');
+        if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+        // Exponential backoff: 500ms, 1000ms, 2000ms
+        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt)));
+        console.warn(`S3 upload attempt ${attempt + 1} failed (${err?.code}), retrying...`);
+      }
+    }
+    if (lastError) throw lastError;
 
     const cdnUrl = `${process.env.NEXT_PUBLIC_CDN_URL}/${bucket}/${key}`;
 
     return NextResponse.json({ url: cdnUrl });
-  } catch (error) {
-    console.error('Upload failed:', error);
-    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+  } catch (error: any) {
+    const code = error?.code ?? error?.name ?? 'unknown';
+    console.error(`Upload failed [${code}]:`, error);
+    return NextResponse.json({ error: 'Upload failed', code }, { status: 500 });
   }
 }
