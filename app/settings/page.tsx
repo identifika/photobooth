@@ -12,6 +12,7 @@ import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth';
+import { useOwnerPublicFrames, useUserFrames } from '@/hooks/useFrames';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -54,13 +55,9 @@ export default function SettingsPage() {
 
   const isAuthorized = user && isAdmin(user.email);
 
-  // My published frames state
-  const [myPublishedFrames, setMyPublishedFrames] = useState<PublicFrame[]>([]);
-  const [publishedFramesLoading, setPublishedFramesLoading] = useState(false);
-
-  // My custom frames state
-  const [myCustomFrames, setMyCustomFrames] = useState<UserFrame[]>([]);
-  const [customFramesLoading, setCustomFramesLoading] = useState(false);
+  // SWR hooks for frames data
+  const { data: myPublishedFrames = [], isLoading: publishedFramesLoading, mutate: mutatePublishedFrames } = useOwnerPublicFrames(user?.uid);
+  const { data: myCustomFrames = [], isLoading: customFramesLoading, mutate: mutateCustomFrames } = useUserFrames(user?.uid);
   const [publishingFrameId, setPublishingFrameId] = useState<string | null>(null);
 
   // Load settings into local state
@@ -77,26 +74,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
-
-  // Load user's published frames
-  useEffect(() => {
-    if (!user) return;
-    setPublishedFramesLoading(true);
-    listPublicFramesByOwner(user.uid)
-      .then(setMyPublishedFrames)
-      .catch(console.error)
-      .finally(() => setPublishedFramesLoading(false));
-  }, [user]);
-
-  // Load user's custom frames
-  useEffect(() => {
-    if (!user) return;
-    setCustomFramesLoading(true);
-    listUserFrames(user.uid)
-      .then(setMyCustomFrames)
-      .catch(console.error)
-      .finally(() => setCustomFramesLoading(false));
-  }, [user]);
 
   const handleSave = () => {
     updateSettings({
@@ -124,7 +101,7 @@ export default function SettingsPage() {
     try {
       const deleted = await deletePublicFrameAsOwner(frameId, user.uid);
       if (deleted) {
-        setMyPublishedFrames((prev) => prev.filter((f) => f.id !== frameId));
+        await mutatePublishedFrames((prev = []) => prev.filter((f) => f.id !== frameId), { revalidate: false });
       }
     } catch (err) {
       console.error(err);
@@ -138,7 +115,7 @@ export default function SettingsPage() {
     if (!isConfirmed) return;
     try {
       await deleteUserFrame(user.uid, frameId);
-      setMyCustomFrames((prev) => prev.filter((f) => f.id !== frameId));
+      await mutateCustomFrames((prev = []) => prev.filter((f) => f.id !== frameId), { revalidate: false });
     } catch (err) {
       console.error(err);
       await alert('Failed to delete frame. Check console.');

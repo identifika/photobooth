@@ -6,11 +6,12 @@ import { createRoomSession, getOrJoinRoomSession, inviteLinkFor, type RoomSessio
 import { useAuth } from "@/hooks/useAuth";
 import FrameSelector from "@/components/FrameSelector";
 import { type Frame } from "@/lib/frames";
-import { listUserFrames, type UserFrame } from "@/lib/user-frames";
+import { type UserFrame } from "@/lib/user-frames";
 import { useStudioSettings } from "@/hooks/useStudioSettings";
 import { ThemeToggle } from "@/hooks/useTheme";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import DatePhotobooth from "@/components/DatePhotobooth";
+import { useUserFrames } from "@/hooks/useFrames";
 
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNAL_URL ?? "ws://localhost:8787";
 
@@ -120,16 +121,9 @@ function StartDatePage() {
   const { user } = useAuth();
   const { settings, isLoaded } = useStudioSettings();
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
-  const [userFrames, setUserFrames] = useState<UserFrame[]>([]);
+  const { data: userFrames = [] } = useUserFrames(user?.uid);
   const [captureMode, setCaptureMode] = useState<"merged" | "alternating">("merged");
   const isMobile = useIsMobile();
-
-  useEffect(() => {
-    if (!user) { setUserFrames([]); return; }
-    listUserFrames(user.uid)
-      .then(setUserFrames)
-      .catch(console.error);
-  }, [user]);
 
   function handleStart() {
     if (!selectedFrame) return;

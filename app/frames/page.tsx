@@ -1,45 +1,26 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { isAdmin } from '@/hooks/useAdmin';
-import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
-import {
-  listPublicFrames,
-  createPublicFrame,
-  deletePublicFrame,
-  type PublicFrame,
-} from '@/lib/public-frames';
+import { deleteUserFrame, type UserFrame } from '@/lib/user-frames';
+import { deletePublicFrame } from '@/lib/public-frames';
 import {
   requestFramePublish,
-  listUserPublishRequests,
-  listPendingRequests,
   type PublishRequest,
 } from '@/lib/publish-requests';
-import type { Frame } from '@/lib/frames';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
-import { Pencil, Trash2, Plus, Globe, Upload } from 'lucide-react';
+import { Pencil, Trash2, Plus, Globe } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
-
-const EMPTY_FRAME: Omit<Frame, 'id'> = {
-  name: 'Untitled Frame',
-  description: '',
-  photoCount: 4,
-  layout: 'strip-4',
-  aspectRatio: 4 / 3,
-  color: '#f5f0e8',
-  borderColor: '#1a1410',
-  accentColor: '#c9a84c',
-  emoji: '📷',
-};
+import { usePendingPublishRequests, usePublicFrames, useUserFrames, useUserPublishRequests } from '@/hooks/useFrames';
 
 export default function FramesPage() {
-  const { user, loading, signOut } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
-  const { resolvedTheme } = useTheme();
+  useTheme();
   const { settings, isLoaded } = useStudioSettings();
   const { alert, confirm } = useDialog();
   const isMobile = useIsMobile();
@@ -52,61 +33,22 @@ export default function FramesPage() {
 
   const isUserAdmin = !loading && user && isAdmin(user.email);
 
-  // User frames
-  const [userFrames, setUserFrames] = useState<UserFrame[]>([]);
-  const [userFramesLoading, setUserFramesLoading] = useState(true);
-
-  // Public frames (admin only)
-  const [publicFrames, setPublicFrames] = useState<PublicFrame[]>([]);
-  const [publicFramesLoading, setPublicFramesLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [pendingPublishRequests, setPendingPublishRequests] = useState<Record<string, PublishRequest>>({});
-  const [pendingAdminRequestsCount, setPendingAdminRequestsCount] = useState(0);
+  const { data: userFrames = [], mutate: mutateUserFrames, isLoading: userFramesLoading } = useUserFrames(user?.uid);
+  const { data: publicFrames = [], mutate: mutatePublicFrames, isLoading: publicFramesLoading } = usePublicFrames(!!isUserAdmin);
+  const { data: publishRequests = [], mutate: mutatePublishRequests } = useUserPublishRequests(user?.uid);
+  const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isUserAdmin);
 
-  // Load user frames and their publish requests
-  useEffect(() => {
-    if (!user) return;
-    setUserFramesLoading(true);
-    
-    Promise.all([
-      listUserFrames(user.uid),
-      listUserPublishRequests(user.uid)
-    ])
-      .then(([frames, requests]) => {
-        setUserFrames(frames);
-        const pendingMap: Record<string, PublishRequest> = {};
-        requests.forEach(req => {
-          if (req.status === 'pending') {
-            pendingMap[req.frameId] = req;
-          }
-        });
-        setPendingPublishRequests(pendingMap);
-      })
-      .catch(console.error)
-      .finally(() => setUserFramesLoading(false));
-  }, [user]);
+  const pendingPublishRequests = useMemo(() => {
+    const pendingMap: Record<string, PublishRequest> = {};
+    publishRequests.forEach(req => {
+      if (req.status === 'pending') pendingMap[req.frameId] = req;
+    });
+    return pendingMap;
+  }, [publishRequests]);
 
-  // Load public frames (admin)
-  const refreshPublic = useCallback(async () => {
-    if (!isUserAdmin) return;
-    setPublicFramesLoading(true);
-    try {
-      const [frames, pendingReqs] = await Promise.all([
-        listPublicFrames(),
-        listPendingRequests()
-      ]);
-      setPublicFrames(frames);
-      setPendingAdminRequestsCount(pendingReqs.length);
-    } catch (e) {
-      console.error(e);
-    }
-    setPublicFramesLoading(false);
-  }, [isUserAdmin]);
-
-  useEffect(() => {
-    if (isUserAdmin) refreshPublic();
-  }, [isUserAdmin, refreshPublic]);
+  const pendingAdminRequestsCount = pendingAdminRequests.length;
 
   const handleCreateNew = async () => {
     if (!user) return;
@@ -139,7 +81,7 @@ export default function FramesPage() {
     if (!isConfirmed) return;
     try {
       await deleteUserFrame(user.uid, id);
-      setUserFrames((prev) => prev.filter((f) => f.id !== id));
+      await mutateUserFrames((prev = []) => prev.filter((f) => f.id !== id), { revalidate: false });
     } catch (e) {
       console.error(e);
       await alert('Failed to delete frame.');
@@ -156,11 +98,9 @@ export default function FramesPage() {
     try {
       await requestFramePublish(frame.id, user, { config: frame.config, name: frame.name });
       await alert('Publish request sent! An admin will review your frame.');
-      
-      // Optimistically update the UI to show pending
-      setPendingPublishRequests(prev => ({
+      await mutatePublishRequests((prev = []) => ([
         ...prev,
-        [frame.id]: {
+        {
           id: 'temp-id',
           frameId: frame.id,
           user: { uid: user.uid, displayName: user.displayName },
@@ -168,8 +108,8 @@ export default function FramesPage() {
           status: 'pending',
           createdAt: new Date(),
           updatedAt: new Date()
-        } as PublishRequest
-      }));
+        } as PublishRequest,
+      ]), { revalidate: true });
     } catch (e) {
       console.error(e);
       await alert('Failed to send publish request.');
@@ -182,7 +122,7 @@ export default function FramesPage() {
     if (!isConfirmed) return;
     try {
       await deletePublicFrame(id);
-      await refreshPublic();
+      await mutatePublicFrames((prev = []) => prev.filter((f) => f.id !== id), { revalidate: true });
     } catch (e) {
       console.error(e);
       alert('Failed to delete frame.');

@@ -9,12 +9,13 @@ import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
 import StripPreview from '@/components/StripPreview';
 import { Frame } from '@/lib/frames';
-import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
+import { type UserFrame } from '@/lib/user-frames';
 import { isAdmin } from '@/hooks/useAdmin';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { useUserFrames } from '@/hooks/useFrames';
 
 type Step = 'select' | 'camera' | 'review' | 'background' | 'preview' | 'final';
 
@@ -56,8 +57,7 @@ export default function Home() {
   const [liveClips, setLiveClips] = useState<(string[] | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
-  const [userFrames, setUserFrames] = useState<UserFrame[]>([]);
-  const [framesLoading, setFramesLoading] = useState(false);
+  const { data: userFrames = [] } = useUserFrames(user?.uid);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [photosBgRemoved, setPhotosBgRemoved] = useState<boolean[]>([]);
@@ -68,15 +68,6 @@ export default function Home() {
   useEffect(() => {
     setIsGuest(sessionStorage.getItem('guest') === 'true');
   }, []);
-
-  useEffect(() => {
-    if (!user) { setUserFrames([]); return; }
-    setFramesLoading(true);
-    listUserFrames(user.uid)
-      .then(setUserFrames)
-      .catch(console.error)
-      .finally(() => setFramesLoading(false));
-  }, [user]);
 
   // Close user menu on outside click
   useEffect(() => {
