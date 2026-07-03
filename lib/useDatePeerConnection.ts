@@ -1,5 +1,6 @@
 "use client";
 
+import { Capacitor } from "@capacitor/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type SignalMsg =
@@ -22,10 +23,35 @@ export type ConnectionStatus =
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
-  // Add a TURN server for reliability behind restrictive NATs/VPNs —
-  // STUN alone will fail for a meaningful slice of real users.
-  // { urls: "turn:your-turn-host:3478", username: "...", credential: "..." },
+  { urls: "stun:global.stun.twilio.com:3478" },
 ];
+
+// Fetch fresh TURN credentials from Turnix via server-side route
+async function getIceServers(): Promise<RTCIceServer[]> {
+  try {
+    // On native (Capacitor/Tauri), API routes don't exist in static export
+    // so we must hit the hosted web app's API endpoint instead
+    const isNative = Capacitor.isNativePlatform();
+    const apiUrl = isNative
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/api/turn-credentials`
+      : "/api/turn-credentials";
+
+    const res = await fetch(apiUrl, {
+      method: "POST",
+    });
+
+    if (!res.ok) {
+      console.warn("TURN credential error:", res.status);
+      return ICE_SERVERS;
+    }
+
+    const data = await res.json();
+    return data.iceServers?.length > 0 ? data.iceServers : ICE_SERVERS;
+  } catch (err) {
+    console.warn("TURN fetch failed, using STUN only:", err);
+    return ICE_SERVERS;
+  }
+}
 
 export function useDatePeerConnection(opts: {
   signalUrl: string; // e.g. wss://relay.yourapp.com
@@ -114,7 +140,9 @@ export function useDatePeerConnection(opts: {
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      // Fetch fresh TURN credentials from Turnix
+      const iceServers = await getIceServers();
+      const pc = new RTCPeerConnection({ iceServers });
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -212,7 +240,8 @@ export function useDatePeerConnection(opts: {
 
             // If peer connection was closed (reconnect scenario), create a new one
             if (!pcRef.current || pcRef.current.connectionState === "closed") {
-              const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+              const iceServers = await getIceServers();
+              const pc = new RTCPeerConnection({ iceServers });
               pcRef.current = pc;
               if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current!));
@@ -251,7 +280,8 @@ export function useDatePeerConnection(opts: {
 
             // Create new peer connection if needed (reconnect scenario)
             if (!pcRef.current || pcRef.current.connectionState === "closed") {
-              const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+              const iceServers = await getIceServers();
+              const pc = new RTCPeerConnection({ iceServers });
               pcRef.current = pc;
               if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current!));
