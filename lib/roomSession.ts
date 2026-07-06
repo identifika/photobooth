@@ -69,6 +69,6 @@ export function inviteLinkFor(roomId: string): string {
   const IS_NATIVE = 'Capacitor' in window || '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
   // On native: origin is tauri://localhost or http://localhost — use the public web URL
   // On web: use whatever domain the user is currently on
-  const base = IS_NATIVE ? 'https://pikabooth.web.id' : window.location.origin;
+  const base = IS_NATIVE ? 'https://app.pikabooth.web.id' : window.location.origin;
   return `${base}/date?room=${roomId}`;
 }
