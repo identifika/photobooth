@@ -9,7 +9,7 @@ import { isAdmin } from '@/hooks/useAdmin';
 import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
 import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } from '@/lib/public-frames';
 import { requestFramePublish } from '@/lib/publish-requests';
-import { Globe, Pencil, Trash2, FolderOpen } from 'lucide-react';
+import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth';
@@ -26,7 +26,7 @@ const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟',
 export default function SettingsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-  const { resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const { settings, updateSettings, resetSettings, isLoaded } = useStudioSettings();
   const { alert, confirm } = useDialog();
   const isMobile = useIsMobile();
@@ -335,34 +335,49 @@ export default function SettingsPage() {
           <section>
             <h2 className="font-semibold text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>Appearance</h2>
             <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20 }}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <p className="font-medium" style={{ color: 'var(--text-primary)' }}>Theme</p>
                   <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Choose your preferred color scheme</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
-                    className="btn"
+                    className="btn flex items-center gap-1.5"
                     style={{
                       height: 32, padding: '0 12px',
-                      background: resolvedTheme === 'light' ? 'var(--brand)' : 'var(--surface-2)',
-                      color: resolvedTheme === 'light' ? '#fff' : 'var(--text-primary)',
-                      border: `0.5px solid ${resolvedTheme === 'light' ? 'transparent' : 'var(--border-strong)'}`,
+                      background: theme === 'system' ? 'var(--brand)' : 'var(--surface-2)',
+                      color: theme === 'system' ? '#fff' : 'var(--text-primary)',
+                      border: `0.5px solid ${theme === 'system' ? 'transparent' : 'var(--border-strong)'}`,
                     }}
-                    onClick={() => document.documentElement.classList.remove('dark')}
+                    onClick={() => setTheme('system')}
                   >
+                    <Monitor className="w-3.5 h-3.5" />
+                    System
+                  </button>
+                  <button
+                    className="btn flex items-center gap-1.5"
+                    style={{
+                      height: 32, padding: '0 12px',
+                      background: theme === 'light' ? 'var(--brand)' : 'var(--surface-2)',
+                      color: theme === 'light' ? '#fff' : 'var(--text-primary)',
+                      border: `0.5px solid ${theme === 'light' ? 'transparent' : 'var(--border-strong)'}`,
+                    }}
+                    onClick={() => setTheme('light')}
+                  >
+                    <Sun className="w-3.5 h-3.5" />
                     Light
                   </button>
                   <button
-                    className="btn"
+                    className="btn flex items-center gap-1.5"
                     style={{
                       height: 32, padding: '0 12px',
-                      background: resolvedTheme === 'dark' ? 'var(--brand)' : 'var(--surface-2)',
-                      color: resolvedTheme === 'dark' ? '#fff' : 'var(--text-primary)',
-                      border: `0.5px solid ${resolvedTheme === 'dark' ? 'transparent' : 'var(--border-strong)'}`,
+                      background: theme === 'dark' ? 'var(--brand)' : 'var(--surface-2)',
+                      color: theme === 'dark' ? '#fff' : 'var(--text-primary)',
+                      border: `0.5px solid ${theme === 'dark' ? 'transparent' : 'var(--border-strong)'}`,
                     }}
-                    onClick={() => document.documentElement.classList.add('dark')}
+                    onClick={() => setTheme('dark')}
                   >
+                    <Moon className="w-3.5 h-3.5" />
                     Dark
                   </button>
                 </div>
