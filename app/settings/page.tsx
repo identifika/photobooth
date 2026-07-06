@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
+import Header from '@/components/Header';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { isAdmin } from '@/hooks/useAdmin';
 import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
@@ -210,27 +211,8 @@ export default function SettingsPage() {
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      {/* Header */}
-      <header style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)', padding: isMobile ? '12px 12px' : '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center" style={{ width: isMobile ? 28 : 32, height: isMobile ? 28 : 32, background: 'var(--brand)', borderRadius: 8 }}>
-              <span style={{ fontSize: isMobile ? 14 : 16 }}>{settings.studioLogo}</span>
-            </div>
-            <h1 className={`font-medium ${isMobile ? 'text-base' : 'text-lg'}`} style={{ color: 'var(--text-primary)', margin: 0 }}>Settings</h1>
-          </button>
-        </div>
-        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
-          <ThemeToggle />
-          <button 
-            onClick={() => router.push('/')} 
-            className={`text-xs ${isMobile ? 'text-[11px]' : ''}`}
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            ← Back
-          </button>
-        </div>
-      </header>
+      <Header />
+
 
       <div style={{ maxWidth: 640, margin: '0 auto', padding: isMobile ? '16px 12px' : '32px 24px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>

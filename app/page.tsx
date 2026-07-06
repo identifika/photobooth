@@ -8,6 +8,7 @@ import PhotoReview from '@/components/PhotoReview';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
 import StripPreview from '@/components/StripPreview';
+import Header from '@/components/Header';
 import { Frame } from '@/lib/frames';
 import { type UserFrame } from '@/lib/user-frames';
 import { isAdmin } from '@/hooks/useAdmin';
@@ -58,30 +59,15 @@ export default function Home() {
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
   const { data: userFrames = [] } = useUserFrames(user?.uid);
-  const [showUserMenu, setShowUserMenu] = useState(false);
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [photosBgRemoved, setPhotosBgRemoved] = useState<boolean[]>([]);
   const [isGuest, setIsGuest] = useState<boolean | null>(null);
   const isMobile = useIsMobile();
   const { alert } = useDialog();
-  const isAuthorized = user && isAdmin(user?.email);
-  const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isAuthorized);
-  const pendingAdminRequestsCount = pendingAdminRequests.length;
 
   useEffect(() => {
     setIsGuest(sessionStorage.getItem('guest') === 'true');
   }, []);
-
-  // Close user menu on outside click
-  useEffect(() => {
-    if (!showUserMenu) return;
-    const close = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('[data-user-menu]')) setShowUserMenu(false);
-    };
-    document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [showUserMenu]);
 
   // Warn before refreshing if session is active
   useEffect(() => {
@@ -219,139 +205,11 @@ export default function Home() {
 
   return (
     <>
-      {/* Header */}
-      <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: isMobile ? 56 : 64, gap: isMobile ? 8 : 16 }}>
-
-          {/* Logo */}
-          <button onClick={handleRestart} className="flex items-center gap-2 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-            <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
-              style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 8 : 10, background: 'var(--brand)', fontSize: isMobile ? 16 : 18 }}>
-              {studioLogo}
-            </div>
-            <div className={isMobile ? 'hidden sm:block' : ''}>
-              <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
-              {!isMobile && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>}
-            </div>
-          </button>
-
-          {/* Film strip step indicator */}
-          <nav className="hidden md:flex items-center" aria-label="Session steps">
-            {STEPS.map((s, i) => {
-              const isActive = i === currentStepIndex;
-              const isPast = i < currentStepIndex;
-              return (
-                <div key={s.id} className="flex items-center">
-                  <div className={`film-cell ${isActive ? 'is-active' : ''} ${isPast ? 'is-past' : ''}`}>
-                    <div className="film-frame"><span>{String(i + 1).padStart(2, '0')}</span></div>
-                    <div className="film-label">{s.label}</div>
-                  </div>
-                  {i < STEPS.length - 1 && <div className="film-connector" />}
-                </div>
-              );
-            })}
-          </nav>
-
-          {/* Header actions */}
-          <div className="flex items-center" style={{ flexShrink: 0, gap: isMobile ? 4 : 8 }}>
-            <ThemeToggle />
-            {/* Removed redundant Frames, Filters, Settings buttons from here as they are in the user menu */}
-            <button className={`btn ghost ${isMobile ? '!px-2 !py-1 !text-xs' : ''}`} onClick={() => router.push('/date')}>
-              {isMobile ? '💕' : 'Date Mode'}
-            </button>
-            {!isGuest && (
-              <button className="btn primary" onClick={() => {
-                if (isMobile) {
-                  alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
-                } else {
-                  router.push('/editor');
-                }
-              }}>
-                <span style={{ fontSize: 14 }}>+</span>
-                <span className="hidden sm:inline">New frame</span>
-              </button>
-            )}
-            {/* User dropdown */}
-            <div className="relative" data-user-menu>
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: 'var(--bg-accent)', border: '0.5px solid var(--border-strong)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 600, color: 'var(--text-accent)',
-                  flexShrink: 0,
-                }}
-              >
-                {user?.displayName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'G'}
-                {pendingAdminRequestsCount > 0 && (
-                  <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: 'red', borderRadius: '50%', border: '1px solid var(--surface-2)' }} />
-                )}
-              </button>
-              {showUserMenu && (
-                <div style={{
-                  position: 'absolute', right: 0, top: 36, width: 220,
-                  background: 'var(--surface-2)', border: '0.5px solid var(--border)',
-                  borderRadius: 10, padding: '8px 0', boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-                  zIndex: 50,
-                }}>
-                  <div style={{ padding: '8px 14px', borderBottom: '0.5px solid var(--border)' }}>
-                    <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{user?.displayName || 'Guest'}</p>
-                    <p style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{user?.email || 'Not logged in'}</p>
-                  </div>
-                  {!isGuest && (
-                    <>
-                      <button
-                        onClick={() => { setShowUserMenu(false); router.push('/frames'); }}
-                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                        className="hover:bg-[var(--surface-1)]"
-                      >
-                        My Frames
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); router.push('/filters'); }}
-                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                        className="hover:bg-[var(--surface-1)]"
-                      >
-                        My Filters
-                      </button>
-                      <button
-                        onClick={() => { setShowUserMenu(false); router.push('/settings'); }}
-                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                        className="hover:bg-[var(--surface-1)]"
-                      >
-                        Settings
-                      </button>
-                      <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                    </>
-                  )}
-                  <button
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      if (isGuest) {
-                        sessionStorage.removeItem('guest');
-                        setIsGuest(false);
-                        router.push('/login');
-                      } else {
-                        signOut();
-                      }
-                    }}
-                    style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-secondary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
-                    className="hover:bg-[var(--surface-1)]"
-                  >
-                    {isGuest ? 'Sign in' : 'Sign out'}
-                  </button>
-                  <div style={{ padding: '8px 14px 4px 14px', borderTop: '0.5px solid var(--border)' }}>
-                    <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                      v{process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header
+        steps={STEPS}
+        currentStepIndex={STEPS.findIndex(s => s.id === step)}
+        onRestart={handleRestart}
+      />
 
       {/* Main content */}
       <main style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px' }}>
@@ -374,9 +232,9 @@ export default function Home() {
             />
             {selectedFrame && (
               <div className={`fixed z-50 animate-fadeIn ${isMobile ? 'bottom-6 left-4 right-4' : ''}`} style={isMobile ? {} : { bottom: '48px', right: '24px' }}>
-                <button 
-                  className={`begin-btn ${isMobile ? 'w-full justify-center' : ''}`} 
-                  onClick={handleStart} 
+                <button
+                  className={`begin-btn ${isMobile ? 'w-full justify-center' : ''}`}
+                  onClick={handleStart}
                   style={{ boxShadow: 'var(--shadow-md)', ...(isMobile ? { display: 'flex', width: '100%', padding: '0 16px' } : {}) }}
                 >
                   Begin session

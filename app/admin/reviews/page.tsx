@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import { isAdmin } from '@/hooks/useAdmin';
+import Header from '@/components/Header';
 import {
   listPendingRequests,
   approvePublishRequest,
@@ -175,20 +176,7 @@ export default function AdminReviewsPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center bg-primary rounded w-7 h-7">
-              <span className="text-sm">🛡️</span>
-            </div>
-            <h1 className="font-serif font-bold text-sm text-foreground m-0">Admin Reviews</h1>
-          </button>
-        </div>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-        </div>
-      </header>
+      <Header />
 
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-10">
 

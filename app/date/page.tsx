@@ -4,6 +4,8 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createRoomSession, getOrJoinRoomSession, inviteLinkFor, type RoomSession } from "@/lib/roomSession";
 import { useAuth } from "@/hooks/useAuth";
+import { useDialog } from "@/components/ui/dialog-provider";
+import Header from "@/components/Header";
 import FrameSelector from "@/components/FrameSelector";
 import { type Frame } from "@/lib/frames";
 import { type UserFrame } from "@/lib/user-frames";
@@ -77,23 +79,9 @@ function DateRoomView({ roomId }: { roomId: string }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, gap: 16 }}>
-          <button onClick={handleHomeClick} className="flex items-center gap-3 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-            <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
-              style={{ width: 38, height: 38, borderRadius: 10, background: 'var(--brand)', fontSize: 18 }}>
-              {studioLogo}
-            </div>
-            <div className="text-left">
-              <h1 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>
-            </div>
-          </button>
-          <div className="flex items-center gap-2" style={{ flexShrink: 0 }}>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <Header 
+        onRestart={handleHomeClick}
+      />
 
       <main className="flex-1 flex flex-col items-center gap-6 px-6 py-12" style={{ maxWidth: 960, margin: '0 auto', width: '100%' }}>
         {session.role === "host" && (
@@ -180,24 +168,9 @@ function StartDatePage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-20" style={{ borderBottom: '0.5px solid var(--border)', background: 'var(--surface-2)' }}>
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '0 12px' : '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: isMobile ? 56 : 64, gap: isMobile ? 8 : 16 }}>
-          <button onClick={() => router.push('/')} className="flex items-center gap-2 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
-            <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
-              style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 8 : 10, background: 'var(--brand)', fontSize: isMobile ? 16 : 18 }}>
-              {studioLogo}
-            </div>
-            <div className={`text-left ${isMobile ? 'hidden sm:block' : ''}`}>
-              <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>
-              {!isMobile && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginTop: 3 }}>{tagline}</div>}
-            </div>
-          </button>
-
-          <div className="flex items-center" style={{ flexShrink: 0, gap: isMobile ? 4 : 8 }}>
-            <ThemeToggle />
-          </div>
-        </div>
-      </header>
+      <Header 
+        onRestart={() => router.push("/")}
+      />
 
       <main className="flex-1 flex flex-col" style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px', width: '100%' }}>
         <div className="text-center max-w-md mx-auto mb-12">

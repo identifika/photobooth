@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isAdmin } from '@/hooks/useAdmin';
-import { ThemeToggle } from '@/hooks/useTheme';
+import Header from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { Plus, Pencil, Trash2, Globe, Sliders } from 'lucide-react';
@@ -90,24 +90,14 @@ export default function FiltersDashboard() {
 
   return (
     <main className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push('/')} className="p-2 -ml-2 rounded-full hover:bg-accent transition text-muted-foreground">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-          </button>
-          <div className="flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-foreground" />
-            <h1 className="font-display font-bold text-lg text-foreground tracking-wide">Filters</h1>
-          </div>
-        </div>
-        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
-          <ThemeToggle />
+      <Header 
+        rightContent={
           <Button onClick={handleCreateNew} className={`flex items-center gap-1.5 ${isMobile ? 'px-2 py-1 text-xs' : ''}`}>
             <Plus className={isMobile ? 'w-3 h-3' : 'w-3 h-3'} />
             {!isMobile && 'New Filter'}
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <div className={`max-w-6xl mx-auto space-y-12 ${isMobile ? 'px-3 py-4' : 'px-6 py-8'}`}>
         <section>

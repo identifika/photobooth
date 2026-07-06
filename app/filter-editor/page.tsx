@@ -6,6 +6,7 @@ import FilterEditor from '@/components/FilterEditor';
 import { loadUserFilter, createUserFilter, updateUserFilter } from '@/lib/user-filters';
 import { useAuth } from '@/hooks/useAuth';
 import { FilterPreset } from '@/lib/edit-types';
+import Header from '@/components/Header';
 
 function FilterEditorPageContent() {
   const { user } = useAuth();
@@ -52,9 +53,7 @@ function FilterEditorPageContent() {
 
   return (
     <main className="min-h-screen bg-background flex flex-col">
-      <header className="flex-shrink-0 h-16 border-b border-border px-6 flex items-center justify-between bg-surface-0">
-        <h1 className="font-display font-bold text-lg">Filter Studio</h1>
-      </header>
+      <Header />
       <div className="flex-1 overflow-hidden">
         <FilterEditor 
           initialConfig={initialConfig}

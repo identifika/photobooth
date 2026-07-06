@@ -11,6 +11,7 @@ import {
 } from '@/lib/publish-requests';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
+import Header from '@/components/Header';
 import { Pencil, Trash2, Plus, Globe } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useDialog } from '@/components/ui/dialog-provider';
@@ -139,24 +140,8 @@ export default function FramesPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      {/* Header */}
-      <header className={`border-b border-border flex items-center justify-between ${isMobile ? 'px-3 py-3' : 'px-6 py-4'}`}>
-        <div className="flex items-center gap-2">
-          <button onClick={() => router.push('/')} className="flex items-center gap-2">
-            <div className="flex items-center justify-center" style={{ width: isMobile ? 24 : 28, height: isMobile ? 24 : 28, background: 'var(--primary)', borderRadius: 4 }}>
-              <span style={{ fontSize: isMobile ? 12 : 14 }}>🎨</span>
-            </div>
-            <h1 className={`font-serif font-bold text-foreground m-0 ${isMobile ? 'text-xs' : 'text-sm'}`}>My Frames</h1>
-          </button>
-        </div>
-        <div className="flex items-center" style={{ gap: isMobile ? 4 : 12 }}>
-          <ThemeToggle />
-          <Button onClick={handleCreateNew} className={`flex items-center gap-1.5 ${isMobile ? 'px-2 py-1 text-xs' : ''}`}>
-            <Plus className={isMobile ? 'w-3 h-3' : 'w-3 h-3'} />
-            {!isMobile && 'New Frame'}
-          </Button>
-        </div>
-      </header>
+      <Header />
+
 
       <div className={`max-w-6xl mx-auto space-y-12 ${isMobile ? 'px-3 py-4' : 'px-6 py-8'}`}>
         {/* User's Custom Frames */}

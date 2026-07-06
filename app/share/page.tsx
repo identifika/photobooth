@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { Download, Loader2, Image as ImageIcon, Video, Home } from 'lucide-react';
 import Link from 'next/link';
 import JSZip from 'jszip';
+import Header from '@/components/Header';
 
 interface MediaItem {
   key: string;
@@ -130,27 +131,22 @@ function SharePageContent() {
 
   return (
     <div className="min-h-screen bg-background pb-12">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-background/80 backdrop-blur-md border-b border-border p-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Link href="/" className="p-2 -ml-2 rounded-full hover:bg-muted transition-colors">
-            <Home className="w-5 h-5 text-muted-foreground" />
-          </Link>
-          <h1 className="font-semibold text-lg">Your Memories</h1>
-        </div>
-        <button 
-          onClick={handleDownloadAll}
-          disabled={downloadingZip}
-          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-full text-sm font-medium hover:opacity-90 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-        >
-          {downloadingZip ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Download className="w-4 h-4" />
-          )}
-          {downloadingZip ? 'Zipping...' : 'Download All'}
-        </button>
-      </header>
+      <Header 
+        rightContent={
+          <button 
+            onClick={handleDownloadAll}
+            disabled={downloadingZip}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-full text-sm font-medium hover:opacity-90 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {downloadingZip ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            <span className="hidden sm:inline">{downloadingZip ? 'Zipping...' : 'Download All'}</span>
+          </button>
+        }
+      />
 
       <main className="max-w-4xl mx-auto p-4 md:p-6 lg:p-8 space-y-12">
         {/* Hero Section (The Strip) */}
