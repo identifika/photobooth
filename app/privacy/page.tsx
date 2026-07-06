@@ -7,7 +7,7 @@ export default function PrivacyPolicyPage() {
           <p>Last updated: {new Date().toLocaleDateString()}</p>
 
           <h2 className="text-lg font-semibold mt-6 mb-2" style={{ color: 'var(--text-primary)' }}>1. Information We Collect</h2>
-          <p>We collect basic account information when you create an account. However, <strong>we do not collect, upload, or store your photos</strong>. All photos taken using our application are temporary and remain solely on your device.</p>
+          <p>We collect basic account information when you create an account. Unless you press the upload button, we do not collect, upload, or store your photos. All photos taken using our application are temporary and remain solely on your device. If you choose to upload them, they are securely saved with encryption to our storage.</p>
 
           <h2 className="text-lg font-semibold mt-6 mb-2" style={{ color: 'var(--text-primary)' }}>2. How We Use Information</h2>
           <p>Account information is used solely to provide and maintain our services. All photo processing (including background removal) happens completely locally on your device via a downloaded AI model, meaning your images are never sent to our servers.</p>
