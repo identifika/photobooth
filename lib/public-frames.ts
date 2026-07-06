@@ -2,6 +2,7 @@ import { fsGetAllCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsD
 import type { Frame } from '@/lib/frames';
 import type { FrameConfig } from '@/lib/frame-types';
 import { applyCdnToFrameConfig } from '@/lib/cdn';
+import { isAdmin } from '@/hooks/useAdmin';
 
 export interface PublicFrame extends Frame {
   ownerUid?: string;
@@ -27,8 +28,10 @@ export async function listPublicFrames(): Promise<PublicFrame[]> {
 
 /** Create a new public frame. Returns new doc ID. */
 export async function createPublicFrame(
+  adminEmail: string,
   data: Omit<Frame, 'id'> & { sortOrder?: number; active?: boolean },
 ): Promise<string> {
+  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   return fsAddDocument(COLLECTION, {
     ...data,
     sortOrder: data.sortOrder ?? 0,
@@ -38,22 +41,27 @@ export async function createPublicFrame(
 
 /** Update a public frame. */
 export async function updatePublicFrame(
+  adminEmail: string,
   frameId: string,
   data: Partial<Omit<Frame, 'id'>> & { sortOrder?: number; active?: boolean },
 ): Promise<void> {
+  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
 }
 
 /** Delete a public frame. */
-export async function deletePublicFrame(frameId: string): Promise<void> {
+export async function deletePublicFrame(adminEmail: string, frameId: string): Promise<void> {
+  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   await fsDeleteDocument(`${COLLECTION}/${frameId}`);
 }
 
 /** Update any public frame (admin only). */
 export async function updateAnyPublicFrame(
+  adminEmail: string,
   frameId: string,
   data: Partial<Omit<PublicFrame, 'id'>>,
 ): Promise<void> {
+  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
 }
 
@@ -100,9 +108,11 @@ export async function deletePublicFrameAsOwner(
 
 /** Publish a user frame to the community (public_frames collection). */
 export async function publishUserFrame(
+  adminEmail: string,
   user: { uid: string; displayName: string | null },
   frame: { config: FrameConfig; name: string },
 ): Promise<string> {
+  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   let layout: Frame['layout'] = 'strip-4';
   let photoCount = 4;
   let aspectRatio = 4 / 3;

@@ -45,12 +45,21 @@ export default function DatePhotobooth({
 }) {
   const [frame, setFrame] = useState<Frame | null>(initialFrame || null);
   const [captureMode, setCaptureMode] = useState<CaptureMode>("merged");
+  const captureModeRef = useRef<CaptureMode>(captureMode);
+  useEffect(() => { captureModeRef.current = captureMode; }, [captureMode]);
+
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  
   const [photos, setPhotos] = useState<string[]>([]);
+  
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [step, setStep] = useState<"capture" | "photo-review" | "review" | "enhance" | "final">("capture");
+  
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
+  const retakeIndexRef = useRef<number | null>(retakeIndex);
+  useEffect(() => { retakeIndexRef.current = retakeIndex; }, [retakeIndex]);
+
   const [selectedFilter, setSelectedFilter] = useState<string>("");
   const [uploadedUrl, setUploadedUrl] = useState<string | undefined>();
   const [editorSyncData, setEditorSyncData] = useState<EditorSyncData | undefined>();
@@ -71,6 +80,12 @@ export default function DatePhotobooth({
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    };
+  }, []);
 
   const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
   const isMobile = useIsMobile();
@@ -270,13 +285,15 @@ export default function DatePhotobooth({
     const { left, right } = pendingSnapshots.current;
     let finalSnapshotUrl = "";
 
-    if (captureMode === "merged") {
+    const currentMode = captureModeRef.current;
+
+    if (currentMode === "merged") {
       if (!left || !right) return; // Wait for both
       finalSnapshotUrl = await stitchCompositeSnapshot(left, right);
     } else {
-      if (captureMode === "left" && !left) return;
-      if (captureMode === "right" && !right) return;
-      finalSnapshotUrl = captureMode === "left" ? left! : right!;
+      if (currentMode === "left" && !left) return;
+      if (currentMode === "right" && !right) return;
+      finalSnapshotUrl = currentMode === "left" ? left! : right!;
     }
 
     // Reset pending for next photo
@@ -298,10 +315,11 @@ export default function DatePhotobooth({
     } else if (action === "accept" && photoUrl) {
       setPhotos(prev => {
         const next = [...prev];
-        const targetIndex = retakeIndex !== null ? retakeIndex : next.length;
+        const currentRetakeIndex = retakeIndexRef.current;
+        const targetIndex = currentRetakeIndex !== null ? currentRetakeIndex : next.length;
         next[targetIndex] = photoUrl;
         
-        if (retakeIndex !== null) {
+        if (currentRetakeIndex !== null) {
           if (isMe === "left" && broadcast) sendSync({ kind: "sync-step", step: "review" });
           setStep("review");
           setRetakeIndex(null);

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import GIF from 'gif.js';
 import { Frame } from '@/lib/frames';
-import { ENHANCE_FILTERS } from '../components/EditEnhance';
+import { DEFAULT_EDIT_CONFIG } from '@/lib/edit-types';
 import { downloadFile } from '@/lib/download';
 
 export function useGifGenerator(
@@ -21,7 +21,7 @@ export function useGifGenerator(
     setGeneratingGif(true);
     try {
       const PHOTO_W = 600;
-      const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
+      const filterCss = filter ? (DEFAULT_EDIT_CONFIG.presets.find(f => f.id === filter)?.css || 'none') : 'none';
       let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
       if (frame.config?.elements) {
         const photoSlots = frame.config.elements.filter(el => el.type === 'photo');

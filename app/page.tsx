@@ -15,7 +15,7 @@ import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDialog } from '@/components/ui/dialog-provider';
-import { useUserFrames } from '@/hooks/useFrames';
+import { useUserFrames, usePendingPublishRequests } from '@/hooks/useFrames';
 
 type Step = 'select' | 'camera' | 'review' | 'background' | 'preview' | 'final';
 
@@ -64,6 +64,9 @@ export default function Home() {
   const [isGuest, setIsGuest] = useState<boolean | null>(null);
   const isMobile = useIsMobile();
   const { alert } = useDialog();
+  const isAuthorized = user && isAdmin(user?.email);
+  const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isAuthorized);
+  const pendingAdminRequestsCount = pendingAdminRequests.length;
 
   useEffect(() => {
     setIsGuest(sessionStorage.getItem('guest') === 'true');
@@ -252,17 +255,7 @@ export default function Home() {
           {/* Header actions */}
           <div className="flex items-center" style={{ flexShrink: 0, gap: isMobile ? 4 : 8 }}>
             <ThemeToggle />
-            {!isMobile && user && isAdmin(user.email) && (
-              <>
-                <button className="btn ghost" onClick={() => router.push('/frames')}>Frames</button>
-                <button className="btn ghost" onClick={() => router.push('/settings')} aria-label="Settings">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                </button>
-              </>
-            )}
+            {/* Removed redundant Frames, Filters, Settings buttons from here as they are in the user menu */}
             <button className={`btn ghost ${isMobile ? '!px-2 !py-1 !text-xs' : ''}`} onClick={() => router.push('/date')}>
               {isMobile ? '💕' : 'Date Mode'}
             </button>
@@ -291,6 +284,9 @@ export default function Home() {
                 }}
               >
                 {user?.displayName?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'G'}
+                {pendingAdminRequestsCount > 0 && (
+                  <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: 'red', borderRadius: '50%', border: '1px solid var(--surface-2)' }} />
+                )}
               </button>
               {showUserMenu && (
                 <div style={{
@@ -311,6 +307,13 @@ export default function Home() {
                         className="hover:bg-[var(--surface-1)]"
                       >
                         My Frames
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); router.push('/filters'); }}
+                        style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                        className="hover:bg-[var(--surface-1)]"
+                      >
+                        My Filters
                       </button>
                       <button
                         onClick={() => { setShowUserMenu(false); router.push('/settings'); }}

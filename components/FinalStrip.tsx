@@ -8,7 +8,7 @@ import PhotoStrip from './PhotoStrip';
 import PolaroidGrid from './PolaroidGrid';
 import ShareSection from './ShareSection';
 import { useBulkUpload } from '@/hooks/useBulkUpload';
-import { ENHANCE_FILTERS } from './EditEnhance';
+import { DEFAULT_EDIT_CONFIG } from '@/lib/edit-types';
 import { downloadFile } from '@/lib/download';
 
 interface Props {
@@ -41,6 +41,12 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
   const [polaroidDataUrls, setPolaroidDataUrls] = useState<string[]>([]);
   const [showStrip, setShowStrip] = useState(false);
   const [printComplete, setPrintComplete] = useState(false);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const { handleUpload, uploading, internalUploadedUrl } = useBulkUpload({
     stripDataUrl,
@@ -102,28 +108,56 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       .replace('DD', String(d).padStart(2, '0'));
   }, []);
 
-  const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
-    new Promise((res, rej) => {
+  const loadImage = useCallback(async (src: string): Promise<HTMLImageElement> => {
+    let fetchSrc = src;
+    let objectUrlToRevoke = '';
+
+    // Proxy external URLs through our server to avoid canvas CORS taint
+    if (src && !src.startsWith('data:') && !src.startsWith('blob:') && src.startsWith('http')) {
+      try {
+        const res = await fetch('/api/proxy-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: src })
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          fetchSrc = URL.createObjectURL(blob);
+          objectUrlToRevoke = fetchSrc;
+        }
+      } catch (err) {
+        console.error('proxy failed', err);
+      }
+    }
+
+    return new Promise((res, rej) => {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => res(img);
-      img.onerror = rej;
-      img.src = src;
-    }), []);
+      img.crossOrigin = 'anonymous'; // always try anonymous to avoid taint
+      img.onload = () => {
+        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+        res(img);
+      };
+      img.onerror = (e) => {
+        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+        rej(e);
+      };
+      img.src = fetchSrc;
+    });
+  }, []);
 
   const renderStrip = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
 
-    const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
+    const filterCss = filter ? (DEFAULT_EDIT_CONFIG.presets.find(f => f.id === filter)?.css || 'none') : 'none';
 
     // ── Elements-based rendering (frame editor config) ──
     const cfg = frame.config;
     if (cfg && cfg.elements && cfg.elements.length > 0) {
       const fw = cfg.width ?? 400;
       const fh = cfg.height ?? 600;
-      const OUT_W = 1200; // High quality output
+      const OUT_W = 1600; // High quality output
       const scale = OUT_W / fw;
       const OUT_H = Math.round(fh * scale);
 
@@ -360,7 +394,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         ctx.restore();
       }
 
-      setStripDataUrl(canvas.toDataURL('image/png'));
+      if (mountedRef.current) setStripDataUrl(canvas.toDataURL('image/png'));
       return;
     }
 
@@ -468,7 +502,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       });
     }
 
-    setStripDataUrl(canvas.toDataURL('image/png'));
+    if (mountedRef.current) setStripDataUrl(canvas.toDataURL('image/png'));
   }, [photos, frame, filter, roundRect, loadImage]);
 
 
@@ -479,7 +513,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       const pCanvas = document.createElement('canvas');
       const pCtx = pCanvas.getContext('2d', { willReadFrequently: true })!;
 
-      const filterCss = filter ? (ENHANCE_FILTERS.find(f => f.id === filter)?.css || 'none') : 'none';
+      const filterCss = filter ? (DEFAULT_EDIT_CONFIG.presets.find(f => f.id === filter)?.css || 'none') : 'none';
 
       const scale = 2; // High res
 
@@ -551,9 +585,9 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         urls.push(pCanvas.toDataURL('image/jpeg', 0.95));
       }
 
-      setPolaroidDataUrls(urls);
+      if (mountedRef.current) setPolaroidDataUrls(urls);
     } catch (err) {
-      console.error('Polaroid generation failed:', err);
+      if (mountedRef.current) console.error('Polaroid generation failed:', err);
     }
   }, [photos, frame, filter, loadImage]);
 

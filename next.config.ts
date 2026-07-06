@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "fs";
 
 const isTauri = process.env.TAURI_ENV === '1';
 const isStatic = process.env.STATIC_EXPORT === '1';
@@ -8,13 +9,19 @@ const nextConfig: NextConfig = {
   ...((isTauri || isStatic) ? { output: 'export' } : {}),
   ...(basePath ? { basePath, assetPrefix: basePath } : {}),
   // @ts-ignore - added to allow cross-origin dev testing from other devices on the same network
-  allowedDevOrigins: ['192.168.0.186', '4d52-103-156-227-0.ngrok-free.app', '37a9-103-19-231-198.ngrok-free.app', '0605-103-19-231-198.ngrok-free.app'],
+  ...(process.env.DEV_ORIGINS ? { allowedDevOrigins: process.env.DEV_ORIGINS.split(',') } : {}),
   turbopack: {},
   images: {
     unoptimized: true,
   },
   env: {
-    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || require('./package.json').version,
+    NEXT_PUBLIC_APP_VERSION: process.env.npm_package_version || (() => {
+      try {
+        return JSON.parse(readFileSync('./package.json', 'utf8')).version;
+      } catch {
+        return '1.0.0';
+      }
+    })(),
   },
   // Rewrites removed — using /api/turn-credentials server route instead
   // (rewrites don't work in static export mode for Tauri/Capacitor)

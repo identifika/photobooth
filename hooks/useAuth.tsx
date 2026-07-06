@@ -56,35 +56,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(false); // Don't block UI
+    let unsubscribe: () => void = () => {};
 
     if (IS_NATIVE) {
-      // Native: listen via Capacitor plugin
-      let listener: any;
-      (async () => {
-        const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
-
-        // Check if already signed in
-        try {
-          const result = await FirebaseAuthentication.getCurrentUser();
-          if (result.user) setUser(toUserCompat(result.user as any));
-        } catch (_e) { /* no user */ }
-
-        // Listen for changes
-        listener = await FirebaseAuthentication.addListener('authStateChange', (event) => {
-          setUser(toUserCompat(event.user));
+      import('@capacitor-firebase/authentication').then(({ FirebaseAuthentication }) => {
+        FirebaseAuthentication.addListener('authStateChange', (result) => {
+          setUser(result.user ? toUserCompat(result.user as any) : null);
+          setLoading(false);
+        }).then((listener) => {
+          unsubscribe = () => listener.remove();
         });
-      })();
 
-      return () => { listener?.remove(); };
-    } else {
-      // Web: listen via Firebase JS SDK
-      if (!auth) return;
-      const unsub = onAuthStateChanged(auth, (u) => setUser(u), (err) => {
-        console.error('Auth state error:', err);
+        // initial check
+        FirebaseAuthentication.getCurrentUser().then(res => {
+          if (res.user) setUser(toUserCompat(res.user as any));
+          setLoading(false);
+        }).catch(() => setLoading(false));
       });
-      return () => unsub();
+    } else {
+      if (!auth) {
+        setLoading(false);
+        return;
+      }
+      
+      unsubscribe = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        setLoading(false);
+      }, (err) => {
+        console.error('Auth state error:', err);
+        setLoading(false);
+      });
     }
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {

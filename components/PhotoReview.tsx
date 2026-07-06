@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Frame } from '@/lib/frames';
 import { removeBg } from '@/lib/remove-bg';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -18,6 +18,11 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
   const [processing, setProcessing] = useState(false);
   const [removeBgEnabled, setRemoveBgEnabled] = useState(false);
   const [transparentUrl, setTransparentUrl] = useState<string | null>(null);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
   const isMobile = useIsMobile();
 
   let currentAspectRatio = frame.layout === 'grid-2x2' ? 1 : 4 / 3;
@@ -44,13 +49,15 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
         setProcessing(true);
         try {
           const result = await removeBg(photoUrl);
-          setTransparentUrl(result);
-          setRemoveBgEnabled(true);
+          if (mountedRef.current) {
+            setTransparentUrl(result);
+            setRemoveBgEnabled(true);
+          }
         } catch (err) {
           console.error("Failed to remove background:", err);
           // Fallback to not removing bg
         } finally {
-          setProcessing(false);
+          if (mountedRef.current) setProcessing(false);
         }
       } else {
         setRemoveBgEnabled(true);

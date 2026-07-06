@@ -56,10 +56,14 @@ export async function updateUserFrame(
   frameId: string,
   data: { config: FrameConfig; name: string; emoji?: string; categoryId: string },
 ): Promise<void> {
+  const existing = await loadUserFrame(uid, frameId);
+  if (!existing) throw new Error('Unauthorized or not found');
   await fsUpdateDocument(`user_frames/${frameId}`, data);
 }
 
 /** Delete a frame. */
 export async function deleteUserFrame(uid: string, frameId: string): Promise<void> {
+  const existing = await loadUserFrame(uid, frameId);
+  if (!existing) throw new Error('Unauthorized or not found');
   await fsDeleteDocument(`user_frames/${frameId}`);
 }

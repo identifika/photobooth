@@ -1,7 +1,22 @@
 'use client';
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
 import { removeBg } from '@/lib/remove-bg';
 import { Frame } from '@/lib/frames';
+import { 
+  type BgType, 
+  type BackgroundOption, 
+  type FilterPreset, 
+  type ImageAdjustments, 
+  type EditConfig,
+  DEFAULT_EDIT_CONFIG,
+  DEFAULT_ADJUSTMENTS
+} from '@/lib/edit-types';
+import { useBackgrounds } from '@/hooks/useBackgrounds';
+import { listUserBackgrounds, createUserBackground, deleteUserBackground, type UserBackground } from '@/lib/user-backgrounds';
+import { requestBackgroundPublish } from '@/lib/publish-requests';
+import { Trash2, Globe, Upload, Loader2 } from 'lucide-react';
+import { getClientAuthToken } from '@/lib/auth-client';
 
 export interface EditorSyncData {
   activeTab: Tab;
@@ -17,93 +32,36 @@ interface Props {
   onComplete: (compositedPhotos: string[]) => void;
   syncData?: EditorSyncData;
   onSync?: (data: EditorSyncData) => void;
+  config?: EditConfig;
 }
 
-export type BgType = 'original' | 'green' | 'gradient' | 'folder' | 'upload';
 export type Tab = 'presets' | 'adjustments' | 'background';
 
-export interface BackgroundOption {
-  type: BgType;
-  id: string;
-  name: string;
-  src?: string;
-}
 
-export interface FilterPreset {
-  id: string;
-  name: string;
-  emoji: string;
-  adjustments: ImageAdjustments;
-}
 
-export interface ImageAdjustments {
-  brightness: number;   // 0-200, default 100
-  contrast: number;     // 0-200, default 100
-  saturation: number;   // 0-200, default 100
-  hue: number;          // 0-360, default 0
-  blur: number;         // 0-10, default 0
-  sepia: number;        // 0-100, default 0
-  grayscale: number;    // 0-100, default 0
-  invert: number;       // 0-100, default 0
-  temperature: number;  // -100 to 100, default 0 (warm/cool)
-  vignette: number;     // 0-100, default 0
-}
 
-const DEFAULT_ADJUSTMENTS: ImageAdjustments = {
-  brightness: 100,
-  contrast: 100,
-  saturation: 100,
-  hue: 0,
-  blur: 0,
-  sepia: 0,
-  grayscale: 0,
-  invert: 0,
-  temperature: 0,
-  vignette: 0,
-};
 
-const FILTER_PRESETS: FilterPreset[] = [
-  { id: 'none', name: 'None', emoji: '📷', adjustments: { ...DEFAULT_ADJUSTMENTS } },
-  { id: 'vintage', name: 'Vintage', emoji: '🎞', adjustments: { ...DEFAULT_ADJUSTMENTS, sepia: 40, contrast: 110, saturation: 80, brightness: 95 } },
-  { id: 'noir', name: 'Noir', emoji: '🖤', adjustments: { ...DEFAULT_ADJUSTMENTS, grayscale: 100, contrast: 130, brightness: 95 } },
-  { id: 'warm', name: 'Warm', emoji: '☀️', adjustments: { ...DEFAULT_ADJUSTMENTS, temperature: 40, saturation: 115, brightness: 105 } },
-  { id: 'cool', name: 'Cool', emoji: '❄️', adjustments: { ...DEFAULT_ADJUSTMENTS, temperature: -40, saturation: 90, brightness: 100 } },
-  { id: 'vivid', name: 'Vivid', emoji: '🌈', adjustments: { ...DEFAULT_ADJUSTMENTS, saturation: 150, contrast: 115, brightness: 105 } },
-  { id: 'fade', name: 'Fade', emoji: '🌫', adjustments: { ...DEFAULT_ADJUSTMENTS, contrast: 80, saturation: 70, brightness: 110 } },
-  { id: 'dramatic', name: 'Dramatic', emoji: '🎭', adjustments: { ...DEFAULT_ADJUSTMENTS, contrast: 140, saturation: 110, brightness: 90 } },
-  { id: 'golden', name: 'Golden', emoji: '✨', adjustments: { ...DEFAULT_ADJUSTMENTS, sepia: 25, temperature: 30, contrast: 105, saturation: 110 } },
-  { id: 'moonlight', name: 'Moonlight', emoji: '🌙', adjustments: { ...DEFAULT_ADJUSTMENTS, temperature: -20, brightness: 110, contrast: 90, saturation: 60 } },
-];
 
-const GRADIENT_BGS: BackgroundOption[] = [
-  { type: 'gradient', id: 'grad1', name: 'Sunset', src: 'linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%)' },
-  { type: 'gradient', id: 'grad2', name: 'Ocean', src: 'linear-gradient(135deg, #2b5876 0%, #4e4376 100%)' },
-  { type: 'gradient', id: 'grad3', name: 'Holo', src: 'linear-gradient(135deg, #ff9a9e 0%, #fecfef 99%, #fecfef 100%)' },
-  { type: 'gradient', id: 'grad4', name: 'Midnight', src: 'linear-gradient(135deg, #141e30 0%, #243b55 100%)' },
-];
 
-const FOLDER_BGS: BackgroundOption[] = [
-  { type: 'folder', id: 'bg1', name: 'Abstract', src: '/backgrounds/bg1.jpg' },
-  { type: 'folder', id: 'bg2', name: 'Neon', src: '/backgrounds/bg2.jpg' },
-  { type: 'folder', id: 'bg3', name: 'Nature', src: '/backgrounds/bg3.jpg' },
-];
 
-function buildCssFilter(adj: ImageAdjustments): string {
+function buildCssFilter(adj: ImageAdjustments, scale: number = 1): string {
   const parts: string[] = [];
   if (adj.brightness !== 100) parts.push(`brightness(${adj.brightness}%)`);
   if (adj.contrast !== 100) parts.push(`contrast(${adj.contrast}%)`);
   if (adj.saturation !== 100) parts.push(`saturate(${adj.saturation}%)`);
   if (adj.hue !== 0) parts.push(`hue-rotate(${adj.hue}deg)`);
-  if (adj.blur > 0) parts.push(`blur(${adj.blur}px)`);
+  if (adj.blur > 0) parts.push(`blur(${adj.blur * scale}px)`);
   if (adj.sepia > 0) parts.push(`sepia(${adj.sepia}%)`);
   if (adj.grayscale > 0) parts.push(`grayscale(${adj.grayscale}%)`);
   if (adj.invert > 0) parts.push(`invert(${adj.invert}%)`);
   return parts.length > 0 ? parts.join(' ') : 'none';
 }
 
-export default function BackgroundSelector({ photos, frame, syncData, onSync, onComplete }: Props) {
+export default function BackgroundSelector({ photos, frame, syncData, onSync, onComplete, config = DEFAULT_EDIT_CONFIG }: Props) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>('presets');
   const [selectedPhotoIdx, setSelectedPhotoIdx] = useState(0);
+  const { backgrounds: dynamicBackgrounds } = useBackgrounds();
 
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -117,33 +75,77 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
   const [uploadedBg, setUploadedBg] = useState<BackgroundOption | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // User backgrounds (persisted to Firestore + S3)
+  const [userBackgrounds, setUserBackgrounds] = useState<UserBackground[]>([]);
+  const [uploadingBg, setUploadingBg] = useState(false);
+  const [requestingPublic, setRequestingPublic] = useState<string | null>(null);
+  const [requestedBgIds, setRequestedBgIds] = useState<Set<string>>(new Set());
+
+  // Gradient Creator state
+  const [creatingGradient, setCreatingGradient] = useState(false);
+  const [gradName, setGradName] = useState('My Gradient');
+  const [gradColor1, setGradColor1] = useState('#ff7e5f');
+  const [gradColor2, setGradColor2] = useState('#feb47b');
+  const [gradAngle, setGradAngle] = useState(135);
+
+  // Load user backgrounds from Firestore
+  useEffect(() => {
+    if (!user) return;
+    listUserBackgrounds(user.uid).then(setUserBackgrounds).catch(console.error);
+  }, [user?.uid]);
+
   // Filter state
   const [adjustments, setAdjustments] = useState<ImageAdjustments>({ ...DEFAULT_ADJUSTMENTS });
   const [selectedPreset, setSelectedPreset] = useState<string>('none');
 
+  const [builtinPresets, setBuiltinPresets] = useState<FilterPreset[]>(config.presets);
+  const [userPresets, setUserPresets] = useState<FilterPreset[]>([]);
+  const [communityPresets, setCommunityPresets] = useState<FilterPreset[]>([]);
+
+  // Keep a flat merged list for lookup only (applyFilters etc.)
+  const mergedPresets = [...builtinPresets, ...userPresets, ...communityPresets];
+  
+  useEffect(() => {
+    Promise.all([
+      import('@/lib/public-filters').then(m => m.listPublicFilters()),
+      import('@/lib/user-filters').then(m => user ? m.listUserFilters(user.uid) : Promise.resolve([]))
+    ]).then(([publicFilters, userFiltersRaw]) => {
+      const activeFilters = publicFilters.filter(f => f.active);
+      setBuiltinPresets(config.presets);
+      setUserPresets(userFiltersRaw);
+      // Community = active public filters that don't belong to the current user
+      setCommunityPresets(activeFilters.filter(f => (f as any).ownerUid !== user?.uid));
+    }).catch(console.error);
+  }, [config.presets, user?.uid]);
+
+
   const isApplyingSync = useRef(false);
 
+  const lastSyncData = useRef<EditorSyncData | undefined>(syncData);
+
   useEffect(() => {
-    if (!syncData) return;
-    isApplyingSync.current = true;
+    if (syncData && syncData !== lastSyncData.current) {
+      lastSyncData.current = syncData;
+      isApplyingSync.current = true;
 
-    if (syncData.activeTab) setActiveTab(syncData.activeTab);
-    if (syncData.selectedPreset) setSelectedPreset(syncData.selectedPreset);
-    if (syncData.selectedBg) setSelectedBg(syncData.selectedBg);
-    if (syncData.adjustments) setAdjustments(syncData.adjustments);
-    
-    // We only trigger remove backgrounds if we aren't already removing/removed.
-    if (syncData.isRemovingBg && !backgroundsRemoved && !isRemovingBg) {
-      handleRemoveBackgrounds();
+      if (syncData.activeTab) setActiveTab(syncData.activeTab);
+      if (syncData.selectedPreset) setSelectedPreset(syncData.selectedPreset);
+      if (syncData.selectedBg) setSelectedBg(syncData.selectedBg);
+      if (syncData.adjustments) setAdjustments(syncData.adjustments);
+      
+      // We only trigger remove backgrounds if we aren't already removing/removed.
+      if (syncData.isRemovingBg && !backgroundsRemoved && !isRemovingBg) {
+        handleRemoveBackgrounds();
+      }
     }
-
-    // Short timeout to let react state settle before we enable broadcasting again
-    const t = setTimeout(() => { isApplyingSync.current = false; }, 50);
-    return () => clearTimeout(t);
   }, [syncData, backgroundsRemoved, isRemovingBg]);
 
   useEffect(() => {
-    if (isApplyingSync.current || !onSync) return;
+    if (isApplyingSync.current) {
+      isApplyingSync.current = false;
+      return;
+    }
+    if (!onSync) return;
     onSync({
       activeTab,
       selectedPreset,
@@ -182,13 +184,118 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
     }
   };
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadBackground = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    const newBg: BackgroundOption = { type: 'upload', id: `upload-${Date.now()}`, name: 'Custom', src: url };
-    setUploadedBg(newBg);
-    setSelectedBg(newBg);
+    e.target.value = '';
+
+    // Immediately show a local preview while uploading
+    const localUrl = URL.createObjectURL(file);
+    const tempId = `temp-${Date.now()}`;
+    const tempBg: BackgroundOption = { type: 'upload', id: tempId, name: file.name.replace(/\.[^/.]+$/, ''), src: localUrl };
+    setSelectedBg(tempBg);
+
+    if (!user) {
+      // Not logged in — just use local blob, no persistence
+      setUploadedBg(tempBg);
+      return;
+    }
+
+    setUploadingBg(true);
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) { setUploadingBg(false); return; }
+      try {
+        const token = await getClientAuthToken();
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ image: dataUrl, prefix: `backgrounds/${user.uid}` }),
+        });
+        if (!res.ok) throw new Error('Upload failed');
+        const { url } = await res.json();
+
+        const bgData: Omit<UserBackground, 'id'> = {
+          type: 'upload',
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          src: url,
+          ownerUid: user.uid,
+          ownerName: user.displayName,
+        };
+        const newId = await createUserBackground(bgData);
+        const savedBg: UserBackground = { id: newId, ...bgData };
+
+        setUserBackgrounds(prev => [savedBg, ...prev]);
+        setSelectedBg(savedBg);
+        URL.revokeObjectURL(localUrl);
+      } catch (err) {
+        console.error('Background upload failed:', err);
+        // Keep the local blob as fallback
+        setUploadedBg(tempBg);
+      } finally {
+        setUploadingBg(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveGradient = async () => {
+    if (!user) return;
+    setUploadingBg(true);
+    try {
+      const src = `linear-gradient(${gradAngle}deg, ${gradColor1} 0%, ${gradColor2} 100%)`;
+      const bgData: Omit<UserBackground, 'id'> = {
+        type: 'gradient',
+        name: gradName || 'Custom Gradient',
+        src,
+        ownerUid: user.uid,
+        ownerName: user.displayName,
+      };
+      const newId = await createUserBackground(bgData);
+      const savedBg: UserBackground = { id: newId, ...bgData };
+      setUserBackgrounds(prev => [savedBg, ...prev]);
+      setSelectedBg(savedBg);
+      setCreatingGradient(false);
+    } catch (err) {
+      console.error('Failed to save gradient:', err);
+    } finally {
+      setUploadingBg(false);
+    }
+  };
+
+  const handleDeleteUserBg = async (bg: UserBackground) => {
+    if (!user) return;
+    try {
+      await deleteUserBackground(user?.uid || '', bg.id);
+      setUserBackgrounds(prev => prev.filter(b => b.id !== bg.id));
+      if (selectedBg.id === bg.id) {
+        setSelectedBg({ type: 'original', id: 'orig', name: 'Original' });
+      }
+    } catch (err) {
+      console.error('Failed to delete background:', err);
+    }
+  };
+
+  const handleRequestPublicBg = async (bg: UserBackground) => {
+    if (!user) return;
+    setRequestingPublic(bg.id);
+    try {
+      await requestBackgroundPublish(bg.id, { uid: user.uid, displayName: user.displayName }, {
+        id: bg.id,
+        type: bg.type,
+        name: bg.name,
+        src: bg.src,
+      });
+      setRequestedBgIds(prev => new Set([...prev, bg.id]));
+    } catch (err) {
+      console.error('Failed to request publish:', err);
+    } finally {
+      setRequestingPublic(null);
+    }
   };
 
   const handlePresetSelect = (preset: FilterPreset) => {
@@ -208,10 +315,10 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
 
   // Apply filters to an image using canvas
   const applyFiltersToImage = useCallback(async (src: string): Promise<string> => {
-    const cssFilter = buildCssFilter(adjustments);
+    const cssFilterCheck = buildCssFilter(adjustments);
     const hasTemperature = adjustments.temperature !== 0;
     const hasVignette = adjustments.vignette > 0;
-    const hasFilter = cssFilter !== 'none' || hasTemperature || hasVignette;
+    const hasFilter = cssFilterCheck !== 'none' || hasTemperature || hasVignette;
 
     if (!hasFilter) return src;
 
@@ -224,12 +331,16 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
         canvas.height = img.height;
         const ctx = canvas.getContext('2d')!;
 
+        // Scale the CSS filter based on the image size vs standard preview size (approx 400px wide)
+        const blurScale = img.width / 400;
+        const cssFilterScaled = buildCssFilter(adjustments, blurScale);
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const supportsFilter = 'filter' in (ctx as any);
 
-        if (supportsFilter && cssFilter !== 'none') {
+        if (supportsFilter && cssFilterScaled !== 'none') {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (ctx as any).filter = cssFilter;
+          (ctx as any).filter = cssFilterScaled;
         }
         ctx.drawImage(img, 0, 0);
         if (supportsFilter) {
@@ -237,7 +348,7 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
           (ctx as any).filter = 'none';
         }
 
-        if (!supportsFilter && cssFilter !== 'none') {
+        if (!supportsFilter && cssFilterScaled !== 'none') {
           const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
           const data = imageData.data;
           const brightness = adjustments.brightness / 100;
@@ -322,13 +433,43 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
     });
   }, [adjustments]);
 
+  /**
+   * Fetch an external URL as a local data URL so canvas can draw it
+   * without CORS taint issues. Falls back to the original src on failure.
+   */
+  const fetchAsDataUrl = async (src: string): Promise<string> => {
+    if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
+    try {
+      const res = await fetch('/api/proxy-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: src })
+      });
+      if (!res.ok) throw new Error(`proxy ${res.status}`);
+      const blob = await res.blob();
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return src; // fall back to original, crossOrigin canvas will attempt anyway
+    }
+  };
+
   const compositeImage = async (fgSrc: string, originalSrc: string): Promise<string> => {
     if (selectedBg.type === 'original') return originalSrc;
 
-    return new Promise((resolve, reject) => {
+    // Pre-fetch remote background as data URL to avoid canvas CORS taint
+    const bgSrc = selectedBg.src && selectedBg.type !== 'green' && selectedBg.type !== 'gradient'
+      ? await fetchAsDataUrl(selectedBg.src)
+      : selectedBg.src;
+
+    return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      if (!ctx) return reject(new Error('Failed to get canvas context'));
+      if (!ctx) { resolve(originalSrc); return; }
 
       const fgImg = new Image();
       fgImg.crossOrigin = 'anonymous';
@@ -341,9 +482,9 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(fgImg, 0, 0);
           resolve(canvas.toDataURL('image/jpeg', 0.95));
-        } else if (selectedBg.type === 'gradient' && selectedBg.src) {
+        } else if (selectedBg.type === 'gradient' && bgSrc) {
           const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-          const matches = Array.from(selectedBg.src.matchAll(/(#[A-Fa-f0-9]+)\s+(\d+)%/g));
+          const matches = Array.from(bgSrc.matchAll(/(#[A-Fa-f0-9]+)\s+(\d+)%/g));
           if (matches.length > 0) {
             for (const match of matches) {
               grad.addColorStop(parseInt(match[2], 10) / 100, match[1]);
@@ -355,9 +496,9 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(fgImg, 0, 0);
           resolve(canvas.toDataURL('image/jpeg', 0.95));
-        } else if (selectedBg.src) {
+        } else if (bgSrc) {
           const bgImg = new Image();
-          bgImg.crossOrigin = 'anonymous';
+          // No crossOrigin needed since we're using data URL
           bgImg.onload = () => {
             const scale = Math.max(canvas.width / bgImg.width, canvas.height / bgImg.height);
             const w = bgImg.width * scale;
@@ -368,13 +509,19 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
             ctx.drawImage(fgImg, 0, 0);
             resolve(canvas.toDataURL('image/jpeg', 0.95));
           };
-          bgImg.onerror = reject;
-          bgImg.src = selectedBg.src;
+          bgImg.onerror = () => {
+            // Background failed to load — just composite fg over a white bg
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(fgImg, 0, 0);
+            resolve(canvas.toDataURL('image/jpeg', 0.95));
+          };
+          bgImg.src = bgSrc;
         } else {
           resolve(originalSrc);
         }
       };
-      fgImg.onerror = reject;
+      fgImg.onerror = () => resolve(originalSrc);
       fgImg.src = fgSrc;
     });
   };
@@ -471,22 +618,12 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
   const bgOptions: BackgroundOption[] = [
     { type: 'original', id: 'orig', name: 'Original' },
     { type: 'green', id: 'green', name: 'Green Screen', src: '#00FF00' },
-    ...GRADIENT_BGS,
-    ...FOLDER_BGS,
+    ...config.backgrounds.filter(b => b.type === 'gradient'), // only keep gradients from defaults
+    ...dynamicBackgrounds, // load uploaded custom backgrounds
   ];
   if (uploadedBg) bgOptions.push(uploadedBg);
 
-  const sliders: { key: keyof ImageAdjustments; label: string; min: number; max: number; default: number }[] = [
-    { key: 'brightness', label: 'Brightness', min: 0, max: 200, default: 100 },
-    { key: 'contrast', label: 'Contrast', min: 0, max: 200, default: 100 },
-    { key: 'saturation', label: 'Saturation', min: 0, max: 200, default: 100 },
-    { key: 'temperature', label: 'Temperature', min: -100, max: 100, default: 0 },
-    { key: 'hue', label: 'Hue', min: 0, max: 360, default: 0 },
-    { key: 'sepia', label: 'Sepia', min: 0, max: 100, default: 0 },
-    { key: 'grayscale', label: 'Grayscale', min: 0, max: 100, default: 0 },
-    { key: 'vignette', label: 'Vignette', min: 0, max: 100, default: 0 },
-    { key: 'blur', label: 'Blur', min: 0, max: 10, default: 0 },
-  ];
+  const sliders = config.sliders.filter(s => s.enabled !== false);
 
   return (
     <div className="w-full animate-slideUp">
@@ -565,27 +702,96 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
           {/* Tab Content */}
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 relative">
             {activeTab === 'presets' && (
-              <div className="grid grid-cols-2 gap-3 animate-fadeIn">
-                {FILTER_PRESETS.map(preset => {
-                  const isActive = selectedPreset === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      onClick={() => handlePresetSelect(preset)}
-                      className={`relative p-3 rounded-xl border text-left min-h-[56px] transition-all hover:scale-[1.02] active:scale-[0.98] touch-manipulation ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
-                      style={{ borderColor: isActive ? frame.borderColor : undefined }}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center text-xl shadow-inner from-gray-100 to-gray-200 border border-black/5">
-                          {preset.emoji}
-                        </div>
-                        <div>
-                          <p className="text-sm font-semibold text-foreground">{preset.name}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="space-y-5 animate-fadeIn">
+
+                {/* — Built-in Presets — */}
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Presets</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {builtinPresets.map(preset => {
+                      const isActive = selectedPreset === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          onClick={() => handlePresetSelect(preset)}
+                          className={`relative p-3 rounded-xl border text-left min-h-[56px] transition-all hover:scale-[1.02] active:scale-[0.98] touch-manipulation ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
+                          style={{ borderColor: isActive ? frame.borderColor : undefined }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center text-xl shadow-inner from-gray-100 to-gray-200 border border-black/5">
+                              {preset.emoji}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">{preset.name}</p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* — My Presets — */}
+                {userPresets.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>My Presets</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {userPresets.map(preset => {
+                        const isActive = selectedPreset === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            onClick={() => handlePresetSelect(preset)}
+                            className={`relative p-3 rounded-xl border text-left min-h-[56px] transition-all hover:scale-[1.02] active:scale-[0.98] touch-manipulation ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
+                            style={{ borderColor: isActive ? frame.borderColor : undefined }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center text-xl shadow-inner from-gray-100 to-gray-200 border border-black/5">
+                                {preset.emoji || '✨'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{preset.name}</p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* — Community Presets — */}
+                {communityPresets.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Community</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {communityPresets.map(preset => {
+                        const isActive = selectedPreset === preset.id;
+                        return (
+                          <button
+                            key={preset.id}
+                            onClick={() => handlePresetSelect(preset)}
+                            className={`relative p-3 rounded-xl border text-left min-h-[56px] transition-all hover:scale-[1.02] active:scale-[0.98] touch-manipulation ${isActive ? 'bg-primary/5 shadow-sm' : 'border-border hover:bg-surface-0'}`}
+                            style={{ borderColor: isActive ? frame.borderColor : undefined }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-lg bg-gradient-to-br flex items-center justify-center text-xl shadow-inner from-gray-100 to-gray-200 border border-black/5">
+                                {preset.emoji || '🌐'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-foreground">{preset.name}</p>
+                                {(preset as any).ownerName && (
+                                  <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>by {(preset as any).ownerName}</p>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 
@@ -648,34 +854,92 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
 
                 {/* Colors & Gradients */}
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">Colors & Gradients</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    {bgOptions.filter(b => b.type === 'original' || b.type === 'green' || b.type === 'gradient').map(bg => {
-                      const isSelected = selectedBg.id === bg.id;
-                      return (
-                        <button
-                          key={bg.id}
-                          onClick={() => setSelectedBg(bg)}
-                          className={`relative rounded-lg p-1.5 transition-all text-left ${isSelected ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
-                        >
-                          <div
-                            className="w-full aspect-square rounded mb-2 overflow-hidden border border-black/5"
-                            style={bg.type === 'green' ? { background: '#00FF00' } : bg.type === 'gradient' ? { background: bg.src } : {}}
-                          >
-                            {bg.type === 'original' && <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-xl opacity-60">📸</div>}
-                          </div>
-                          <p className="text-[10px] text-center font-medium truncate opacity-80">{bg.name}</p>
-                        </button>
-                      );
-                    })}
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-40">Colors & Gradients</p>
                   </div>
+                  
+                  {creatingGradient ? (
+                    <div className="p-4 rounded-xl border border-border bg-surface-1 mb-4 animate-fadeIn">
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-xs font-bold uppercase">New Gradient</h4>
+                        <button onClick={() => setCreatingGradient(false)} className="text-xs opacity-60 hover:opacity-100">Cancel</button>
+                      </div>
+                      
+                      <div className="w-full h-16 rounded-lg mb-3 shadow-inner" style={{ background: `linear-gradient(${gradAngle}deg, ${gradColor1} 0%, ${gradColor2} 100%)` }} />
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[10px] font-semibold opacity-70 block mb-1">Name</label>
+                          <input type="text" value={gradName} onChange={e => setGradName(e.target.value)} className="w-full text-xs bg-surface-0 border border-border rounded px-2 py-1.5" placeholder="Gradient Name" />
+                        </div>
+                        
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <label className="text-[10px] font-semibold opacity-70 block mb-1">Color 1</label>
+                            <input type="color" value={gradColor1} onChange={e => setGradColor1(e.target.value)} className="w-full h-8 rounded cursor-pointer border border-border bg-surface-0" />
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-[10px] font-semibold opacity-70 block mb-1">Color 2</label>
+                            <input type="color" value={gradColor2} onChange={e => setGradColor2(e.target.value)} className="w-full h-8 rounded cursor-pointer border border-border bg-surface-0" />
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="flex justify-between mb-1">
+                            <label className="text-[10px] font-semibold opacity-70 block">Angle</label>
+                            <span className="text-[10px] font-mono opacity-50">{gradAngle}°</span>
+                          </div>
+                          <input type="range" min="0" max="360" value={gradAngle} onChange={e => setGradAngle(Number(e.target.value))} className="w-full h-2 rounded-full appearance-none cursor-pointer" style={{ background: 'var(--border)', accentColor: frame.borderColor }} />
+                        </div>
+                        
+                        <button 
+                          onClick={handleSaveGradient}
+                          disabled={uploadingBg || !user}
+                          className="w-full py-2 bg-primary text-primary-foreground rounded font-medium text-xs mt-2 disabled:opacity-50"
+                        >
+                          {uploadingBg ? 'Saving...' : user ? 'Save Gradient' : 'Login to Save'}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 gap-3">
+                      {bgOptions.filter(b => b.type === 'original' || b.type === 'green' || b.type === 'gradient').map(bg => {
+                        const isSelected = selectedBg.id === bg.id;
+                        return (
+                          <button
+                            key={bg.id}
+                            onClick={() => setSelectedBg(bg)}
+                            className={`relative rounded-lg p-1.5 transition-all text-left ${isSelected ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
+                          >
+                            <div
+                              className="w-full aspect-square rounded mb-2 overflow-hidden border border-black/5"
+                              style={bg.type === 'green' ? { background: '#00FF00' } : bg.type === 'gradient' ? { background: bg.src } : {}}
+                            >
+                              {bg.type === 'original' && <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-xl opacity-60">📸</div>}
+                            </div>
+                            <p className="text-[10px] text-center font-medium truncate opacity-80">{bg.name}</p>
+                          </button>
+                        );
+                      })}
+                      
+                      <button
+                        onClick={() => setCreatingGradient(true)}
+                        className="relative rounded-lg p-1.5 transition-all text-left hover:bg-surface-0/50 flex flex-col items-center justify-center border-2 border-dashed border-border"
+                      >
+                        <span className="text-lg opacity-40 mb-1">+</span>
+                        <p className="text-[10px] text-center font-medium opacity-60">New Gradient</p>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {/* Scenes & Upload */}
+                {/* Scenes */}
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">Scenes</p>
                   <div className="grid grid-cols-2 gap-3">
                     {bgOptions.filter(b => b.type === 'folder' || b.type === 'upload').map(bg => {
+                      // Skip user background if it's already rendered in My Backgrounds to avoid duplicates
+                      if (userBackgrounds.find(ub => ub.id === bg.id)) return null;
                       const isSelected = selectedBg.id === bg.id;
                       return (
                         <button
@@ -690,16 +954,88 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
                         </button>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* My Backgrounds & Upload */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest opacity-40 mb-3">My Backgrounds</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {userBackgrounds.map(bg => {
+                      const isSelected = selectedBg.id === bg.id;
+                      const requested = requestedBgIds.has(bg.id);
+                      return (
+                        <div
+                          key={bg.id}
+                          className={`relative group rounded-lg p-1.5 transition-all text-left ${isSelected ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
+                        >
+                          <button onClick={() => setSelectedBg(bg)} className="w-full block">
+                            <div 
+                              className="w-full h-16 rounded mb-2 overflow-hidden border border-black/5 bg-gray-100"
+                              style={bg.type === 'gradient' ? { background: bg.src } : {}}
+                            >
+                              {bg.src && bg.type !== 'gradient' && <img src={bg.src} className="w-full h-full object-cover" alt={bg.name} />}
+                            </div>
+                            <p className="text-[10px] text-center font-medium truncate opacity-80">{bg.name}</p>
+                          </button>
+                          
+                          {/* Hover Actions */}
+                          <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!requested && (
+                              <button
+                                onClick={() => handleRequestPublicBg(bg)}
+                                disabled={requestingPublic === bg.id}
+                                className="p-1.5 bg-black/50 hover:bg-black/70 text-white rounded backdrop-blur-md transition-colors"
+                                title="Publish to community"
+                              >
+                                {requestingPublic === bg.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Globe className="w-3 h-3" />}
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDeleteUserBg(bg)}
+                              className="p-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded backdrop-blur-md transition-colors"
+                              title="Delete background"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                          {requested && (
+                            <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-green-500/90 text-white text-[8px] font-bold uppercase rounded shadow-sm">
+                              Pending Review
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {uploadedBg && !userBackgrounds.find(b => b.id === uploadedBg.id) && (
+                      <button
+                        onClick={() => setSelectedBg(uploadedBg)}
+                        className={`relative rounded-lg p-1.5 transition-all text-left ${selectedBg.id === uploadedBg.id ? 'bg-surface-0 shadow-sm ring-1 ring-border' : 'hover:bg-surface-0/50'}`}
+                      >
+                        <div 
+                          className="w-full h-16 rounded mb-2 overflow-hidden border border-black/5 bg-gray-100"
+                          style={uploadedBg.type === 'gradient' ? { background: uploadedBg.src } : {}}
+                        >
+                          {uploadedBg.src && uploadedBg.type !== 'gradient' && <img src={uploadedBg.src} className="w-full h-full object-cover" alt={uploadedBg.name} />}
+                        </div>
+                        <p className="text-[10px] text-center font-medium truncate opacity-80">{uploadedBg.name}</p>
+                      </button>
+                    )}
+
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      className="relative rounded-lg p-1.5 transition-all text-left hover:bg-surface-0/50"
+                      disabled={uploadingBg}
+                      className="relative rounded-lg p-1.5 transition-all text-left hover:bg-surface-0/50 disabled:opacity-50"
                     >
-                      <div className="w-full h-16 rounded mb-2 flex items-center justify-center border-2 border-dashed border-border text-foreground/40">
-                        <span className="text-xl">+</span>
+                      <div className="w-full h-16 rounded mb-2 flex items-center justify-center border-2 border-dashed border-border text-foreground/40 bg-surface-0">
+                        {uploadingBg ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                       </div>
-                      <p className="text-[10px] text-center font-medium truncate opacity-80">Upload Custom</p>
+                      <p className="text-[10px] text-center font-medium truncate opacity-80">
+                        {uploadingBg ? 'Uploading...' : 'Upload Custom'}
+                      </p>
                     </button>
-                    <input type="file" ref={fileInputRef} onChange={handleUpload} accept="image/*" className="hidden" />
+                    <input type="file" ref={fileInputRef} onChange={handleUploadBackground} accept="image/*" className="hidden" />
                   </div>
                 </div>
               </div>

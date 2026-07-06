@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getClientAuthToken } from '@/lib/auth-client';
 
 interface UseBulkUploadProps {
   stripDataUrl: string;
@@ -23,9 +24,13 @@ export function useBulkUpload({
     let lastErr: unknown;
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
+        const token = await getClientAuthToken();
         const res = await fetch('/api/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
           body: JSON.stringify(body),
         });
         // Retry on server errors (502/503/504/500 with ECONNRESET code)

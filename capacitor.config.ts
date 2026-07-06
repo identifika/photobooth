@@ -5,8 +5,8 @@ const config: CapacitorConfig = {
   appName: 'Pika',
   webDir: 'out',
   server: {
-    androidScheme: 'http',
-    iosScheme: 'http',
+    androidScheme: 'https',
+    iosScheme: 'https',
   },
   plugins: {
     FirebaseAuthentication: {

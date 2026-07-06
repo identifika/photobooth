@@ -117,6 +117,15 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     };
   }, [stopFrameCapture]);
 
+  // Expose mounted state to other callbacks
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const capture = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
@@ -159,6 +168,8 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     setCapturing(true);
     await new Promise((resolve) => setTimeout(resolve, POST_CAPTURE_MS));
 
+    if (!mountedRef.current) return;
+
     // Stop frame capture
     stopFrameCapture();
     setCapturing(false);
@@ -172,6 +183,18 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     onCapture(photoDataUrl, frames);
   }, [frame, currentAspectRatio, onCapture, stopFrameCapture]);
 
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      if (captureTimeoutRef.current) clearTimeout(captureTimeoutRef.current);
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    };
+  }, []);
+
   const startCountdown = useCallback(() => {
     if (countdown !== null || capturing) return;
 
@@ -180,14 +203,19 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
 
     let count = 3;
     setCountdown(count);
-    const interval = setInterval(() => {
+    
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    
+    countdownTimerRef.current = setInterval(() => {
       count--;
       if (count <= 0) {
-        clearInterval(interval);
+        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
         setCountdown(null);
         setFlash(true);
-        setTimeout(() => setFlash(false), 600);
-        setTimeout(() => capture(), 100);
+        flashTimeoutRef.current = setTimeout(() => {
+          if (mountedRef.current) setFlash(false);
+        }, 600);
+        captureTimeoutRef.current = setTimeout(() => capture(), 100);
       } else {
         setCountdown(count);
       }

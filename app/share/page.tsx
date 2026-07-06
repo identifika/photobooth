@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { getClientAuthToken } from '@/lib/auth-client';
 import Image from 'next/image';
 import { Download, Loader2, Image as ImageIcon, Video, Home } from 'lucide-react';
 import Link from 'next/link';
@@ -29,28 +30,33 @@ function SharePageContent() {
       return;
     }
 
-    fetch('/api/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId })
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('Session not found');
-        return res.json();
+    getClientAuthToken().then(token => {
+      fetch('/api/share', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ sessionId })
       })
-      .then(data => {
-        if (data.items) {
-          setItems(data.items);
-        } else {
-          setError('No items found');
-        }
-      })
-      .catch(err => {
-        setError(err.message || 'Failed to load session');
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+        .then(res => {
+          if (!res.ok) throw new Error('Session not found');
+          return res.json();
+        })
+        .then(data => {
+          if (data.items) {
+            setItems(data.items);
+          } else {
+            setError('No items found');
+          }
+        })
+        .catch(err => {
+          setError(err.message || 'Failed to load session');
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    });
   }, [sessionId]);
 
   const downloadFile = (url: string, filename: string) => {

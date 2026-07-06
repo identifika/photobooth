@@ -38,17 +38,16 @@ export default function FramesPage() {
   const { data: userFrames = [], mutate: mutateUserFrames, isLoading: userFramesLoading } = useUserFrames(user?.uid);
   const { data: publicFrames = [], mutate: mutatePublicFrames, isLoading: publicFramesLoading } = usePublicFrames(!!isUserAdmin);
   const { data: publishRequests = [], mutate: mutatePublishRequests } = useUserPublishRequests(user?.uid);
-  const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isUserAdmin);
 
   const pendingPublishRequests = useMemo(() => {
     const pendingMap: Record<string, PublishRequest> = {};
-    publishRequests.forEach(req => {
-      if (req.status === 'pending') pendingMap[req.frameId] = req;
-    });
+    publishRequests
+      .filter(req => !req.type || req.type === 'frame')
+      .forEach(req => {
+        if (req.status === 'pending' && req.frameId) pendingMap[req.frameId] = req;
+      });
     return pendingMap;
   }, [publishRequests]);
-
-  const pendingAdminRequestsCount = pendingAdminRequests.length;
 
   const handleCreateNew = async () => {
     if (!user) return;
@@ -121,7 +120,7 @@ export default function FramesPage() {
     const isConfirmed = await confirm('Delete this community frame?');
     if (!isConfirmed) return;
     try {
-      await deletePublicFrame(id);
+      await deletePublicFrame(user?.email || '', id);
       await mutatePublicFrames((prev = []) => prev.filter((f) => f.id !== id), { revalidate: true });
     } catch (e) {
       console.error(e);
@@ -251,15 +250,6 @@ export default function FramesPage() {
                 <Globe className="w-5 h-5 text-muted-foreground" />
                 <h2 className="font-bold text-lg text-foreground">Community Frames</h2>
               </div>
-              <Button onClick={() => router.push('/admin/reviews')} variant="outline" size="sm" className="relative">
-                <Globe className="w-3 h-3 mr-1" />
-                Review Requests
-                {pendingAdminRequestsCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                    {pendingAdminRequestsCount}
-                  </span>
-                )}
-              </Button>
             </div>
 
             {publicFramesLoading ? (

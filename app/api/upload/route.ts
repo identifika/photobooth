@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
+import { verifyIdToken } from '@/lib/auth-server';
 
 const UploadRequestSchema = z.object({
   image: z.string().min(1, "Missing image data"),
   sessionId: z.string().optional(),
   filename: z.string().optional(),
+  prefix: z.string().optional(),
 });
 
 const s3 = new S3Client({
@@ -28,7 +30,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
 
-    const { image, sessionId, filename: customFilename } = result.data;
+    const user = await verifyIdToken(request.headers.get('Authorization'));
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { image, sessionId, filename: customFilename, prefix } = result.data;
 
     // Parse base64
     const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(base64Data, 'base64');
     const extension = contentType === 'image/gif' ? 'gif' : contentType === 'image/jpeg' ? 'jpg' : 'png';
     const finalFilename = customFilename || `${uuidv4()}.${extension}`;
-    const key = sessionId ? `${sessionId}/${finalFilename}` : finalFilename;
+    const key = [prefix, sessionId, finalFilename].filter(Boolean).join('/');
     const bucket = process.env.S3_BUCKET_NAME;
 
     // Retry S3 upload up to 3 times with exponential backoff (handles ECONNRESET / transient network drops)

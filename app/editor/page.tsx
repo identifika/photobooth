@@ -132,7 +132,7 @@ function EditorInner() {
 
       // Save public frame (admin only)
       if (isPublicEdit && isUserAdmin) {
-        await updateAnyPublicFrame(publicFrameId!, {
+        await updateAnyPublicFrame(user?.email || '', publicFrameId!, {
           config,
           name: frameName,
           layout: derivedLayout as any,

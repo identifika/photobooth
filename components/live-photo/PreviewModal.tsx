@@ -19,11 +19,25 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
   const [gifProgress, setGifProgress] = useState(0);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const mountedRef = useRef(true);
+  const gifUrlRef = useRef<string | null>(null);
+  const offscreenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const gifWorkerRef = useRef<any>(null);
+
   // Generate GIF from the video on mount
   useEffect(() => {
+    mountedRef.current = true;
     generateGif();
     return () => {
-      if (gifUrl) URL.revokeObjectURL(gifUrl);
+      mountedRef.current = false;
+      if (gifUrlRef.current) URL.revokeObjectURL(gifUrlRef.current);
+      if (offscreenVideoRef.current) {
+        offscreenVideoRef.current.remove();
+        offscreenVideoRef.current = null;
+      }
+      if (gifWorkerRef.current && typeof gifWorkerRef.current.abort === 'function') {
+        gifWorkerRef.current.abort();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -35,6 +49,7 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
     try {
       // Create an offscreen video element to extract frames
       const video = document.createElement('video');
+      offscreenVideoRef.current = video;
       video.src = result.videoUrl;
       video.muted = true;
       video.playsInline = true;
@@ -44,6 +59,8 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
         video.onloadeddata = () => resolve();
         video.onerror = () => reject(new Error('Failed to load video for GIF'));
       });
+      
+      if (!mountedRef.current) return;
 
       const width = Math.min(video.videoWidth, 480);
       const height = Math.round((width / video.videoWidth) * video.videoHeight);
@@ -59,6 +76,7 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
         width,
         height,
       });
+      gifWorkerRef.current = gif;
 
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -67,12 +85,15 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
 
       // Extract frames by seeking through the video
       for (let i = 0; i < totalFrames; i++) {
+        if (!mountedRef.current) return;
         const seekTime = (i / totalFrames) * duration;
         video.currentTime = seekTime;
 
         await new Promise<void>((resolve) => {
           video.onseeked = () => resolve();
         });
+        
+        if (!mountedRef.current) return;
 
         // Mirror to match the preview display
         ctx.save();
@@ -95,7 +116,7 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
       // Render GIF
       const gifBlob = await new Promise<Blob>((resolve) => {
         gif.on('progress', (p: number) => {
-          setGifProgress(60 + Math.round(p * 40)); // 60-100% for encoding
+          if (mountedRef.current) setGifProgress(60 + Math.round(p * 40)); // 60-100% for encoding
         });
         gif.on('finished', (blob: Blob) => {
           resolve(blob);
@@ -103,13 +124,18 @@ export default function PreviewModal({ result, onRetake, onClose }: Props) {
         gif.render();
       });
 
+      if (!mountedRef.current) return;
+
       const url = URL.createObjectURL(gifBlob);
+      gifUrlRef.current = url;
       setGifUrl(url);
     } catch (err) {
-      console.error('GIF generation failed:', err);
+      if (mountedRef.current) console.error('GIF generation failed:', err);
     } finally {
-      setGeneratingGif(false);
-      setGifProgress(100);
+      if (mountedRef.current) {
+        setGeneratingGif(false);
+        setGifProgress(100);
+      }
     }
   }, [result.videoUrl]);
 

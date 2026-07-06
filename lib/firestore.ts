@@ -4,7 +4,7 @@
 import type { FrameConfig } from './frame-types';
 
 const IS_NATIVE = typeof window !== 'undefined' && ('Capacitor' in window);
-const PROJECT_ID = 'photobooth-ad7ab';
+const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'photobooth-ad7ab';
 const DATABASE_ID = 'default';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
 
@@ -207,10 +207,10 @@ async function restDeleteDocument(path: string): Promise<void> {
 
 // ── Web SDK (browser) ──────────────────────────────────────────────────────
 
-async function webGetCollection(path: string, uid: string): Promise<{ id: string; data: Record<string, unknown> }[]> {
+async function webGetCollection(path: string, uid: string, field = 'uid'): Promise<{ id: string; data: Record<string, unknown> }[]> {
   const { collection, query, where, getDocs } = await import('firebase/firestore');
   const { db } = await import('./firebase');
-  const q = query(collection(db, path), where('uid', '==', uid));
+  const q = query(collection(db, path), where(field, '==', uid));
   const snap = await getDocs(q);
   return snap.docs.map(d => ({ id: d.id, data: d.data() as Record<string, unknown> }));
 }
@@ -251,8 +251,8 @@ async function webDeleteDocument(path: string): Promise<void> {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-export async function fsGetCollection(collectionPath: string, uid: string) {
-  return IS_NATIVE ? restQueryCollection(collectionPath, 'uid', uid) : webGetCollection(collectionPath, uid);
+export async function fsGetCollection(collectionPath: string, uid: string, field = 'uid') {
+  return IS_NATIVE ? restQueryCollection(collectionPath, field, uid) : webGetCollection(collectionPath, uid, field);
 }
 
 export async function fsGetAllCollection(collectionPath: string) {
