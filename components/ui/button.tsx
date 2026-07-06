@@ -6,7 +6,7 @@ interface ExtraProps {
 }
 
 const variantStyles: Record<string, string> = {
-  default: 'bg-brand text-white hover:bg-brand-hover',
+  default: 'bg-primary text-primary-foreground hover:bg-primary/90',
   outline: 'border border-border bg-transparent hover:bg-accent/10',
   secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
   ghost: 'bg-transparent hover:bg-accent/10 text-foreground',
