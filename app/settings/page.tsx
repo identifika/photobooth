@@ -19,6 +19,7 @@ import { deleteUserFilter, type UserFilter } from '@/lib/user-filters';
 import { deletePublicFilterAsOwner } from '@/lib/public-filters';
 import { requestFilterPublish } from '@/lib/publish-requests';
 import { MyBackgrounds } from '@/components/MyBackgrounds';
+import { getClientAuthToken } from '@/lib/auth-client';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -32,6 +33,7 @@ export default function SettingsPage() {
 
   const [studioName, setStudioName] = useState('');
   const [studioLogo, setStudioLogo] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [tagline, setTagline] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -57,6 +59,47 @@ export default function SettingsPage() {
       setPasswordError(err instanceof Error ? err.message.replace('Firebase: ', '') : 'Failed to set password');
     }
     setPasswordLoading(false);
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!user) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) return;
+
+      setUploadingLogo(true);
+      try {
+        const token = await getClientAuthToken();
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            image: dataUrl,
+            prefix: `logos/${user.uid}`,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('Upload failed');
+        }
+        
+        const data = await res.json();
+        setStudioLogo(data.url);
+      } catch (err: any) {
+        console.error('Error uploading logo:', err);
+        alert(err.message || 'Failed to upload logo.');
+      } finally {
+        setUploadingLogo(false);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const isAuthorized = user && isAdmin(user.email);
@@ -517,9 +560,18 @@ export default function SettingsPage() {
               <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
                 {/* Logo Preview */}
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center"
-                    style={{ width: 56, height: 56, background: 'var(--brand)', borderRadius: 12, fontSize: 28 }}>
-                    {studioLogo || '📷'}
+                  <div className="flex items-center justify-center relative"
+                    style={{ width: 56, height: 56, background: 'var(--brand)', borderRadius: 12, fontSize: 28, overflow: 'hidden' }}>
+                    {studioLogo?.length > 10 ? (
+                      <img src={studioLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      studioLogo || '📷'
+                    )}
+                    {uploadingLogo && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{studioName || 'Photobooth'}</p>
@@ -527,9 +579,15 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Logo Emoji Picker */}
+                {/* Logo Emoji Picker & Upload */}
                 <div>
-                  <label className="text-xs uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>Logo (Emoji)</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs uppercase tracking-wider block" style={{ color: 'var(--text-muted)' }}>Logo (Emoji or Image)</label>
+                    <label className="text-xs font-medium cursor-pointer" style={{ color: 'var(--brand)' }}>
+                      {uploadingLogo ? 'Uploading...' : 'Upload Image'}
+                      <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo} onChange={handleLogoUpload} />
+                    </label>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {EMOJI_OPTIONS.map((emoji) => (
                       <button

@@ -62,10 +62,14 @@ export default function LoginPage() {
         {/* Logo & Branding */}
         <div className="text-center mb-8 animate-fadeIn">
           <div
-            className="mx-auto mb-5 flex items-center justify-center"
+            className="mx-auto mb-5 flex items-center justify-center relative overflow-hidden"
             style={{ width: 72, height: 72, background: 'var(--brand)', borderRadius: 12, fontSize: 32 }}
           >
-            {studioLogo}
+            {studioLogo?.length > 10 ? (
+              <img src={studioLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              studioLogo
+            )}
           </div>
           <h1 style={{ fontSize: 28, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.3px' }}>{studioName}</h1>
           <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>{tagline}</p>
