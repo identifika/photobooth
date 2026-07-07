@@ -13,6 +13,11 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "public/gif.worker.js",
+    // Build artifacts — not source
+    "android/**",
+    "ios/**",
+    "src-tauri/target/**",
+    "node_modules/**",
   ]),
 ]);
 
