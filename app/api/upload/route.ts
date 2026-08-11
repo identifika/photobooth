@@ -46,13 +46,13 @@ export async function POST(request: Request) {
     const contentType = matches[1];
     const base64Data = matches[2];
     
-    // Only allow PNG, JPEG, and GIF to prevent weird uploads
-    if (!['image/png', 'image/gif', 'image/jpeg'].includes(contentType)) {
+    // Only allow PNG, JPEG, GIF, and WEBP to prevent weird uploads
+    if (!['image/png', 'image/gif', 'image/jpeg', 'image/webp'].includes(contentType)) {
       return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
 
     const buffer = Buffer.from(base64Data, 'base64');
-    const extension = contentType === 'image/gif' ? 'gif' : contentType === 'image/jpeg' ? 'jpg' : 'png';
+    const extension = contentType === 'image/gif' ? 'gif' : contentType === 'image/jpeg' ? 'jpg' : contentType === 'image/webp' ? 'webp' : 'png';
     const finalFilename = customFilename || `${uuidv4()}.${extension}`;
     const key = [prefix, sessionId, finalFilename].filter(Boolean).join('/');
     const bucket = process.env.S3_BUCKET_NAME;
