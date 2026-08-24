@@ -4,6 +4,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { DialogProvider } from "@/components/ui/dialog-provider";
 import StatusBarConfig from "@/components/StatusBarConfig";
+import WebMetadataSync from "@/components/WebMetadataSync";
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -19,6 +20,11 @@ export const metadata: Metadata = {
   },
   description: "A premium customizable photobooth experience for capturing and sharing your favorite moments.",
   keywords: ["photobooth", "vintage photos", "photo editor", "Pika", "camera app", "customizable photobooth"],
+  icons: {
+    icon: '/favicon.ico',
+    shortcut: '/favicon.ico',
+    apple: '/favicon.ico',
+  },
   openGraph: {
     title: "Pika — Capture the Moment",
     description: "A premium customizable photobooth experience for capturing and sharing your favorite moments.",
@@ -43,6 +49,7 @@ export default function RootLayout({
         <StatusBarConfig />
         <ThemeProvider>
           <AuthProvider>
+            <WebMetadataSync />
             <DialogProvider>
               {children}
             </DialogProvider>

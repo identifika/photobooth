@@ -86,7 +86,9 @@ export async function POST(request: Request) {
     }
     if (lastError) throw lastError;
 
-    const cdnUrl = `${process.env.NEXT_PUBLIC_CDN_URL}/${bucket}/${key}`;
+    const rawBaseUrl = process.env.NEXT_PUBLIC_CDN_URL || process.env.NEXT_PUBLIC_S3_ENDPOINT || process.env.S3_ENDPOINT || '';
+    const baseUrl = rawBaseUrl.replace(/\/$/, '');
+    const cdnUrl = bucket ? `${baseUrl}/${bucket}/${key}` : `${baseUrl}/${key}`;
 
     return NextResponse.json({ url: cdnUrl });
   } catch (error: any) {

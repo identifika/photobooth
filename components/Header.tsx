@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePendingPublishRequests } from '@/hooks/useFrames';
+import StudioLogo from './StudioLogo';
 
 export interface Step {
   id: string;
@@ -67,11 +68,7 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
         <button onClick={handleRestart} className="flex items-center gap-2 group" style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
           <div className="flex items-center justify-center group-hover:rotate-12 transition-transform"
             style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 8 : 10, background: 'var(--brand)', fontSize: isMobile ? 16 : 18, overflow: 'hidden' }}>
-            {studioLogo?.length > 10 ? (
-              <img src={studioLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              studioLogo
-            )}
+            <StudioLogo logo={studioLogo} alt={studioName} />
           </div>
           <div className={isMobile ? 'hidden sm:block' : ''}>
             <h1 style={{ fontSize: isMobile ? 15 : 17, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1, letterSpacing: '-0.3px', margin: 0 }}>{studioName}</h1>

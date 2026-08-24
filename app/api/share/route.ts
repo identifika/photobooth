@@ -49,7 +49,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Session not found or empty' }, { status: 404 });
     }
 
-    const baseUrl = `${process.env.NEXT_PUBLIC_CDN_URL}/${bucket}`;
+    const rawBaseUrl = process.env.NEXT_PUBLIC_CDN_URL || process.env.NEXT_PUBLIC_S3_ENDPOINT || process.env.S3_ENDPOINT || '';
+    const baseUrl = bucket ? `${rawBaseUrl.replace(/\/$/, '')}/${bucket}` : rawBaseUrl.replace(/\/$/, '');
     
     // Sort so strip is first, then photos, then live clips
     const items = response.Contents.map(item => ({

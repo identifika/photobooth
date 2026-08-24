@@ -20,6 +20,7 @@ import { deletePublicFilterAsOwner } from '@/lib/public-filters';
 import { requestFilterPublish } from '@/lib/publish-requests';
 import { MyBackgrounds } from '@/components/MyBackgrounds';
 import { getClientAuthToken } from '@/lib/auth-client';
+import StudioLogo from '@/components/StudioLogo';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
 
@@ -577,11 +578,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center justify-center relative"
                     style={{ width: 56, height: 56, background: 'var(--brand)', borderRadius: 12, fontSize: 28, overflow: 'hidden' }}>
-                    {studioLogo?.length > 10 ? (
-                      <img src={studioLogo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      studioLogo || '📷'
-                    )}
+                    <StudioLogo logo={studioLogo} alt={studioName} />
                     {uploadingLogo && (
                       <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />

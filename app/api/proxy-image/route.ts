@@ -18,14 +18,15 @@ export async function POST(request: Request) {
   // Only allow fetching from trusted sources (S3 / CDN configured on the server)
   const cdnBase = process.env.NEXT_PUBLIC_CDN_URL ?? '';
   const s3Endpoint = process.env.S3_ENDPOINT ?? '';
+  const nextPublicS3Endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT ?? '';
 
-  const allowedOrigins = [cdnBase, s3Endpoint].filter(Boolean);
+  const allowedOrigins = [cdnBase, s3Endpoint, nextPublicS3Endpoint].filter(Boolean);
   
   if (allowedOrigins.length === 0) {
     return NextResponse.json({ error: 'Server misconfigured: No allowed origins' }, { status: 500 });
   }
   
-  const isAllowed = allowedOrigins.some(origin => url.startsWith(origin));
+  const isAllowed = allowedOrigins.some(origin => url.startsWith(origin.replace(/\/$/, '')));
 
   if (!isAllowed) {
     return NextResponse.json({ error: 'URL not from an allowed origin' }, { status: 403 });
@@ -37,7 +38,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Upstream error: ${res.status}` }, { status: 502 });
     }
 
-    const contentType = res.headers.get('content-type') ?? 'image/jpeg';
+    let contentType = res.headers.get('content-type');
+    if (!contentType || contentType === 'application/octet-stream' || contentType === 'binary/octet-stream') {
+      const cleanUrl = url.split('?')[0].toLowerCase();
+      if (cleanUrl.endsWith('.webp')) {
+        contentType = 'image/webp';
+      } else if (cleanUrl.endsWith('.png')) {
+        contentType = 'image/png';
+      } else if (cleanUrl.endsWith('.gif')) {
+        contentType = 'image/gif';
+      } else if (cleanUrl.endsWith('.svg')) {
+        contentType = 'image/svg+xml';
+      } else {
+        contentType = 'image/jpeg';
+      }
+    }
     const buffer = await res.arrayBuffer();
 
     return new NextResponse(buffer, {

@@ -1,6 +1,6 @@
 {
   "productName": "Pika",
-  "version": "0.1.0",
+  "version": "1.1.1",
   "identifier": "com.pika.app",
   "build": {
     "frontendDist": "../out",

@@ -1,4 +1,4 @@
-name: Build Desktop App
+name: Build App
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-desktop:
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +28,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             name: Windows (x64)
 
-    name: Build — ${{ matrix.name }}
+    name: Desktop — ${{ matrix.name }}
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -79,7 +79,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Pika ${{ github.ref_name }}'
-          releaseBody: 'Desktop app release for macOS, Windows, and Linux.'
+          releaseBody: 'Cross-platform app release for Desktop (macOS, Windows, Linux) and Mobile (Android, iOS).'
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}
@@ -106,3 +106,112 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.nsis.zip
           retention-days: 30
+
+  build-android:
+    name: Mobile — Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build:static
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Build Android APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug assembleRelease
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: photobooth-android
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-ios:
+    name: Mobile — iOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build:static
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Build iOS App
+        run: |
+          xcodebuild build \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+          cd ios/build/Build/Products/Release-iphoneos
+          zip -r ../../../../Pika-iOS-Release.app.zip App.app
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: photobooth-ios
+          path: Pika-iOS-Release.app.zip
+          retention-days: 30
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Pika-iOS-Release.app.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
