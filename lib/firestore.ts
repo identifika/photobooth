@@ -60,9 +60,23 @@ function toFirestoreValue(value: any): Record<string, any> {
   return { stringValue: String(value) };
 }
 
+function sanitizeFirestoreData<T extends Record<string, any>>(obj: T): T {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+      result[key] = sanitizeFirestoreData(value);
+    } else {
+      result[key] = value;
+    }
+  }
+  return result as T;
+}
+
 function toFirestoreFields(data: Record<string, any>): Record<string, any> {
+  const cleaned = sanitizeFirestoreData(data);
   const fields: Record<string, any> = {};
-  for (const [key, val] of Object.entries(data)) {
+  for (const [key, val] of Object.entries(cleaned)) {
     fields[key] = toFirestoreValue(val);
   }
   return fields;
@@ -233,14 +247,16 @@ async function webGetDocument(path: string): Promise<{ id: string; data: Record<
 async function webAddDocument(path: string, data: Record<string, unknown>): Promise<string> {
   const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
   const { db } = await import('./firebase');
-  const ref = await addDoc(collection(db, path), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const cleaned = sanitizeFirestoreData(data);
+  const ref = await addDoc(collection(db, path), { ...cleaned, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return ref.id;
 }
 
 async function webUpdateDocument(path: string, data: Record<string, unknown>): Promise<void> {
   const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore');
   const { db } = await import('./firebase');
-  await updateDoc(doc(db, path), { ...data, updatedAt: serverTimestamp() });
+  const cleaned = sanitizeFirestoreData(data);
+  await updateDoc(doc(db, path), { ...cleaned, updatedAt: serverTimestamp() });
 }
 
 async function webDeleteDocument(path: string): Promise<void> {

@@ -18,6 +18,14 @@ export interface FramePhotoElement {
   hidden?: boolean;
 }
 
+export type FrameTitleDynamicSource = 
+  | 'custom'
+  | 'event_name'
+  | 'bride_groom'
+  | 'venue'
+  | 'hashtag'
+  | 'tagline';
+
 export interface FrameTitleElement {
   id: string;
   type: 'title';
@@ -31,6 +39,10 @@ export interface FrameTitleElement {
   fontSize: number;
   align: 'left' | 'center' | 'right';
   hidden?: boolean;
+  /** Dynamic source replacement */
+  dynamicSource?: FrameTitleDynamicSource;
+  brideName?: string;
+  groomName?: string;
 }
 
 export interface FrameImageElement {
@@ -82,6 +94,33 @@ export interface FrameDateElement {
   fontSize: number;
   align: 'left' | 'center' | 'right';
   hidden?: boolean;
+  /** Dynamic event date support */
+  useEventDate?: boolean;
+  customDate?: string;
+}
+
+export type FrameQrType = 'dynamic_session_share' | 'event_gallery' | 'custom_url' | 'wifi';
+
+export interface FrameQrElement {
+  id: string;
+  type: 'qr';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  qrType: FrameQrType;
+  customUrl?: string;
+  wifiSsid?: string;
+  wifiPassword?: string;
+  wifiEncryption?: 'WPA' | 'WEP' | 'nopass';
+  color?: string;
+  bgColor?: string;
+  errorCorrection?: 'L' | 'M' | 'Q' | 'H';
+  label?: string;
+  labelFontSize?: number;
+  labelColor?: string;
+  labelFont?: string;
+  hidden?: boolean;
 }
 
 export type FrameElement =
@@ -90,7 +129,8 @@ export type FrameElement =
   | FrameImageElement
   | FrameEmojiElement
   | FrameStickerElement
-  | FrameDateElement;
+  | FrameDateElement
+  | FrameQrElement;
 
 export interface FrameConfig {
   width?: number;
@@ -114,4 +154,112 @@ export interface FrameConfig {
   background?: unknown;
   overlay?: unknown;
   watermark?: unknown;
+}
+
+export interface DynamicFrameContext {
+  eventName?: string;
+  eventDate?: string | Date;
+  brideName?: string;
+  groomName?: string;
+  coupleNames?: string;
+  venue?: string;
+  hashtag?: string;
+  tagline?: string;
+  customMessage?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Formats a Date object using standard token formatting
+ */
+export function formatDate(date: Date, format: string): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fullMonths = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const d = date.getDate();
+  const m = date.getMonth();
+  const y = date.getFullYear();
+
+  return (format || 'MMM DD, YYYY')
+    .replace('MMMM', fullMonths[m])
+    .replace('MMM', months[m])
+    .replace('MM', String(m + 1).padStart(2, '0'))
+    .replace('DD', String(d).padStart(2, '0'))
+    .replace('D', String(d))
+    .replace('YYYY', String(y))
+    .replace('YY', String(y).slice(-2));
+}
+
+/**
+ * Resolves a dynamic title with tokens like {{bride}}, {{groom}}, {{couple}}, {{eventName}}, {{venue}}, {{hashtag}}
+ */
+export function resolveDynamicTitle(
+  el: FrameTitleElement,
+  context?: DynamicFrameContext
+): string {
+  // 1. Dynamic Source overrides
+  if (el.dynamicSource === 'event_name' && context?.eventName) {
+    return context.eventName;
+  }
+  if (el.dynamicSource === 'bride_groom') {
+    const bride = context?.brideName || el.brideName || '';
+    const groom = context?.groomName || el.groomName || '';
+    if (bride && groom) return `${bride} & ${groom}`;
+    if (bride || groom) return bride || groom;
+    if (context?.eventName) return context.eventName;
+  }
+  if (el.dynamicSource === 'venue' && context?.venue) {
+    return context.venue;
+  }
+  if (el.dynamicSource === 'hashtag' && context?.hashtag) {
+    return context.hashtag;
+  }
+  if (el.dynamicSource === 'tagline' && context?.tagline) {
+    return context.tagline;
+  }
+
+  let text = el.text || '';
+
+  // 2. Token / Variable replacement
+  if (text.includes('{{') && text.includes('}}')) {
+    const bride = context?.brideName || el.brideName || 'Sarah';
+    const groom = context?.groomName || el.groomName || 'John';
+    const couple = (context?.brideName && context?.groomName)
+      ? `${context.brideName} & ${context.groomName}`
+      : (el.brideName && el.groomName ? `${el.brideName} & ${el.groomName}` : (context?.eventName || `${bride} & ${groom}`));
+
+    const formattedDate = context?.eventDate ? formatDate(new Date(context.eventDate), 'MMMM D, YYYY') : '';
+
+    text = text
+      .replace(/{{\s*bride\s*}}/gi, bride)
+      .replace(/{{\s*groom\s*}}/gi, groom)
+      .replace(/{{\s*couple\s*}}/gi, couple)
+      .replace(/{{\s*eventName\s*}}/gi, context?.eventName || 'Wedding Celebration')
+      .replace(/{{\s*venue\s*}}/gi, context?.venue || '')
+      .replace(/{{\s*hashtag\s*}}/gi, context?.hashtag || '')
+      .replace(/{{\s*tagline\s*}}/gi, context?.tagline || '')
+      .replace(/{{\s*date\s*}}/gi, formattedDate);
+  }
+
+  return text;
+}
+
+/**
+ * Resolves the Date for a FrameDateElement
+ */
+export function resolveDynamicDate(
+  el: FrameDateElement,
+  context?: DynamicFrameContext
+): Date {
+  if (context?.eventDate) {
+    const d = new Date(context.eventDate);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (el.useEventDate && el.customDate) {
+    const d = new Date(el.customDate);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
 }

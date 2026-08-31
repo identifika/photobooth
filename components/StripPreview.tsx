@@ -1,16 +1,20 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from '@/lib/frame-types';
+import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
+import { drawQrOnCanvas } from '@/lib/qr-helper';
 
 interface Props {
   photos: string[];
   liveClips?: (string[] | null)[];
   frame: Frame;
+  eventContext?: DynamicFrameContext;
   onRetakePhoto: (index: number) => void;
   onConfirm: () => void;
 }
 
-export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, onConfirm }: Props) {
+export default function StripPreview({ photos, liveClips, frame, eventContext, onRetakePhoto, onConfirm }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
 
@@ -226,24 +230,27 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
         }
 
         if (el.type === 'title') {
+          const t = el as FrameTitleElement;
+          const titleText = resolveDynamicTitle(t, eventContext);
           ctx.save();
-          ctx.fillStyle = el.color;
-          ctx.font = `bold ${el.fontSize * scale}px "${el.font}", serif`;
-          ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
-          const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
-          ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+          ctx.fillStyle = t.color;
+          ctx.font = `bold ${t.fontSize * scale}px "${t.font}", serif`;
+          ctx.textAlign = t.align === 'left' ? 'left' : t.align === 'right' ? 'right' : 'center';
+          const textX = t.align === 'left' ? x : t.align === 'right' ? x + w : x + w / 2;
+          ctx.fillText(titleText, textX, y + t.fontSize * scale + 8);
           ctx.restore();
         }
 
         if (el.type === 'date') {
-          const d = el as any;
+          const d = el as FrameDateElement;
+          const dateObj = resolveDynamicDate(d, eventContext);
+          const dateText = formatDate(dateObj, d.format || 'MMM DD, YYYY');
           ctx.save();
           ctx.fillStyle = d.color;
           ctx.font = `bold ${d.fontSize * scale}px "${d.font}", serif`;
           ctx.textAlign = d.align === 'left' ? 'left' : d.align === 'right' ? 'right' : 'center';
           const textX = d.align === 'left' ? x : d.align === 'right' ? x + w : x + w / 2;
-          const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
-          ctx.fillText(text, textX, y + d.fontSize * scale + 8);
+          ctx.fillText(dateText, textX, y + d.fontSize * scale + 8);
           ctx.restore();
         }
 
@@ -297,6 +304,37 @@ export default function StripPreview({ photos, liveClips, frame, onRetakePhoto, 
             ctx.fillText(el.emoji, 0, 4);
           } else {
             ctx.fillText(el.emoji, x + w / 2, y + h / 2 + 4);
+          }
+          ctx.restore();
+        }
+
+        if (el.type === 'qr') {
+          const qrEl = el as FrameQrElement;
+          const qrText = qrEl.qrType === 'dynamic_session_share'
+            ? 'https://pikabooth.app/share?s=preview'
+            : qrEl.qrType === 'event_gallery'
+            ? 'https://pikabooth.app/e/demo/gallery'
+            : qrEl.qrType === 'wifi'
+            ? `WIFI:S:${qrEl.wifiSsid || 'WiFi'};T:${qrEl.wifiEncryption || 'WPA'};P:${qrEl.wifiPassword || ''};;`
+            : qrEl.customUrl || 'https://pikabooth.app';
+
+          ctx.save();
+          await drawQrOnCanvas(ctx, qrText, x, y, w, h, {
+            color: {
+              dark: qrEl.color || '#000000',
+              light: qrEl.bgColor || '#ffffff',
+            },
+            errorCorrectionLevel: qrEl.errorCorrection || 'M',
+          });
+
+          if (qrEl.label) {
+            ctx.save();
+            ctx.fillStyle = qrEl.labelColor || qrEl.color || '#000000';
+            const fontSize = (qrEl.labelFontSize || 10) * scale;
+            ctx.font = `600 ${fontSize}px "${qrEl.labelFont || 'DM Sans'}", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(qrEl.label, x + w / 2, y + h + fontSize + 2);
+            ctx.restore();
           }
           ctx.restore();
         }

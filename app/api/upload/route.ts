@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
-import { verifyIdToken } from '@/lib/auth-server';
+import { verifyAuthOrApiKey } from '@/lib/auth-server';
 
 const UploadRequestSchema = z.object({
   image: z.string().min(1, "Missing image data"),
@@ -30,8 +30,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
 
-    const user = await verifyIdToken(request.headers.get('Authorization'));
-    if (!user) {
+    const authContext = await verifyAuthOrApiKey(request);
+    if (!authContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

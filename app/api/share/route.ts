@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { z } from 'zod';
-import { verifyIdToken } from '@/lib/auth-server';
+import { verifyAuthOrApiKey } from '@/lib/auth-server';
 
 const ShareRequestSchema = z.object({
   sessionId: z.string().min(1).refine(val => !val.includes('/') && !val.includes('..'), {
@@ -29,8 +29,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
 
-    const user = await verifyIdToken(request.headers.get('Authorization'));
-    if (!user) {
+    const authContext = await verifyAuthOrApiKey(request);
+    if (!authContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

@@ -1,7 +1,10 @@
 'use client';
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
+import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from '@/lib/frame-types';
+import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
 import { drawFrameElements } from '@/lib/draw-frame';
+import { drawQrOnCanvas } from '@/lib/qr-helper';
 import { useGifGenerator } from '@/hooks/useGifGenerator';
 
 import PhotoStrip from './PhotoStrip';
@@ -17,11 +20,14 @@ interface Props {
   frame: Frame;
   filter?: string;
   uploadedUrl?: string;
+  sessionId?: string;
+  eventSlug?: string;
+  eventContext?: DynamicFrameContext;
   onUploadComplete?: (url: string) => void;
   onRestart: () => void;
 }
 
-export default function FinalStrip({ photos, liveClips, frame, filter, uploadedUrl, onUploadComplete, onRestart }: Props) {
+export default function FinalStrip({ photos, liveClips, frame, filter, uploadedUrl, sessionId, eventSlug, eventContext, onUploadComplete, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -300,24 +306,27 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         }
 
         if (el.type === 'title') {
+          const t = el as FrameTitleElement;
+          const titleText = resolveDynamicTitle(t, eventContext);
           ctx.save();
-          ctx.fillStyle = el.color;
-          ctx.font = `bold ${el.fontSize * scale}px "${el.font}", serif`;
-          ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
-          const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
-          ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+          ctx.fillStyle = t.color;
+          ctx.font = `bold ${t.fontSize * scale}px "${t.font}", serif`;
+          ctx.textAlign = t.align === 'left' ? 'left' : t.align === 'right' ? 'right' : 'center';
+          const textX = t.align === 'left' ? x : t.align === 'right' ? x + w : x + w / 2;
+          ctx.fillText(titleText, textX, y + t.fontSize * scale + 8);
           ctx.restore();
         }
 
         if (el.type === 'date') {
-          const d = el as any;
+          const d = el as FrameDateElement;
+          const dateObj = resolveDynamicDate(d, eventContext);
+          const dateText = formatDate(dateObj, d.format || 'MMM DD, YYYY');
           ctx.save();
           ctx.fillStyle = d.color;
           ctx.font = `bold ${d.fontSize * scale}px "${d.font}", serif`;
           ctx.textAlign = d.align === 'left' ? 'left' : d.align === 'right' ? 'right' : 'center';
           const textX = d.align === 'left' ? x : d.align === 'right' ? x + w : x + w / 2;
-          const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
-          ctx.fillText(text, textX, y + d.fontSize * scale + 8);
+          ctx.fillText(dateText, textX, y + d.fontSize * scale + 8);
           ctx.restore();
         }
 
@@ -371,6 +380,37 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
             ctx.fillText(el.emoji, 0, 4);
           } else {
             ctx.fillText(el.emoji, x + w / 2, y + h / 2 + 4);
+          }
+          ctx.restore();
+        }
+
+        if (el.type === 'qr') {
+          const qrEl = el as FrameQrElement;
+          const qrText = qrEl.qrType === 'dynamic_session_share'
+            ? (displayUploadedUrl || (sessionId ? `https://pikabooth.app/share?s=${sessionId}` : 'https://pikabooth.app/share?s=demo'))
+            : qrEl.qrType === 'event_gallery'
+            ? (eventSlug ? `https://pikabooth.app/e/${eventSlug}/gallery` : 'https://pikabooth.app/gallery')
+            : qrEl.qrType === 'wifi'
+            ? `WIFI:S:${qrEl.wifiSsid || 'WiFi'};T:${qrEl.wifiEncryption || 'WPA'};P:${qrEl.wifiPassword || ''};;`
+            : qrEl.customUrl || 'https://pikabooth.app';
+
+          ctx.save();
+          await drawQrOnCanvas(ctx, qrText, x, y, w, h, {
+            color: {
+              dark: qrEl.color || '#000000',
+              light: qrEl.bgColor || '#ffffff',
+            },
+            errorCorrectionLevel: qrEl.errorCorrection || 'M',
+          });
+
+          if (qrEl.label) {
+            ctx.save();
+            ctx.fillStyle = qrEl.labelColor || qrEl.color || '#000000';
+            const fontSize = (qrEl.labelFontSize || 10) * scale;
+            ctx.font = `600 ${fontSize}px "${qrEl.labelFont || 'DM Sans'}", sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.fillText(qrEl.label, x + w / 2, y + h + fontSize + 2);
+            ctx.restore();
           }
           ctx.restore();
         }
@@ -577,10 +617,19 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         pCtx.textAlign = 'left';
         pCtx.fillText(`${i + 1}/${imgs.length}`, paddingX, paddingTop + photoH + 20 * scale);
 
+        // Dynamic event label for polaroids (event hashtag > event name > couple names > frame name)
+        const polaroidLabel = (
+          eventContext?.hashtag
+            ? (eventContext.hashtag.startsWith('#') ? eventContext.hashtag : `#${eventContext.hashtag}`)
+            : eventContext?.eventName
+            ? eventContext.eventName
+            : (eventContext?.brideName && eventContext?.groomName ? `${eventContext.brideName} & ${eventContext.groomName}` : frame.name)
+        ).toUpperCase();
+
         pCtx.fillStyle = 'rgba(0,0,0,0.7)';
         pCtx.font = `bold ${10 * scale}px "Plus Jakarta Sans", "Inter", sans-serif`;
         pCtx.textAlign = 'right';
-        pCtx.fillText(frame.name.toUpperCase(), P_WIDTH - paddingX, paddingTop + photoH + 20 * scale);
+        pCtx.fillText(polaroidLabel, P_WIDTH - paddingX, paddingTop + photoH + 20 * scale);
 
         urls.push(pCanvas.toDataURL('image/jpeg', 0.95));
       }
@@ -589,7 +638,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
     } catch (err) {
       if (mountedRef.current) console.error('Polaroid generation failed:', err);
     }
-  }, [photos, frame, filter, loadImage]);
+  }, [photos, frame, filter, eventContext, loadImage]);
 
 
 

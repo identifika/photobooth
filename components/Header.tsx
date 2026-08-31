@@ -149,6 +149,13 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
                     {!isGuest && (
                       <>
                         <button
+                          onClick={() => { setShowUserMenu(false); router.push('/events'); }}
+                          style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
+                          className="hover:bg-[var(--surface-1)]"
+                        >
+                          Events & Booths
+                        </button>
+                        <button
                           onClick={() => { setShowUserMenu(false); router.push('/frames'); }}
                           style={{ width: '100%', textAlign: 'left', padding: '7px 14px', fontSize: 13, color: 'var(--text-primary)', background: 'transparent', border: 'none', cursor: 'pointer' }}
                           className="hover:bg-[var(--surface-1)]"

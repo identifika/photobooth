@@ -1,4 +1,14 @@
 import { Frame } from './frames';
+import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from './frame-types';
+import { drawQrOnCanvas } from './qr-helper';
+import { resolveDynamicTitle, resolveDynamicDate, formatDate } from './frame-types';
+
+export interface DrawFrameContext extends DynamicFrameContext {
+  mirrorVideo?: boolean;
+  sessionId?: string;
+  shareUrl?: string;
+  eventSlug?: string;
+}
 
 export function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -66,10 +76,13 @@ export async function drawFrameElements(
   canvasHeight: number,
   frame: Frame,
   photoSources: (HTMLImageElement | HTMLVideoElement | null)[],
-  mirrorVideo = false
+  mirrorVideoOrContext: boolean | DrawFrameContext = false
 ) {
   const cfg = frame.config;
   if (!cfg || !cfg.elements || cfg.elements.length === 0) return;
+
+  const mirrorVideo = typeof mirrorVideoOrContext === 'boolean' ? mirrorVideoOrContext : (mirrorVideoOrContext.mirrorVideo ?? false);
+  const context: DrawFrameContext = typeof mirrorVideoOrContext === 'object' ? mirrorVideoOrContext : { mirrorVideo };
 
   const fw = cfg.width ?? 400;
   const fh = cfg.height ?? 600;
@@ -224,12 +237,27 @@ export async function drawFrameElements(
     }
 
     if (el.type === 'title') {
+      const titleEl = el as FrameTitleElement;
+      const textToDraw = resolveDynamicTitle(titleEl, context);
       ctx.save();
-      ctx.fillStyle = el.color;
-      ctx.font = `${el.fontSize * scale}px "${el.font}", serif`;
-      ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
-      const textX = el.align === 'left' ? x : el.align === 'right' ? x + w : x + w / 2;
-      ctx.fillText(el.text, textX, y + el.fontSize * scale + 8);
+      ctx.fillStyle = titleEl.color;
+      ctx.font = `${titleEl.fontSize * scale}px "${titleEl.font}", serif`;
+      ctx.textAlign = titleEl.align === 'left' ? 'left' : titleEl.align === 'right' ? 'right' : 'center';
+      const textX = titleEl.align === 'left' ? x : titleEl.align === 'right' ? x + w : x + w / 2;
+      ctx.fillText(textToDraw, textX, y + titleEl.fontSize * scale + 8);
+      ctx.restore();
+    }
+
+    if (el.type === 'date') {
+      const dateEl = el as FrameDateElement;
+      const dateObj = resolveDynamicDate(dateEl, context);
+      const textToDraw = formatDate(dateObj, dateEl.format || 'MMM DD, YYYY');
+      ctx.save();
+      ctx.fillStyle = dateEl.color;
+      ctx.font = `${dateEl.fontSize * scale}px "${dateEl.font}", serif`;
+      ctx.textAlign = dateEl.align === 'left' ? 'left' : dateEl.align === 'right' ? 'right' : 'center';
+      const textX = dateEl.align === 'left' ? x : dateEl.align === 'right' ? x + w : x + w / 2;
+      ctx.fillText(textToDraw, textX, y + dateEl.fontSize * scale + 8);
       ctx.restore();
     }
 
@@ -283,6 +311,43 @@ export async function drawFrameElements(
         ctx.fillText(el.emoji, 0, 4);
       } else {
         ctx.fillText(el.emoji, x + w / 2, y + h / 2 + 4);
+      }
+      ctx.restore();
+    }
+
+    if (el.type === 'qr') {
+      const qrEl = el as FrameQrElement;
+      let qrText = 'https://pikabooth.app';
+      if (qrEl.qrType === 'dynamic_session_share') {
+        qrText = context.shareUrl || (context.sessionId ? `https://pikabooth.app/share?s=${context.sessionId}` : 'https://pikabooth.app/share?s=demo');
+      } else if (qrEl.qrType === 'event_gallery') {
+        qrText = context.eventSlug ? `https://pikabooth.app/e/${context.eventSlug}/gallery` : 'https://pikabooth.app/gallery';
+      } else if (qrEl.qrType === 'wifi') {
+        const ssid = qrEl.wifiSsid || 'Pikabooth-WiFi';
+        const pass = qrEl.wifiPassword || '';
+        const enc = qrEl.wifiEncryption || 'WPA';
+        qrText = `WIFI:S:${ssid};T:${enc};P:${pass};;`;
+      } else if (qrEl.qrType === 'custom_url') {
+        qrText = qrEl.customUrl || 'https://pikabooth.app';
+      }
+
+      ctx.save();
+      await drawQrOnCanvas(ctx, qrText, x, y, w, h, {
+        color: {
+          dark: qrEl.color || '#000000',
+          light: qrEl.bgColor || '#ffffff',
+        },
+        errorCorrectionLevel: qrEl.errorCorrection || 'M',
+      });
+
+      if (qrEl.label) {
+        ctx.save();
+        ctx.fillStyle = qrEl.labelColor || qrEl.color || '#000000';
+        const fontSize = (qrEl.labelFontSize || 10) * scale;
+        ctx.font = `600 ${fontSize}px "${qrEl.labelFont || 'DM Sans'}", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(qrEl.label, x + w / 2, y + h + fontSize + 2);
+        ctx.restore();
       }
       ctx.restore();
     }

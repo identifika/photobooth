@@ -7,17 +7,18 @@ import Header from '@/components/Header';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { isAdmin } from '@/hooks/useAdmin';
 import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
-import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } from '@/lib/public-frames';
-import { requestFramePublish } from '@/lib/publish-requests';
-import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor } from 'lucide-react';
+import useSWR from 'swr';
+import { listUserApiKeys, createApiKey, deleteApiKey, type ApiKey } from '@/lib/api-keys';
+import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor, Key, Copy, Check, Code, Plus } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { EmailAuthProvider, linkWithCredential } from 'firebase/auth';
 import { useOwnerPublicFrames, useUserFrames, usePendingPublishRequests } from '@/hooks/useFrames';
 import { useOwnerPublicFilters, useUserFilters } from '@/hooks/useFilters';
 import { deleteUserFilter, type UserFilter } from '@/lib/user-filters';
+import { listPublicFramesByOwner, deletePublicFrameAsOwner, type PublicFrame } from '@/lib/public-frames';
+import { requestFramePublish, requestFilterPublish } from '@/lib/publish-requests';
 import { deletePublicFilterAsOwner } from '@/lib/public-filters';
-import { requestFilterPublish } from '@/lib/publish-requests';
 import { MyBackgrounds } from '@/components/MyBackgrounds';
 import { getClientAuthToken } from '@/lib/auth-client';
 import StudioLogo from '@/components/StudioLogo';
@@ -118,6 +119,51 @@ export default function SettingsPage() {
   // SWR hooks for admin requests
   const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isAuthorized);
   const pendingAdminRequestsCount = pendingAdminRequests.length;
+
+  // SWR hooks for API keys
+  const { data: apiKeys = [], isLoading: apiKeysLoading, mutate: mutateApiKeys } = useSWR<ApiKey[]>(
+    user?.uid ? ['user-api-keys', user.uid] : null,
+    ([, uid]: [string, string]) => listUserApiKeys(uid)
+  );
+  const [newKeyName, setNewKeyName] = useState('');
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
+
+  const handleCreateApiKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setCreatingKey(true);
+    try {
+      const newKey = await createApiKey(user.uid, newKeyName.trim() || 'API Key');
+      await mutateApiKeys((prev = []) => [newKey, ...prev], { revalidate: false });
+      setNewKeyName('');
+      await alert(`New API Key generated!\n\n${newKey.key}\n\nMake sure to save it safely. You can pass it as 'x-api-key: ${newKey.key}' or 'Authorization: Bearer ${newKey.key}'.`);
+    } catch (err: any) {
+      console.error(err);
+      await alert(err.message || 'Failed to create API key');
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+
+  const handleDeleteApiKey = async (keyId: string) => {
+    if (!user) return;
+    const isConfirmed = await confirm('Revoke this API Key? Any external automation or client using it will immediately lose access.');
+    if (!isConfirmed) return;
+    try {
+      await deleteApiKey(user.uid, keyId);
+      await mutateApiKeys((prev = []) => prev.filter((k) => k.id !== keyId), { revalidate: false });
+    } catch (err: any) {
+      console.error(err);
+      await alert('Failed to delete API key');
+    }
+  };
+
+  const handleCopyKey = (key: ApiKey) => {
+    navigator.clipboard.writeText(key.key);
+    setCopiedKeyId(key.id);
+    setTimeout(() => setCopiedKeyId(null), 2000);
+  };
 
   // Load settings into local state
   useEffect(() => {
@@ -674,10 +720,145 @@ export default function SettingsPage() {
             </section>
           )}
 
+          {/* ── Developer & API Keys Section ── */}
+          {user && (
+            <section className="mt-8">
+              <h2 className="font-semibold text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>
+                Developer & API Keys
+              </h2>
+
+              <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20 }} className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Key className="w-4 h-4 text-primary" />
+                    External API Access
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Generate secret API keys to create events, query sessions, and upload media from external backends, Zapier, Make, cURL, or scripts.
+                  </p>
+                </div>
+
+                {/* Create Key Form */}
+                <form onSubmit={handleCreateApiKey} className="flex gap-2">
+                  <input
+                    value={newKeyName}
+                    onChange={(e) => setNewKeyName(e.target.value)}
+                    placeholder="Key name (e.g. Production Server, Zapier)"
+                    style={{
+                      flex: 1,
+                      height: 38,
+                      borderRadius: 8,
+                      border: '0.5px solid var(--border-strong)',
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-primary)',
+                      padding: '0 12px',
+                      fontSize: 13,
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={creatingKey}
+                    className="btn primary flex items-center gap-1.5 shrink-0 text-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    {creatingKey ? 'Creating...' : 'Generate API Key'}
+                  </button>
+                </form>
+
+                {/* API Keys List */}
+                <div className="space-y-2 pt-2 border-t border-border">
+                  {apiKeysLoading ? (
+                    <p className="text-xs text-muted-foreground py-2">Loading API keys...</p>
+                  ) : apiKeys.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-3 text-center border border-dashed border-border rounded-lg">
+                      No API keys generated yet. Generate one above to access the API externally.
+                    </p>
+                  ) : (
+                    apiKeys.map((k) => (
+                      <div
+                        key={k.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-background border border-border"
+                      >
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-foreground">{k.name}</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 font-bold">
+                              Active
+                            </span>
+                          </div>
+                          <div className="text-xs font-mono text-muted-foreground truncate">
+                            {k.key.slice(0, 14)}••••••••••••••••••••••••••••••
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyKey(k)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs border border-border hover:bg-accent transition"
+                            title="Copy full key"
+                          >
+                            {copiedKeyId === k.id ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-500" />
+                                <span>Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3 h-3" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteApiKey(k.id)}
+                            className="p-1.5 rounded hover:bg-destructive/10 text-destructive transition"
+                            title="Revoke Key"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* API Quick Reference */}
+                <div className="p-3.5 rounded-xl bg-background border border-border space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Code className="w-3.5 h-3.5 text-primary" />
+                    How to use your API key:
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Pass your API key in the request header:
+                    <br />
+                    <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px] text-primary">
+                      x-api-key: pk_live_...
+                    </code>
+                    {' '}or{' '}
+                    <code className="px-1.5 py-0.5 rounded bg-muted font-mono text-[10px] text-primary">
+                      Authorization: Bearer pk_live_...
+                    </code>
+                  </p>
+                  <pre className="p-2.5 rounded-lg bg-black/90 text-emerald-400 font-mono text-[11px] overflow-x-auto">
+{`# Create event from terminal or external backend:
+curl -X POST https://pikabooth.web.id/api/events \\
+  -H "x-api-key: YOUR_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name": "VIP Gala 2026", "slug": "vip-gala"}'`}
+                  </pre>
+                </div>
+              </div>
+            </section>
+          )}
+
           {isAuthorized && (
             <section className="mt-8">
               <h2 className="font-semibold text-xs uppercase tracking-widest mb-3" style={{ color: 'var(--text-muted)' }}>Admin Actions</h2>
-              <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20 }}>
+              <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20 }} className="space-y-3">
                 <button 
                   onClick={() => router.push('/admin/reviews')}
                   className="w-full flex items-center justify-between p-3 rounded-lg bg-background border border-border hover:bg-accent transition relative"

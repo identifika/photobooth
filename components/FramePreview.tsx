@@ -1,5 +1,7 @@
 'use client';
-import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, FrameStickerElement, FrameEmojiElement, FrameImageElement, FrameDateElement } from '@/lib/frame-types';
+import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, FrameStickerElement, FrameEmojiElement, FrameImageElement, FrameDateElement, FrameQrElement, DynamicFrameContext } from '@/lib/frame-types';
+import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
+import { QRCodeSVG } from 'qrcode.react';
 
 const DEFAULT_W = 400;
 const DEFAULT_H = 600;
@@ -8,24 +10,13 @@ function repeatEmoji(emoji: string, count: number, max = 40): string {
   return Array.from({ length: Math.min(Math.max(count, 0), max) }, () => emoji).join('');
 }
 
-function formatDate(date: Date, format: string): string {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const d = date.getDate();
-  const m = date.getMonth();
-  const y = date.getFullYear();
-  return format
-    .replace('YYYY', String(y))
-    .replace('MMM', months[m])
-    .replace('MM', String(m + 1).padStart(2, '0'))
-    .replace('DD', String(d).padStart(2, '0'));
-}
-
 interface Props {
   config: FrameConfig;
   scale?: number;
+  context?: DynamicFrameContext;
 }
 
-export default function FramePreview({ config, scale = 0.5 }: Props) {
+export default function FramePreview({ config, scale = 0.5, context }: Props) {
   const w = config.width ?? DEFAULT_W;
   const h = config.height ?? DEFAULT_H;
   const elements = (config.elements ?? []) as FrameElement[];
@@ -118,6 +109,7 @@ export default function FramePreview({ config, scale = 0.5 }: Props) {
 
           if (el.type === 'title') {
             const t = el as FrameTitleElement;
+            const titleText = resolveDynamicTitle(t, context);
             return (
               <div key={el.id} style={{
                 ...base,
@@ -130,14 +122,15 @@ export default function FramePreview({ config, scale = 0.5 }: Props) {
                 textAlign: t.align,
                 userSelect: 'none',
               }}>
-                {t.text || 'Title'}
+                {titleText || 'Title'}
               </div>
             );
           }
 
           if (el.type === 'date') {
             const d = el as FrameDateElement;
-            const text = formatDate(new Date(), d.format || 'MMM DD, YYYY');
+            const dateObj = resolveDynamicDate(d, context);
+            const text = formatDate(dateObj, d.format || 'MMM DD, YYYY');
             return (
               <div key={el.id} style={{
                 ...base,
@@ -183,17 +176,48 @@ export default function FramePreview({ config, scale = 0.5 }: Props) {
             );
           }
 
-          if (el.type === 'sticker') {
-            const st = el as FrameStickerElement;
-            const fontSize = Math.min(st.width, st.height) * 0.8;
+          if (el.type === 'qr') {
+            const qr = el as FrameQrElement;
+            const previewVal = qr.qrType === 'dynamic_session_share'
+              ? 'https://pikabooth.app/share?s=preview'
+              : qr.qrType === 'event_gallery'
+              ? 'https://pikabooth.app/e/event-demo/gallery'
+              : qr.qrType === 'wifi'
+              ? `WIFI:S:${qr.wifiSsid || 'WiFi'};T:${qr.wifiEncryption || 'WPA'};P:${qr.wifiPassword || ''};;`
+              : qr.customUrl || 'https://pikabooth.app';
+
             return (
               <div key={el.id} style={{
                 ...base,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize, lineHeight: 1, userSelect: 'none',
-                transform: st.rotation ? `rotate(${st.rotation}deg)` : undefined,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 2,
+                boxSizing: 'border-box',
+                background: qr.bgColor || '#ffffff',
+                borderRadius: 4,
               }}>
-                {st.emoji}
+                <QRCodeSVG
+                  value={previewVal}
+                  size={Math.min(el.width, el.height) - (qr.label ? (qr.labelFontSize || 10) + 4 : 4)}
+                  fgColor={qr.color || '#000000'}
+                  bgColor={qr.bgColor || '#ffffff'}
+                  level={qr.errorCorrection || 'M'}
+                />
+                {qr.label && (
+                  <span style={{
+                    fontSize: qr.labelFontSize || 9,
+                    color: qr.labelColor || qr.color || '#000000',
+                    fontFamily: qr.labelFont || 'DM Sans',
+                    fontWeight: 600,
+                    marginTop: 2,
+                    textAlign: 'center',
+                    lineHeight: 1.1,
+                  }}>
+                    {qr.label}
+                  </span>
+                )}
               </div>
             );
           }

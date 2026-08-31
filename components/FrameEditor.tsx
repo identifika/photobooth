@@ -13,8 +13,13 @@ import type {
     FrameEmojiElement,
     FrameStickerElement,
     FrameDateElement,
+    FrameQrElement,
+    FrameQrType,
+    FrameTitleDynamicSource,
     LayoutType,
 } from '@/lib/frame-types';
+import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
+import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useDialog } from '@/components/ui/dialog-provider';
@@ -29,7 +34,7 @@ const MIN_FRAME_SIZE = 100;
 const MAX_FRAME_SIZE = 1200;
 
 const FONTS = [
-    'Playfair Display', 'DM Sans', 'Inter', 'Poppins', 'Lato',
+    'Playfair Display', 'Cinzel', 'Great Vibes', 'Cormorant Garamond', 'DM Sans', 'Inter', 'Poppins', 'Lato',
     'Roboto', 'Georgia', 'Pacifico', 'Dancing Script', 'Courier New',
 ];
 
@@ -80,10 +85,10 @@ const ALIGN_OPTIONS = [
 type AlignType = typeof ALIGN_OPTIONS[number]['type'];
 
 const LAYER_TYPE_ICON: Record<string, string> = {
-    photo: '📷', title: '✏️', image: '🖼', emoji: '✨', sticker: '🌟', date: '📅',
+    photo: '📷', title: '✏️', image: '🖼', emoji: '✨', sticker: '🌟', date: '📅', qr: '📱',
 };
 const LAYER_TYPE_LABEL: Record<string, string> = {
-    photo: 'Photo Slot', title: 'Title', image: 'Image', emoji: 'Emoji Row', sticker: 'Sticker', date: 'Date Stamp',
+    photo: 'Photo Slot', title: 'Title', image: 'Image', emoji: 'Emoji Row', sticker: 'Sticker', date: 'Date Stamp', qr: 'QR Code',
 };
 
 type AnyElement = FrameElement;
@@ -446,17 +451,23 @@ function makeStickerElement(id: string, x: number, y: number, emoji: string): Fr
 function makeDateElement(id: string, x: number, y: number): FrameDateElement {
     return { id, type: 'date', x, y, width: 180, height: 30, format: 'MMM DD, YYYY', font: 'Inter', color: getDefaultTitleColor(), fontSize: 14, align: 'center' };
 }
-
-function formatDate(date: Date, format: string): string {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const d = date.getDate();
-    const m = date.getMonth();
-    const y = date.getFullYear();
-    return format
-        .replace('YYYY', String(y))
-        .replace('MMM', months[m])
-        .replace('MM', String(m + 1).padStart(2, '0'))
-        .replace('DD', String(d).padStart(2, '0'));
+function makeQrElement(id: string, x: number, y: number, w = 70, h = 70): FrameQrElement {
+    return {
+        id,
+        type: 'qr',
+        x,
+        y,
+        width: w,
+        height: h,
+        qrType: 'dynamic_session_share',
+        color: '#000000',
+        bgColor: '#ffffff',
+        errorCorrection: 'M',
+        label: 'Scan to download',
+        labelFontSize: 9,
+        labelColor: '#000000',
+        labelFont: 'DM Sans',
+    };
 }
 
 function centerPhotoGroup(photos: FramePhotoElement[], canvasW: number, canvasH: number): FramePhotoElement[] {
@@ -1029,6 +1040,7 @@ export default function FrameEditor({
         setSelectedIds(new Set([el.id]));
     };
     const addDate = () => { pushHistory(); const el = makeDateElement(uid(), canvasW / 2 - 90, canvasH - 50); updateElements([...elements, el]); setSelectedIds(new Set([el.id])); };
+    const addQr = () => { pushHistory(); const el = makeQrElement(uid(), canvasW - 85, canvasH - 85); updateElements([...elements, el]); setSelectedIds(new Set([el.id])); };
 
     const deleteSelected = () => {
         if (selectedIds.size === 0) return;
@@ -1197,6 +1209,7 @@ export default function FrameEditor({
         }
         if (el.type === 'title') {
             const t = el as FrameTitleElement;
+            const titleText = resolveDynamicTitle(t);
             return (
                 <div key={el.id} style={{
                     ...baseStyle,
@@ -1205,7 +1218,7 @@ export default function FrameEditor({
                     fontFamily: `'${t.font}', serif`, fontSize: t.fontSize, color: t.color,
                     fontWeight: 700, textAlign: t.align, pointerEvents: dragging ? 'none' : 'auto', userSelect: 'none',
                 }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
-                    {t.text || 'Title'}{resizeHandle}
+                    {titleText || t.text || 'Title'}{resizeHandle}
                 </div>
             );
         }
@@ -1253,8 +1266,8 @@ export default function FrameEditor({
         }
         if (el.type === 'date') {
             const dt = el as FrameDateElement;
-            const now = new Date();
-            const dateStr = formatDate(now, dt.format);
+            const dateObj = resolveDynamicDate(dt);
+            const dateStr = formatDate(dateObj, dt.format);
             return (
                 <div key={el.id} style={{
                     ...baseStyle,
@@ -1264,6 +1277,50 @@ export default function FrameEditor({
                     fontWeight: 500, textAlign: dt.align, pointerEvents: dragging ? 'none' : 'auto', userSelect: 'none',
                 }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
                     {dateStr}{resizeHandle}
+                </div>
+            );
+        }
+        if (el.type === 'qr') {
+            const qr = el as FrameQrElement;
+            const previewVal = qr.qrType === 'dynamic_session_share'
+                ? 'https://pikabooth.app/share?s=demo'
+                : qr.qrType === 'event_gallery'
+                ? 'https://pikabooth.app/e/event/gallery'
+                : qr.qrType === 'wifi'
+                ? `WIFI:S:${qr.wifiSsid || 'WiFi'};T:${qr.wifiEncryption || 'WPA'};P:${qr.wifiPassword || ''};;`
+                : qr.customUrl || 'https://pikabooth.app';
+            return (
+                <div key={el.id} style={{
+                    ...baseStyle,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    padding: 2, boxSizing: 'border-box', background: qr.bgColor || '#ffffff', borderRadius: 4,
+                    overflow: 'hidden', pointerEvents: dragging ? 'none' : 'auto', userSelect: 'none',
+                }} onPointerDown={(e) => onPointerDown(e, el.id)} onClick={(e) => e.stopPropagation()} onContextMenu={(e) => onElementContextMenu(e, el.id)}>
+                    <QRCodeSVG
+                        value={previewVal}
+                        size={Math.max(16, Math.min(el.width, el.height) - (qr.label ? (qr.labelFontSize || 9) + 4 : 4))}
+                        fgColor={qr.color || '#000000'}
+                        bgColor={qr.bgColor || '#ffffff'}
+                        level={qr.errorCorrection || 'M'}
+                    />
+                    {qr.label && (
+                        <span style={{
+                            fontSize: qr.labelFontSize || 9,
+                            color: qr.labelColor || qr.color || '#000000',
+                            fontFamily: qr.labelFont || 'DM Sans',
+                            fontWeight: 600,
+                            marginTop: 1,
+                            textAlign: 'center',
+                            lineHeight: 1,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '100%',
+                        }}>
+                            {qr.label}
+                        </span>
+                    )}
+                    {resizeHandle}
                 </div>
             );
         }
@@ -1298,6 +1355,7 @@ export default function FrameEditor({
                         <Button variant="outline" size="sm" onClick={addEmojiRow} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✨ Emoji Row</Button>
                         <Button variant="outline" size="sm" onClick={() => addSticker('✨')} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🌟 Emoji Sticker</Button>
                         <Button variant="outline" size="sm" onClick={addDate} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📅 Date Stamp</Button>
+                        <Button variant="outline" size="sm" onClick={addQr} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📱 QR Code</Button>
                     </div>
                 </div>
 
@@ -1729,9 +1787,86 @@ export default function FrameEditor({
                         {/* ── Title properties ── */}
                         {selected.type === 'title' && (() => {
                             const el = selected as FrameTitleElement;
+                            const dynamicSource = el.dynamicSource || 'custom';
+
+                            const insertToken = (token: string) => {
+                                const newText = el.text ? `${el.text} ${token}` : token;
+                                updateElement(el.id, { text: newText });
+                            };
+
                             return (
                                 <div className={`border-t pt-3 space-y-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
-                                    <div><FieldLabel isDark={isDark}>Text</FieldLabel><Input value={el.text} onChange={(e) => updateElement(el.id, { text: e.target.value })} /></div>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Title Source</FieldLabel>
+                                        <select 
+                                            value={dynamicSource} 
+                                            onChange={(e) => updateElement(el.id, { dynamicSource: e.target.value as FrameTitleDynamicSource })}
+                                            className={`w-full rounded-lg border px-2 py-1.5 text-xs font-medium outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}
+                                        >
+                                            <option value="custom">✍️ Custom Text (with variables)</option>
+                                            <option value="bride_groom">💍 Bride & Groom Names</option>
+                                            <option value="event_name">🎪 Event Name</option>
+                                            <option value="venue">📍 Venue / Location</option>
+                                            <option value="hashtag">#️⃣ Wedding Hashtag</option>
+                                            <option value="tagline">🏷️ Subtitle / Tagline</option>
+                                        </select>
+                                    </div>
+
+                                    {dynamicSource === 'bride_groom' ? (
+                                        <div className="space-y-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                            <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                                                Wedding Couple Names
+                                            </div>
+                                            <div>
+                                                <FieldLabel isDark={isDark}>Bride's Name</FieldLabel>
+                                                <Input 
+                                                    value={el.brideName || ''} 
+                                                    placeholder="e.g. Sarah"
+                                                    onChange={(e) => updateElement(el.id, { brideName: e.target.value })} 
+                                                />
+                                            </div>
+                                            <div>
+                                                <FieldLabel isDark={isDark}>Groom's Name</FieldLabel>
+                                                <Input 
+                                                    value={el.groomName || ''} 
+                                                    placeholder="e.g. John"
+                                                    onChange={(e) => updateElement(el.id, { groomName: e.target.value })} 
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <FieldLabel isDark={isDark}>Text</FieldLabel>
+                                            <Input value={el.text} onChange={(e) => updateElement(el.id, { text: e.target.value })} />
+                                            
+                                            {/* Quick Variable Tokens */}
+                                            <div className="mt-1.5 space-y-1">
+                                                <div className="text-[10px] text-muted-foreground font-medium">Click to insert dynamic variable:</div>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {[
+                                                        { token: '{{bride}}', label: '👰 Bride' },
+                                                        { token: '{{groom}}', label: '🤵 Groom' },
+                                                        { token: '{{couple}}', label: '💍 Couple' },
+                                                        { token: '{{eventName}}', label: '🎪 Event' },
+                                                        { token: '{{date}}', label: '📅 Date' },
+                                                        { token: '{{venue}}', label: '📍 Venue' },
+                                                        { token: '{{hashtag}}', label: '#️⃣ Hashtag' },
+                                                    ].map((item) => (
+                                                        <button
+                                                            key={item.token}
+                                                            type="button"
+                                                            onClick={() => insertToken(item.token)}
+                                                            className="px-1.5 py-0.5 rounded bg-muted hover:bg-primary/20 hover:text-primary text-[10px] font-mono border border-border transition"
+                                                            title={`Insert ${item.token}`}
+                                                        >
+                                                            {item.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div>
                                         <FieldLabel isDark={isDark}>Font</FieldLabel>
                                         <select value={el.font} onChange={(e) => updateElement(el.id, { font: e.target.value })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
@@ -1838,7 +1973,7 @@ export default function FrameEditor({
                         {/* ── Date Stamp properties ── */}
                         {selected.type === 'date' && (() => {
                             const el = selected as FrameDateElement;
-                            const now = new Date();
+                            const now = resolveDynamicDate(el);
                             return (
                                 <div className={`border-t pt-3 space-y-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
                                     <div className={`flex items-center justify-center rounded border h-12 ${isDark ? 'border-slate-700 bg-slate-800' : 'border-gray-100 bg-gray-50'}`}>
@@ -1846,14 +1981,37 @@ export default function FrameEditor({
                                             {formatDate(now, el.format)}
                                         </span>
                                     </div>
-                                    <div><FieldLabel isDark={isDark}>Format</FieldLabel>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Date Format</FieldLabel>
                                         <select value={el.format} onChange={(e) => updateElement(el.id, { format: e.target.value })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
-                                            <option value="MMM DD, YYYY">Jan 15, 2024</option>
-                                            <option value="DD/MM/YYYY">15/01/2024</option>
-                                            <option value="MM/DD/YYYY">01/15/2024</option>
-                                            <option value="YYYY-MM-DD">2024-01-15</option>
+                                            <option value="MMMM D, YYYY">September 15, 2026 (Wedding Style)</option>
+                                            <option value="MMM DD, YYYY">Sep 15, 2026</option>
+                                            <option value="DD/MM/YYYY">15/09/2026</option>
+                                            <option value="MM/DD/YYYY">09/15/2026</option>
+                                            <option value="YYYY-MM-DD">2026-09-15</option>
                                         </select>
                                     </div>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Date Source</FieldLabel>
+                                        <select 
+                                            value={el.useEventDate ? 'event' : 'live'} 
+                                            onChange={(e) => updateElement(el.id, { useEventDate: e.target.value === 'event' })}
+                                            className={`w-full rounded-lg border px-2 py-1.5 text-xs font-medium outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}
+                                        >
+                                            <option value="live">📅 Live Photobooth Capture Date</option>
+                                            <option value="event">💍 Event Date / Fixed Date</option>
+                                        </select>
+                                    </div>
+                                    {el.useEventDate && (
+                                        <div>
+                                            <FieldLabel isDark={isDark}>Custom / Event Date</FieldLabel>
+                                            <Input 
+                                                type="date"
+                                                value={el.customDate || ''} 
+                                                onChange={(e) => updateElement(el.id, { customDate: e.target.value })}
+                                            />
+                                        </div>
+                                    )}
                                     <div>
                                         <FieldLabel isDark={isDark}>Font</FieldLabel>
                                         <select value={el.font} onChange={(e) => updateElement(el.id, { font: e.target.value })} className={`w-full rounded-lg border px-2 py-1.5 text-sm outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}>
@@ -1873,6 +2031,99 @@ export default function FrameEditor({
                                         <FieldLabel isDark={isDark}>Color</FieldLabel>
                                         <ColorField value={el.color} onChange={(v) => updateElement(el.id, { color: v })} isDark={isDark} />
                                     </div>
+                                    <XYFields x={el.x} y={el.y} onX={(v) => updateElement(el.id, { x: v })} onY={(v) => updateElement(el.id, { y: v })} isDark={isDark} />
+                                </div>
+                            );
+                        })()}
+
+                        {/* ── QR Code properties ── */}
+                        {selected.type === 'qr' && (() => {
+                            const el = selected as FrameQrElement;
+                            return (
+                                <div className={`border-t pt-3 space-y-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+                                    <div>
+                                        <FieldLabel isDark={isDark}>QR Target Type</FieldLabel>
+                                        <select
+                                            value={el.qrType}
+                                            onChange={(e) => updateElement(el.id, { qrType: e.target.value as FrameQrType })}
+                                            className={`w-full rounded-lg border px-2 py-1.5 text-xs outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-input text-gray-900'}`}
+                                        >
+                                            <option value="dynamic_session_share">Dynamic Session Share (Photo Download)</option>
+                                            <option value="event_gallery">Live Event Gallery</option>
+                                            <option value="custom_url">Custom URL</option>
+                                            <option value="wifi">Wi-Fi Connect</option>
+                                        </select>
+                                    </div>
+
+                                    {el.qrType === 'custom_url' && (
+                                        <div>
+                                            <FieldLabel isDark={isDark}>URL / Web Link</FieldLabel>
+                                            <Input
+                                                value={el.customUrl || ''}
+                                                onChange={(e) => updateElement(el.id, { customUrl: e.target.value })}
+                                                placeholder="https://instagram.com/pika_booth"
+                                                className="text-xs"
+                                            />
+                                        </div>
+                                    )}
+
+                                    {el.qrType === 'wifi' && (
+                                        <div className="space-y-2">
+                                            <div>
+                                                <FieldLabel isDark={isDark}>Network SSID</FieldLabel>
+                                                <Input
+                                                    value={el.wifiSsid || ''}
+                                                    onChange={(e) => updateElement(el.id, { wifiSsid: e.target.value })}
+                                                    placeholder="Booth-Guest-WiFi"
+                                                    className="text-xs"
+                                                />
+                                            </div>
+                                            <div>
+                                                <FieldLabel isDark={isDark}>Password</FieldLabel>
+                                                <Input
+                                                    value={el.wifiPassword || ''}
+                                                    onChange={(e) => updateElement(el.id, { wifiPassword: e.target.value })}
+                                                    placeholder="secret123"
+                                                    className="text-xs"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <FieldLabel isDark={isDark}>Dark Color</FieldLabel>
+                                            <ColorField value={el.color || '#000000'} onChange={(v) => updateElement(el.id, { color: v })} isDark={isDark} />
+                                        </div>
+                                        <div>
+                                            <FieldLabel isDark={isDark}>BG Color</FieldLabel>
+                                            <ColorField value={el.bgColor || '#ffffff'} onChange={(v) => updateElement(el.id, { bgColor: v })} isDark={isDark} />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <FieldLabel isDark={isDark}>Bottom Label (Optional)</FieldLabel>
+                                        <Input
+                                            value={el.label || ''}
+                                            onChange={(e) => updateElement(el.id, { label: e.target.value })}
+                                            placeholder="Scan to download"
+                                            className="text-xs mb-1"
+                                        />
+                                        {el.label && (
+                                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                                <div>
+                                                    <FieldLabel isDark={isDark}>Label Size</FieldLabel>
+                                                    <Input type="number" value={el.labelFontSize || 9} onChange={(e) => updateElement(el.id, { labelFontSize: +e.target.value })} />
+                                                </div>
+                                                <div>
+                                                    <FieldLabel isDark={isDark}>Label Color</FieldLabel>
+                                                    <ColorField value={el.labelColor || el.color || '#000000'} onChange={(v) => updateElement(el.id, { labelColor: v })} isDark={isDark} />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <WHFields w={el.width} h={el.height} onW={(v) => updateElement(el.id, { width: v })} onH={(v) => updateElement(el.id, { height: v })} isDark={isDark} />
                                     <XYFields x={el.x} y={el.y} onX={(v) => updateElement(el.id, { x: v })} onY={(v) => updateElement(el.id, { y: v })} isDark={isDark} />
                                 </div>
                             );
