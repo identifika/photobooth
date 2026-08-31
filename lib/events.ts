@@ -76,24 +76,30 @@ export async function getEventBySlug(slug: string): Promise<BoothEvent | null> {
   return { id: match.id, ...match.data } as BoothEvent;
 }
 
-/** Create a new event */
+/** Create or update an event by slug (upsert) */
 export async function createEvent(
   uid: string,
   hostEmail: string,
   data: Omit<BoothEvent, 'id' | 'hostUid' | 'hostEmail' | 'createdAt' | 'updatedAt'>
 ): Promise<string> {
-  const baseSlug = slugify(data.name || 'event');
-  let finalSlug = baseSlug;
+  const targetSlug = data.slug ? slugify(data.slug) : slugify(data.name || 'event');
   
-  // Ensure unique slug
-  const existing = await getEventBySlug(finalSlug);
+  // Check if an event with this slug already exists
+  const existing = await getEventBySlug(targetSlug);
   if (existing) {
-    finalSlug = `${baseSlug}-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Upsert: update existing event in place instead of creating duplicate with random number
+    const updatePayload: Record<string, unknown> = {
+      ...data,
+      slug: targetSlug,
+      updatedAt: new Date().toISOString(),
+    };
+    await fsUpdateDocument(`events/${existing.id}`, updatePayload);
+    return existing.id;
   }
 
   const payload: Record<string, unknown> = {
     ...data,
-    slug: finalSlug,
+    slug: targetSlug,
     hostUid: uid,
     hostEmail,
     active: data.active ?? true,
