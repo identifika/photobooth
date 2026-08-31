@@ -1,6 +1,31 @@
 import { NextResponse } from 'next/server';
-import { getEventBySlug, type BoothEvent } from '@/lib/events';
+import { z } from 'zod';
+import { getEventBySlug, getEventById, type BoothEvent } from '@/lib/events';
+import { fsUpdateDocument } from '@/lib/firestore';
+import { verifyAuthOrApiKey } from '@/lib/auth-server';
 import { generateQrDataUrl } from '@/lib/qr-helper';
+
+const UpdateEventSchema = z.object({
+  name: z.string().min(1).optional(),
+  tagline: z.string().optional(),
+  brideName: z.string().optional(),
+  groomName: z.string().optional(),
+  eventDate: z.string().optional(),
+  venue: z.string().optional(),
+  primaryFrameId: z.string().optional(),
+  frameIds: z.array(z.string()).optional(),
+  allowFrameSelection: z.boolean().optional(),
+  mode: z.enum(['kiosk', 'guest_mobile', 'hybrid']).optional(),
+  enableLiveGallery: z.boolean().optional(),
+  requirePasscode: z.string().optional(),
+  customLogoUrl: z.string().optional(),
+  themeColor: z.string().optional(),
+  customMessage: z.string().optional(),
+  hashtag: z.string().optional(),
+  wifiSsid: z.string().optional(),
+  wifiPassword: z.string().optional(),
+  active: z.boolean().optional(),
+});
 
 function getBaseUrl(request: Request): string {
   const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
@@ -64,6 +89,73 @@ export async function GET(
     });
   } catch (error: any) {
     console.error('Failed to get event by slug:', error);
+    return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/events/[slug]
+ * Updates event settings, including chosen frames (primaryFrameId, frameIds, allowFrameSelection)
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const { slug } = await params;
+    if (!slug) {
+      return NextResponse.json({ error: 'Slug is required' }, { status: 400 });
+    }
+
+    const authContext = await verifyAuthOrApiKey(request);
+    if (!authContext) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const event = await getEventBySlug(slug);
+    if (!event) {
+      return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    }
+
+    // Check ownership if not master/API key
+    if (!authContext.isApiKey && authContext.uid !== event.hostUid) {
+      return NextResponse.json({ error: 'Forbidden: you do not own this event' }, { status: 403 });
+    }
+
+    const json = await request.json();
+    const result = UpdateEventSchema.safeParse(json);
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error.issues?.[0]?.message || 'Validation failed' },
+        { status: 400 }
+      );
+    }
+
+    const cleanUpdateData: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(result.data)) {
+      if (v !== undefined) {
+        cleanUpdateData[k] = v;
+      }
+    }
+
+    await fsUpdateDocument(`events/${event.id}`, cleanUpdateData);
+
+    const updatedEvent = await getEventById(event.id);
+    if (!updatedEvent) {
+      return NextResponse.json({ error: 'Failed to reload updated event' }, { status: 500 });
+    }
+
+    const baseUrl = getBaseUrl(request);
+    const formatted = await formatEventWithUrls(updatedEvent, baseUrl);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Event updated successfully',
+      event: formatted,
+    });
+  } catch (error: any) {
+    console.error('Failed to update event:', error);
     return NextResponse.json({ error: error.message || 'Internal error' }, { status: 500 });
   }
 }
