@@ -4,13 +4,14 @@ import { useState, useEffect, use } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import FrameSelector from '@/components/FrameSelector';
+import FramePreview from '@/components/FramePreview';
 import Camera from '@/components/Camera';
 import PhotoReview from '@/components/PhotoReview';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
 import StripPreview from '@/components/StripPreview';
 import Header from '@/components/Header';
-import { Frame, FRAMES, loadPublicFrames } from '@/lib/frames';
+import { Frame, FRAMES, loadPublicFrames, layoutToConfig } from '@/lib/frames';
 import { listUserFrames, loadUserFrame, loadUserFrameById, type UserFrame } from '@/lib/user-frames';
 import { getEventBySlug, type BoothEvent } from '@/lib/events';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -382,9 +383,9 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
 
       {/* Main Experience Body */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 pb-20">
-        {/* Step: Select Frame */}
+        {/* Step: Frame Selection */}
         {step === 'select' && (
-          <div className="space-y-8 animate-fadeIn">
+          <div className="space-y-8 animate-fadeIn max-w-4xl mx-auto">
             <div className="text-center space-y-2">
               <span
                 className="px-3 py-1 rounded-full text-xs font-semibold"
@@ -404,24 +405,81 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
 
             {/* If frame selection is enabled */}
             {event.allowFrameSelection ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
-                  {eventFrames.map((frame) => {
+              <div className="space-y-8">
+                <div className="flex flex-wrap items-center justify-center gap-6 max-w-4xl mx-auto">
+                  {eventFrames.map((frame, idx) => {
                     const isSelected = selectedFrame?.id === frame.id;
+                    const w = frame.config?.width ?? 400;
+                    const h = frame.config?.height ?? 600;
+                    const MAX_W = 140;
+                    const MAX_H = 210;
+                    const scale = Math.min(MAX_W / w, MAX_H / h);
+                    const cfg = frame.config ?? layoutToConfig(frame.layout, frame.photoCount, w, h);
+
                     return (
                       <button
-                        key={frame.id}
+                        key={frame.id || idx}
                         type="button"
                         onClick={() => setSelectedFrame(frame)}
-                        className={`group p-4 rounded-2xl border text-center transition-all flex flex-col items-center gap-2 ${
-                          isSelected
-                            ? 'border-primary bg-primary/10 scale-105 shadow-md'
-                            : 'border-border bg-[var(--surface-2)] hover:border-primary/50'
-                        }`}
+                        className="group flex flex-col items-center gap-3 transition-all duration-300 focus:outline-none"
                       >
-                        <span className="text-3xl group-hover:scale-110 transition-transform">{frame.emoji}</span>
-                        <div className="text-xs font-bold text-foreground truncate w-full">{frame.name}</div>
-                        <div className="text-[10px] text-muted-foreground">{frame.photoCount} photos</div>
+                        {/* Frame Visual Preview Card */}
+                        <div
+                          className={`relative rounded-xl transition-all duration-300 ${
+                            isSelected
+                              ? 'scale-105 ring-4 ring-offset-2'
+                              : 'hover:scale-102 hover:shadow-md'
+                          }`}
+                          style={{
+                            boxShadow: isSelected ? `0 0 0 3px ${event.themeColor || 'var(--brand)'}` : undefined,
+                            filter: isSelected ? 'drop-shadow(0 12px 20px rgba(0,0,0,0.15))' : 'none',
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: w * scale,
+                              height: h * scale,
+                              overflow: cfg.borderStyle === 'ticket' ? 'visible' : 'hidden',
+                              borderRadius: cfg.borderStyle === 'ticket' ? 0 : 8,
+                            }}
+                          >
+                            <FramePreview
+                              config={cfg}
+                              scale={scale}
+                              context={event ? {
+                                eventName: event.name,
+                                eventDate: event.eventDate,
+                                brideName: event.brideName,
+                                groomName: event.groomName,
+                                venue: event.venue,
+                                hashtag: event.hashtag,
+                                tagline: event.tagline,
+                                customMessage: event.customMessage,
+                              } : undefined}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Frame Info Label */}
+                        <div className="text-center space-y-0.5">
+                          <div className="text-xs font-bold text-foreground flex items-center justify-center gap-1">
+                            <span>{frame.emoji || '✨'}</span>
+                            <span className="truncate max-w-[130px]">{frame.name}</span>
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {frame.photoCount} photos · {frame.layout.replace('-', ' ')}
+                          </div>
+                        </div>
+
+                        {/* Selected Indicator */}
+                        {isSelected && (
+                          <div
+                            className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm"
+                            style={{ background: event.themeColor || 'var(--brand)' }}
+                          >
+                            Selected
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -432,7 +490,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
                     size="lg"
                     onClick={handleStart}
                     disabled={!selectedFrame}
-                    className="px-8 py-3 rounded-full text-sm font-semibold shadow-lg hover:shadow-xl gap-2 transition-all"
+                    className="px-10 py-3.5 rounded-full text-sm font-bold shadow-lg hover:shadow-xl gap-2 transition-all"
                     style={{ background: event.themeColor || undefined }}
                   >
                     <Play className="w-4 h-4 fill-current" />
@@ -441,17 +499,54 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
                 </div>
               </div>
             ) : (
-              /* Locked single frame banner */
-              <div className="max-w-md mx-auto bg-[var(--surface-2)] p-6 rounded-3xl border border-border text-center space-y-6 shadow-sm">
-                <div className="text-4xl">{selectedFrame?.emoji || '✨'}</div>
+              /* Locked single frame banner with rich preview */
+              <div className="max-w-md mx-auto bg-[var(--surface-2)] p-6 sm:p-8 rounded-3xl border border-border text-center space-y-6 shadow-sm">
+                {selectedFrame && (
+                  <div className="flex justify-center my-2">
+                    {(() => {
+                      const w = selectedFrame.config?.width ?? 400;
+                      const h = selectedFrame.config?.height ?? 600;
+                      const scale = Math.min(200 / w, 300 / h);
+                      const cfg = selectedFrame.config ?? layoutToConfig(selectedFrame.layout, selectedFrame.photoCount, w, h);
+                      return (
+                        <div
+                          style={{
+                            width: w * scale,
+                            height: h * scale,
+                            overflow: cfg.borderStyle === 'ticket' ? 'visible' : 'hidden',
+                            borderRadius: cfg.borderStyle === 'ticket' ? 0 : 8,
+                            filter: 'drop-shadow(0 10px 25px rgba(0,0,0,0.12))',
+                          }}
+                        >
+                          <FramePreview
+                            config={cfg}
+                            scale={scale}
+                            context={event ? {
+                              eventName: event.name,
+                              eventDate: event.eventDate,
+                              brideName: event.brideName,
+                              groomName: event.groomName,
+                              venue: event.venue,
+                              hashtag: event.hashtag,
+                              tagline: event.tagline,
+                              customMessage: event.customMessage,
+                            } : undefined}
+                          />
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   <h3 className="font-bold text-lg">{selectedFrame?.name || event.name}</h3>
                   <p className="text-xs text-muted-foreground">{selectedFrame?.photoCount || 4} synchronized photo captures</p>
                 </div>
+
                 <Button
                   size="lg"
                   onClick={handleStart}
-                  className="w-full rounded-full gap-2 shadow-lg"
+                  className="w-full rounded-full gap-2 shadow-lg font-bold"
                   style={{ background: event.themeColor || undefined }}
                 >
                   <CameraIcon className="w-4 h-4" />
