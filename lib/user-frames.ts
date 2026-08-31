@@ -1,4 +1,4 @@
-import { fsGetCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument } from './firestore';
+import { fsGetCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument, fsGetAllCollection } from './firestore';
 import type { FrameConfig } from './frame-types';
 import { applyCdnToFrameConfig } from './cdn';
 
@@ -13,7 +13,7 @@ export interface UserFrame {
   updatedAt: unknown;
 }
 
-/** List all frames for a user. */
+/** List all frames for a specific user. */
 export async function listUserFrames(uid: string): Promise<UserFrame[]> {
   const docs = await fsGetCollection('user_frames', uid);
   const frames = docs.map((d) => {
@@ -32,14 +32,38 @@ export async function listUserFrames(uid: string): Promise<UserFrame[]> {
   return frames;
 }
 
-/** Load a single frame by ID. */
-export async function loadUserFrame(uid: string, frameId: string): Promise<UserFrame | null> {
+/** List all custom user frames across the system. */
+export async function listAllUserFrames(): Promise<UserFrame[]> {
+  const docs = await fsGetAllCollection('user_frames');
+  const frames = docs.map((d) => {
+    const data = d.data as Omit<UserFrame, 'id'>;
+    if (data.config) data.config = applyCdnToFrameConfig(data.config) as FrameConfig;
+    return { id: d.id, ...data } as UserFrame;
+  });
+
+  frames.sort((a, b) => {
+    const aTime = (a.updatedAt as any)?.toMillis?.() || (a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0);
+    const bTime = (b.updatedAt as any)?.toMillis?.() || (b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0);
+    return bTime - aTime;
+  });
+
+  return frames;
+}
+
+/** Load a single frame by Document ID without user restriction (e.g. for booth/API loading). */
+export async function loadUserFrameById(frameId: string): Promise<UserFrame | null> {
   const doc = await fsGetDocument(`user_frames/${frameId}`);
   if (!doc) return null;
   const data = doc.data as Omit<UserFrame, 'id'>;
-  if (data.uid !== uid) return null;
   if (data.config) data.config = applyCdnToFrameConfig(data.config) as FrameConfig;
   return { id: doc.id, ...data } as UserFrame;
+}
+
+/** Load a single frame by ID for a specific user. */
+export async function loadUserFrame(uid: string, frameId: string): Promise<UserFrame | null> {
+  const frame = await loadUserFrameById(frameId);
+  if (!frame || frame.uid !== uid) return null;
+  return frame;
 }
 
 /** Create a new frame. Returns the new doc ID. */
