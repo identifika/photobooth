@@ -11,7 +11,7 @@ import FinalStrip from '@/components/FinalStrip';
 import StripPreview from '@/components/StripPreview';
 import Header from '@/components/Header';
 import { Frame, FRAMES, loadPublicFrames } from '@/lib/frames';
-import { listUserFrames, loadUserFrame, type UserFrame } from '@/lib/user-frames';
+import { listUserFrames, loadUserFrame, loadUserFrameById, type UserFrame } from '@/lib/user-frames';
 import { getEventBySlug, type BoothEvent } from '@/lib/events';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDialog } from '@/components/ui/dialog-provider';
@@ -107,23 +107,26 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
         // Load frames for this event
         const loadedFrames: Frame[] = [];
 
-        // Load user frames
+        // Load configured event frames
         if (evt.frameIds && evt.frameIds.length > 0) {
-          const userFramesList = await listUserFrames(evt.hostUid).catch(() => []);
           const publicFramesList = await loadPublicFrames().catch(() => []);
 
           for (const fId of evt.frameIds) {
-            if (fId.startsWith('user-')) {
-              const rawId = fId.replace('user-', '');
-              const found = userFramesList.find((uf) => uf.id === rawId);
-              if (found) loadedFrames.push(userFrameToFrame(found));
+            const rawId = fId.startsWith('user-') ? fId.replace('user-', '') : fId;
+            // 1. Try loading custom user frame directly by ID
+            const foundUser = await loadUserFrameById(rawId).catch(() => null);
+            if (foundUser) {
+              loadedFrames.push(userFrameToFrame(foundUser));
+              continue;
+            }
+
+            // 2. Try loading public / preset frame
+            const foundPub = publicFramesList.find((pf) => pf.id === fId || pf.id === rawId);
+            if (foundPub) {
+              loadedFrames.push(foundPub);
             } else {
-              const foundPub = publicFramesList.find((pf) => pf.id === fId);
-              if (foundPub) loadedFrames.push(foundPub);
-              else {
-                const foundStatic = FRAMES.find((sf) => sf.id === fId);
-                if (foundStatic) loadedFrames.push(foundStatic);
-              }
+              const foundStatic = FRAMES.find((sf) => sf.id === fId || sf.id === rawId);
+              if (foundStatic) loadedFrames.push(foundStatic);
             }
           }
         }
@@ -136,8 +139,13 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
 
         setEventFrames(loadedFrames);
 
-        // If primary frame is set or selection disabled
-        const primary = loadedFrames.find((f) => f.id === evt.primaryFrameId) || loadedFrames[0];
+        // Match primary frame by ID with or without user- prefix
+        const primary = loadedFrames.find(
+          (f) => f.id === evt.primaryFrameId ||
+                 f.id === `user-${evt.primaryFrameId}` ||
+                 f.id.replace('user-', '') === evt.primaryFrameId?.replace('user-', '')
+        ) || loadedFrames[0];
+
         if (primary) {
           setSelectedFrame(primary);
         }
