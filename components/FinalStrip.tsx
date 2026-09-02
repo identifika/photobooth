@@ -21,13 +21,14 @@ interface Props {
   filter?: string;
   uploadedUrl?: string;
   sessionId?: string;
+  eventId?: string;
   eventSlug?: string;
   eventContext?: DynamicFrameContext;
   onUploadComplete?: (url: string) => void;
   onRestart: () => void;
 }
 
-export default function FinalStrip({ photos, liveClips, frame, filter, uploadedUrl, sessionId, eventSlug, eventContext, onUploadComplete, onRestart }: Props) {
+export default function FinalStrip({ photos, liveClips, frame, filter, uploadedUrl, sessionId, eventId, eventSlug, eventContext, onUploadComplete, onRestart }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
@@ -60,6 +61,8 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
     polaroidDataUrls,
     liveClipGifs,
     sessionId,
+    eventId,
+    eventSlug,
     onUploadComplete
   });
   

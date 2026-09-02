@@ -7,6 +7,8 @@ interface UseBulkUploadProps {
   polaroidDataUrls: string[];
   liveClipGifs: (string | null | 'pending' | 'error')[];
   sessionId?: string;
+  eventId?: string;
+  eventSlug?: string;
   onUploadComplete?: (url: string) => void;
 }
 
@@ -16,6 +18,8 @@ export function useBulkUpload({
   polaroidDataUrls,
   liveClipGifs,
   sessionId: customSessionId,
+  eventId,
+  eventSlug,
   onUploadComplete,
 }: UseBulkUploadProps) {
   const [uploading, setUploading] = useState(false);
@@ -105,6 +109,32 @@ export function useBulkUpload({
       
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
       const shareUrl = `${appUrl}/share?s=${sessionId}`;
+
+      // If this upload is for an event, record to the event's captures subcollection
+      if (eventId) {
+        try {
+          const { createEventCapture } = await import('@/lib/events');
+          const photoUrls = results
+            .filter((r: any) => r?.url && typeof r.url === 'string' && r.url.includes('photo_'))
+            .map((r: any) => r.url);
+          const liveClipUrls = results
+            .filter((r: any) => r?.url && typeof r.url === 'string' && r.url.includes('live_'))
+            .map((r: any) => r.url);
+          const gifResult = results.find((r: any) => r?.url && typeof r.url === 'string' && r.url.includes('strip.gif'));
+
+          await createEventCapture(eventId, {
+            eventId,
+            eventSlug: eventSlug || '',
+            sessionId,
+            stripUrl: stripResult.url,
+            gifUrl: gifResult?.url,
+            photoUrls,
+            liveClipUrls,
+          });
+        } catch (captureErr) {
+          console.error('Failed to record capture in Firestore event subcollection:', captureErr);
+        }
+      }
 
       if (onUploadComplete) {
         onUploadComplete(shareUrl);

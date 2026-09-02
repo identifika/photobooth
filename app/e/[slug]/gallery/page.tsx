@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
-import { getEventBySlug, type BoothEvent } from '@/lib/events';
+import { getEventBySlug, subscribeToEventCaptures, getEventCaptures, type BoothEvent, type EventCapture } from '@/lib/events';
 import { getClientAuthToken } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { useDialog } from '@/components/ui/dialog-provider';
@@ -70,13 +70,60 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     return () => { active = false; };
   }, [slug]);
 
-  // 2. Fetch Media items for this event
+  // Convert Firestore captures to gallery MediaItems
+  const capturesToMediaItems = (captures: EventCapture[]): MediaItem[] => {
+    const list: MediaItem[] = [];
+    for (const c of captures) {
+      if (c.stripUrl) {
+        list.push({
+          key: `${c.sessionId}/strip.png`,
+          url: c.stripUrl,
+          lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
+        });
+      }
+      if (c.gifUrl) {
+        list.push({
+          key: `${c.sessionId}/strip.gif`,
+          url: c.gifUrl,
+          lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
+        });
+      }
+      if (c.photoUrls) {
+        c.photoUrls.forEach((pUrl, i) => {
+          list.push({
+            key: `${c.sessionId}/photo_${i + 1}.png`,
+            url: pUrl,
+            lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
+          });
+        });
+      }
+      if (c.liveClipUrls) {
+        c.liveClipUrls.forEach((gUrl, i) => {
+          list.push({
+            key: `${c.sessionId}/live_${i + 1}.gif`,
+            url: gUrl,
+            lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
+          });
+        });
+      }
+    }
+    return list;
+  };
+
+  // 2. Fetch Media items (Firestore subcollection with S3 fallback)
   const fetchMedia = async () => {
     if (!event) return;
     setLoadingItems(true);
     try {
+      // Try Firestore first
+      const captures = await getEventCaptures(event.id);
+      if (captures.length > 0) {
+        setItems(capturesToMediaItems(captures));
+        return;
+      }
+
+      // Fallback to S3
       const token = await getClientAuthToken();
-      // Fetch uploads with prefix
       const res = await fetch('/api/share', {
         method: 'POST',
         headers: {
@@ -92,7 +139,6 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           setItems(data.items);
         }
       } else {
-        // If empty / not yet created, start with empty list
         setItems([]);
       }
     } catch (err) {
@@ -102,11 +148,55 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     }
   };
 
+  // Realtime subscription to Firestore captures
   useEffect(() => {
-    if (event) {
-      fetchMedia();
-    }
-  }, [event]);
+    if (!event) return;
+    setLoadingItems(true);
+
+    let isSubscribed = true;
+
+    const unsubscribe = subscribeToEventCaptures(
+      event.id,
+      async (captures) => {
+        if (!isSubscribed) return;
+        if (captures.length > 0) {
+          setItems(capturesToMediaItems(captures));
+          setLoadingItems(false);
+        } else {
+          // If Firestore subcollection has no items yet, check S3 fallback
+          try {
+            const token = await getClientAuthToken();
+            const res = await fetch('/api/share', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({ sessionId: `evt-${slug}` }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (isSubscribed && data.items) {
+                setItems(data.items);
+              }
+            }
+          } catch (err) {
+            console.warn('S3 fallback check failed:', err);
+          } finally {
+            if (isSubscribed) setLoadingItems(false);
+          }
+        }
+      },
+      () => {
+        if (isSubscribed) fetchMedia();
+      }
+    );
+
+    return () => {
+      isSubscribed = false;
+      unsubscribe();
+    };
+  }, [event, slug]);
 
   // Slideshow auto-advance
   useEffect(() => {

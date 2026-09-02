@@ -621,6 +621,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
               liveClips={liveClips}
               frame={selectedFrame}
               sessionId={sessionId}
+              eventId={event.id}
               eventSlug={event.slug}
               eventContext={event ? {
                 eventName: event.name,

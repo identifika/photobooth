@@ -144,3 +144,80 @@ export async function deleteEvent(uid: string, eventId: string): Promise<void> {
 
   await fsDeleteDocument(`events/${eventId}`);
 }
+
+// ── Event Captures Subcollection (Live Gallery & Wall) ─────────────────────
+
+export interface EventCapture {
+  id: string;
+  eventId: string;
+  eventSlug: string;
+  sessionId: string;
+  stripUrl: string;
+  gifUrl?: string;
+  photoUrls?: string[];
+  liveClipUrls?: string[];
+  createdAt: unknown;
+}
+
+/** Record a new photobooth capture for an event */
+export async function createEventCapture(
+  eventId: string,
+  capture: Omit<EventCapture, 'id' | 'createdAt'>
+): Promise<string> {
+  return fsAddDocument(`events/${eventId}/captures`, capture as Record<string, unknown>);
+}
+
+/** Get all captures for an event */
+export async function getEventCaptures(eventId: string): Promise<EventCapture[]> {
+  try {
+    const { collection, getDocs, query } = await import('firebase/firestore');
+    const { db } = await import('./firebase');
+    const q = query(collection(db, `events/${eventId}/captures`));
+    const snap = await getDocs(q);
+    const captures = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventCapture));
+    captures.sort((a, b) => {
+      const timeA = (a.createdAt as any)?.toMillis?.() || (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
+      const timeB = (b.createdAt as any)?.toMillis?.() || (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+      return timeB - timeA;
+    });
+    return captures;
+  } catch (err) {
+    console.warn('Failed to load event captures from Firestore:', err);
+    return [];
+  }
+}
+
+/** Subscribe to realtime updates for an event's live gallery */
+export function subscribeToEventCaptures(
+  eventId: string,
+  onUpdate: (captures: EventCapture[]) => void,
+  onError?: (err: unknown) => void
+): () => void {
+  let unsubscribe = () => {};
+  import('firebase/firestore').then(({ collection, onSnapshot, query }) => {
+    import('./firebase').then(({ db }) => {
+      try {
+        const q = query(collection(db, `events/${eventId}/captures`));
+        unsubscribe = onSnapshot(
+          q,
+          (snap) => {
+            const captures = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventCapture));
+            captures.sort((a, b) => {
+              const timeA = (a.createdAt as any)?.toMillis?.() || (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
+              const timeB = (b.createdAt as any)?.toMillis?.() || (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
+              return timeB - timeA;
+            });
+            onUpdate(captures);
+          },
+          (err) => {
+            console.warn('Realtime event captures error:', err);
+            onError?.(err);
+          }
+        );
+      } catch (err) {
+        onError?.(err);
+      }
+    });
+  });
+  return () => unsubscribe();
+}
