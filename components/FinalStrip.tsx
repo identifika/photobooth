@@ -59,6 +59,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
     gifDataUrl,
     polaroidDataUrls,
     liveClipGifs,
+    sessionId,
     onUploadComplete
   });
   
@@ -388,13 +389,14 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
 
         if (el.type === 'qr') {
           const qrEl = el as FrameQrElement;
+          const baseUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || 'https://app.pikabooth.web.id');
           const qrText = qrEl.qrType === 'dynamic_session_share'
-            ? (displayUploadedUrl || (sessionId ? `https://pikabooth.app/share?s=${sessionId}` : 'https://pikabooth.app/share?s=demo'))
+            ? (displayUploadedUrl || (sessionId ? `${baseUrl}/share?s=${sessionId}` : `${baseUrl}/share?s=demo`))
             : qrEl.qrType === 'event_gallery'
-            ? (eventSlug ? `https://pikabooth.app/e/${eventSlug}/gallery` : 'https://pikabooth.app/gallery')
+            ? (eventSlug ? `${baseUrl}/e/${eventSlug}/gallery` : `${baseUrl}/gallery`)
             : qrEl.qrType === 'wifi'
             ? `WIFI:S:${qrEl.wifiSsid || 'WiFi'};T:${qrEl.wifiEncryption || 'WPA'};P:${qrEl.wifiPassword || ''};;`
-            : qrEl.customUrl || 'https://pikabooth.app';
+            : qrEl.customUrl || baseUrl;
 
           ctx.save();
           await drawQrOnCanvas(ctx, qrText, x, y, w, h, {

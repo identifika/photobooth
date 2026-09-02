@@ -35,33 +35,47 @@ export async function POST(request: Request) {
 
     const bucket = process.env.S3_BUCKET_NAME;
 
+    // For event prefix matching (e.g. evt-slug), don't force a trailing slash so it matches evt-slug-*
+    const prefix = sessionId.startsWith('evt-')
+      ? sessionId
+      : (sessionId.endsWith('/') ? sessionId : `${sessionId}/`);
+
     const command = new ListObjectsV2Command({
       Bucket: bucket,
-      Prefix: `${sessionId}/`,
+      Prefix: prefix,
     });
 
     const response = await s3.send(command);
     
+    // Return empty list instead of 404 if no photos yet (prevents red console errors in gallery)
     if (!response.Contents || response.Contents.length === 0) {
-      return NextResponse.json({ error: 'Session not found or empty' }, { status: 404 });
+      return NextResponse.json({ items: [] });
     }
 
     const rawBaseUrl = process.env.NEXT_PUBLIC_CDN_URL || process.env.NEXT_PUBLIC_S3_ENDPOINT || process.env.S3_ENDPOINT || '';
     const baseUrl = bucket ? `${rawBaseUrl.replace(/\/$/, '')}/${bucket}` : rawBaseUrl.replace(/\/$/, '');
     
-    // Sort so strip is first, then photos, then live clips
-    const items = response.Contents.map(item => ({
-      key: item.Key!,
-      url: `${baseUrl}/${item.Key}`,
-      size: item.Size,
-      lastModified: item.LastModified,
-    })).sort((a, b) => {
-      // Prioritize strip
+    // Map items, filtering out folder keys
+    const items = response.Contents
+      .filter(item => item.Key && !item.Key.endsWith('/'))
+      .map(item => ({
+        key: item.Key!,
+        url: `${baseUrl}/${item.Key}`,
+        size: item.Size,
+        lastModified: item.LastModified,
+      }));
+
+    // Sort: for events, show newest captures first; for single session, strip first
+    items.sort((a, b) => {
+      if (sessionId.startsWith('evt-')) {
+        const timeA = a.lastModified ? new Date(a.lastModified).getTime() : 0;
+        const timeB = b.lastModified ? new Date(b.lastModified).getTime() : 0;
+        return timeB - timeA;
+      }
       if (a.key.includes('strip.png')) return -1;
       if (b.key.includes('strip.png')) return 1;
       if (a.key.includes('strip.gif')) return -1;
       if (b.key.includes('strip.gif')) return 1;
-      // Sort alphabetically for others
       return a.key.localeCompare(b.key);
     });
 

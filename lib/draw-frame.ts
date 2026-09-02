@@ -319,18 +319,19 @@ export async function drawFrameElements(
 
     if (el.type === 'qr') {
       const qrEl = el as FrameQrElement;
-      let qrText = 'https://pikabooth.app';
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || 'https://app.pikabooth.web.id');
+      let qrText = baseUrl;
       if (qrEl.qrType === 'dynamic_session_share') {
-        qrText = context.shareUrl || (context.sessionId ? `https://pikabooth.app/share?s=${context.sessionId}` : 'https://pikabooth.app/share?s=demo');
+        qrText = context.shareUrl || (context.sessionId ? `${baseUrl}/share?s=${context.sessionId}` : `${baseUrl}/share?s=demo`);
       } else if (qrEl.qrType === 'event_gallery') {
-        qrText = context.eventSlug ? `https://pikabooth.app/e/${context.eventSlug}/gallery` : 'https://pikabooth.app/gallery';
+        qrText = context.eventSlug ? `${baseUrl}/e/${context.eventSlug}/gallery` : `${baseUrl}/gallery`;
       } else if (qrEl.qrType === 'wifi') {
         const ssid = qrEl.wifiSsid || 'Pikabooth-WiFi';
         const pass = qrEl.wifiPassword || '';
         const enc = qrEl.wifiEncryption || 'WPA';
         qrText = `WIFI:S:${ssid};T:${enc};P:${pass};;`;
       } else if (qrEl.qrType === 'custom_url') {
-        qrText = qrEl.customUrl || 'https://pikabooth.app';
+        qrText = qrEl.customUrl || baseUrl;
       }
 
       ctx.save();

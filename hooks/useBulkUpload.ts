@@ -6,6 +6,7 @@ interface UseBulkUploadProps {
   gifDataUrl: string;
   polaroidDataUrls: string[];
   liveClipGifs: (string | null | 'pending' | 'error')[];
+  sessionId?: string;
   onUploadComplete?: (url: string) => void;
 }
 
@@ -14,6 +15,7 @@ export function useBulkUpload({
   gifDataUrl,
   polaroidDataUrls,
   liveClipGifs,
+  sessionId: customSessionId,
   onUploadComplete,
 }: UseBulkUploadProps) {
   const [uploading, setUploading] = useState(false);
@@ -60,7 +62,7 @@ export function useBulkUpload({
     if (!stripDataUrl) return;
     setUploading(true);
     try {
-      const sessionId = Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
+      const sessionId = customSessionId || (Date.now().toString(36) + Math.random().toString(36).substring(2, 8));
 
       const uploadPromises = [];
 
