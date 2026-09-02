@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { z } from 'zod';
-import { verifyAuthOrApiKey } from '@/lib/auth-server';
 
 const ShareRequestSchema = z.object({
   sessionId: z.string().min(1).refine(val => !val.includes('/') && !val.includes('..'), {
@@ -29,10 +28,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
     }
 
-    const authContext = await verifyAuthOrApiKey(request);
-    if (!authContext) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    // Share page is public — the unguessable sessionId acts as the access token.
+    // Auth is optional: if present, verify it; if not, allow access anyway.
 
     const { sessionId } = result.data;
 
