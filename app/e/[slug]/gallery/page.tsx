@@ -12,10 +12,8 @@ import {
   Image as ImageIcon,
   Download,
   Play,
-  Pause,
   Maximize2,
   Minimize2,
-  Calendar,
   Sparkles,
   ArrowLeft,
   Share2,
@@ -23,6 +21,11 @@ import {
   ExternalLink,
   Camera,
   RefreshCw,
+  X,
+  Copy,
+  Check,
+  Layers,
+  Film,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -31,6 +34,17 @@ interface MediaItem {
   url: string;
   size?: number;
   lastModified?: string;
+}
+
+export interface GallerySession {
+  sessionId: string;
+  coverUrl: string;
+  stripUrl?: string;
+  gifUrl?: string;
+  photos: string[];
+  liveClips: string[];
+  createdAt?: Date | string;
+  itemCount: number;
 }
 
 export default function EventLiveGalleryPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -42,9 +56,15 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
 
   const [event, setEvent] = useState<BoothEvent | null>(null);
   const [loadingEvent, setLoadingEvent] = useState(true);
-  const [items, setItems] = useState<MediaItem[]>([]);
+  const [sessions, setSessions] = useState<GallerySession[]>([]);
   const [loadingItems, setLoadingItems] = useState(true);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [downloadingSessionZip, setDownloadingSessionZip] = useState(false);
+
+  // Selected session for detailed modal
+  const [selectedSession, setSelectedSession] = useState<GallerySession | null>(null);
+  const [activeMediaTab, setActiveMediaTab] = useState<'strip' | 'gif'>('strip');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Slideshow / Projector mode
   const [isSlideshow, setIsSlideshow] = useState(false);
@@ -70,44 +90,98 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     return () => { active = false; };
   }, [slug]);
 
-  // Convert Firestore captures to gallery MediaItems
-  const capturesToMediaItems = (captures: EventCapture[]): MediaItem[] => {
-    const list: MediaItem[] = [];
-    for (const c of captures) {
-      if (c.stripUrl) {
-        list.push({
-          key: `${c.sessionId}/strip.png`,
-          url: c.stripUrl,
-          lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
+  // Convert Firestore captures to GallerySessions
+  const capturesToSessions = (captures: EventCapture[]): GallerySession[] => {
+    return captures.map((c) => {
+      const photos = c.photoUrls || [];
+      const liveClips = c.liveClipUrls || [];
+      const coverUrl = c.stripUrl || c.gifUrl || photos[0] || '';
+
+      let count = 0;
+      if (c.stripUrl) count++;
+      if (c.gifUrl) count++;
+      count += photos.length + liveClips.length;
+
+      let createdAt: Date | string | undefined = undefined;
+      if (c.createdAt) {
+        if (typeof (c.createdAt as any)?.toDate === 'function') {
+          createdAt = (c.createdAt as any).toDate();
+        } else if (typeof c.createdAt === 'string') {
+          createdAt = new Date(c.createdAt);
+        }
+      }
+
+      return {
+        sessionId: c.sessionId,
+        coverUrl,
+        stripUrl: c.stripUrl,
+        gifUrl: c.gifUrl,
+        photos,
+        liveClips,
+        createdAt,
+        itemCount: count,
+      };
+    });
+  };
+
+  // Convert S3 flat media items to GallerySessions (fallback)
+  const mediaItemsToSessions = (items: MediaItem[]): GallerySession[] => {
+    const sessionMap = new Map<string, {
+      sessionId: string;
+      stripUrl?: string;
+      gifUrl?: string;
+      photos: string[];
+      liveClips: string[];
+      lastModified?: string;
+    }>();
+
+    for (const item of items) {
+      const parts = item.key.split('/');
+      const sessionId = parts.length > 1 ? parts[0] : 'session';
+      const filename = parts[parts.length - 1];
+
+      if (!sessionMap.has(sessionId)) {
+        sessionMap.set(sessionId, {
+          sessionId,
+          photos: [],
+          liveClips: [],
+          lastModified: item.lastModified,
         });
       }
-      if (c.gifUrl) {
-        list.push({
-          key: `${c.sessionId}/strip.gif`,
-          url: c.gifUrl,
-          lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
-        });
-      }
-      if (c.photoUrls) {
-        c.photoUrls.forEach((pUrl, i) => {
-          list.push({
-            key: `${c.sessionId}/photo_${i + 1}.png`,
-            url: pUrl,
-            lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
-          });
-        });
-      }
-      if (c.liveClipUrls) {
-        c.liveClipUrls.forEach((gUrl, i) => {
-          list.push({
-            key: `${c.sessionId}/live_${i + 1}.gif`,
-            url: gUrl,
-            lastModified: typeof c.createdAt === 'string' ? c.createdAt : undefined,
-          });
-        });
+
+      const sess = sessionMap.get(sessionId)!;
+      if (filename.includes('strip.png')) {
+        sess.stripUrl = item.url;
+      } else if (filename.includes('strip.gif')) {
+        sess.gifUrl = item.url;
+      } else if (filename.includes('live_')) {
+        sess.liveClips.push(item.url);
+      } else {
+        sess.photos.push(item.url);
       }
     }
-    return list;
+
+    const result: GallerySession[] = [];
+    for (const s of sessionMap.values()) {
+      const coverUrl = s.stripUrl || s.gifUrl || s.photos[0] || '';
+      let count = 0;
+      if (s.stripUrl) count++;
+      if (s.gifUrl) count++;
+      count += s.photos.length + s.liveClips.length;
+
+      result.push({
+        sessionId: s.sessionId,
+        coverUrl,
+        stripUrl: s.stripUrl,
+        gifUrl: s.gifUrl,
+        photos: s.photos,
+        liveClips: s.liveClips,
+        createdAt: s.lastModified ? new Date(s.lastModified) : undefined,
+        itemCount: count,
+      });
+    }
+
+    return result;
   };
 
   // 2. Fetch Media items (Firestore subcollection with S3 fallback)
@@ -115,14 +189,14 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     if (!event) return;
     setLoadingItems(true);
     try {
-      // Try Firestore first
+      // 1. Try Firestore subcollection first
       const captures = await getEventCaptures(event.id);
       if (captures.length > 0) {
-        setItems(capturesToMediaItems(captures));
+        setSessions(capturesToSessions(captures));
         return;
       }
 
-      // Fallback to S3
+      // 2. Fallback to S3
       const token = await getClientAuthToken();
       const res = await fetch('/api/share', {
         method: 'POST',
@@ -136,10 +210,10 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
       if (res.ok) {
         const data = await res.json();
         if (data.items) {
-          setItems(data.items);
+          setSessions(mediaItemsToSessions(data.items));
         }
       } else {
-        setItems([]);
+        setSessions([]);
       }
     } catch (err) {
       console.error('Failed to fetch event media:', err);
@@ -160,10 +234,10 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
       async (captures) => {
         if (!isSubscribed) return;
         if (captures.length > 0) {
-          setItems(capturesToMediaItems(captures));
+          setSessions(capturesToSessions(captures));
           setLoadingItems(false);
         } else {
-          // If Firestore subcollection has no items yet, check S3 fallback
+          // If Firestore has no items yet, check S3 fallback
           try {
             const token = await getClientAuthToken();
             const res = await fetch('/api/share', {
@@ -177,7 +251,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
             if (res.ok) {
               const data = await res.json();
               if (isSubscribed && data.items) {
-                setItems(data.items);
+                setSessions(mediaItemsToSessions(data.items));
               }
             }
           } catch (err) {
@@ -198,14 +272,25 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     };
   }, [event, slug]);
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setSelectedSession(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Slideshow auto-advance
   useEffect(() => {
-    if (!isSlideshow || items.length === 0) return;
+    if (!isSlideshow || sessions.length === 0) return;
     const interval = setInterval(() => {
-      setCurrentSlideIdx((prev) => (prev + 1) % items.length);
+      setCurrentSlideIdx((prev) => (prev + 1) % sessions.length);
     }, 4500);
     return () => clearInterval(interval);
-  }, [isSlideshow, items.length]);
+  }, [isSlideshow, sessions.length]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -217,8 +302,9 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     }
   };
 
+  // Download All photos across all sessions into a single event ZIP
   const handleDownloadAllZip = async () => {
-    if (items.length === 0) {
+    if (sessions.length === 0) {
       await alert('No photos have been taken for this event yet.');
       return;
     }
@@ -226,12 +312,20 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     setDownloadingZip(true);
     try {
       const zip = new JSZip();
-      const fetchPromises = items.map(async (item) => {
+      const allUrls: { url: string; filename: string }[] = [];
+
+      sessions.forEach((s) => {
+        if (s.stripUrl) allUrls.push({ url: s.stripUrl, filename: `${s.sessionId}_strip.png` });
+        if (s.gifUrl) allUrls.push({ url: s.gifUrl, filename: `${s.sessionId}_strip.gif` });
+        s.photos.forEach((u, i) => allUrls.push({ url: u, filename: `${s.sessionId}_photo_${i + 1}.png` }));
+        s.liveClips.forEach((u, i) => allUrls.push({ url: u, filename: `${s.sessionId}_live_${i + 1}.gif` }));
+      });
+
+      const fetchPromises = allUrls.map(async (item) => {
         const response = await fetch(item.url);
         if (!response.ok) return;
         const blob = await response.blob();
-        const filename = item.key.split('/').pop() || 'photo.png';
-        zip.file(filename, blob);
+        zip.file(item.filename, blob);
       });
 
       await Promise.all(fetchPromises);
@@ -250,6 +344,41 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     }
   };
 
+  // Download All media for ONE specific session
+  const handleDownloadSessionZip = async (session: GallerySession) => {
+    setDownloadingSessionZip(true);
+    try {
+      const zip = new JSZip();
+      const allUrls: { url: string; filename: string }[] = [];
+
+      if (session.stripUrl) allUrls.push({ url: session.stripUrl, filename: 'strip.png' });
+      if (session.gifUrl) allUrls.push({ url: session.gifUrl, filename: 'strip.gif' });
+      session.photos.forEach((u, i) => allUrls.push({ url: u, filename: `photo_${i + 1}.png` }));
+      session.liveClips.forEach((u, i) => allUrls.push({ url: u, filename: `live_${i + 1}.gif` }));
+
+      const fetchPromises = allUrls.map(async (item) => {
+        const response = await fetch(item.url);
+        if (!response.ok) return;
+        const blob = await response.blob();
+        zip.file(item.filename, blob);
+      });
+
+      await Promise.all(fetchPromises);
+      const content = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `photobooth-${session.sessionId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Failed to download session zip:', err);
+      alert('Failed to download session ZIP.');
+    } finally {
+      setDownloadingSessionZip(false);
+    }
+  };
+
   const downloadSingleFile = (url: string, filename: string) => {
     fetch(url)
       .then((res) => res.blob())
@@ -262,6 +391,15 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
         document.body.removeChild(link);
       })
       .catch(console.error);
+  };
+
+  const handleCopyShareLink = (sessionId: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://app.pikabooth.web.id';
+    const url = `${origin}/share?s=${sessionId}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    }).catch(console.error);
   };
 
   if (loadingEvent) {
@@ -286,12 +424,14 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
     );
   }
 
+  const slideshowSessions = sessions.filter((s) => s.coverUrl);
+
   return (
     <main className="min-h-screen bg-background text-foreground pb-20">
       <Header />
 
       {/* Fullscreen Slideshow / Projector Overlay */}
-      {isSlideshow && items.length > 0 && (
+      {isSlideshow && slideshowSessions.length > 0 && (
         <div
           ref={slideshowContainerRef}
           className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center select-none overflow-hidden"
@@ -329,7 +469,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           {/* Current Slide Display */}
           <div className="relative max-h-[82vh] max-w-[90vw] mx-auto flex items-center justify-center animate-fadeIn">
             <img
-              src={items[currentSlideIdx].url}
+              src={slideshowSessions[currentSlideIdx].coverUrl}
               alt="Slideshow capture"
               className="max-h-[82vh] max-w-[90vw] object-contain rounded-2xl shadow-2xl drop-shadow-[0_20px_50px_rgba(255,255,255,0.1)]"
               crossOrigin="anonymous"
@@ -339,7 +479,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           {/* Bottom Progress Tracker */}
           <div className="absolute bottom-6 inset-x-0 flex items-center justify-center gap-2 z-10">
             <div className="px-4 py-1.5 rounded-full bg-white/10 backdrop-blur-md text-white text-xs font-mono">
-              {currentSlideIdx + 1} / {items.length} · Auto-Advancing
+              Session {currentSlideIdx + 1} / {slideshowSessions.length} · Auto-Advancing
             </div>
           </div>
         </div>
@@ -358,7 +498,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           </Link>
 
           <div className="flex items-center gap-2 shrink-0">
-            {items.length > 0 && (
+            {sessions.length > 0 && (
               <>
                 <Button
                   size="sm"
@@ -430,13 +570,24 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           </div>
         </div>
 
-        {/* Gallery Grid */}
+        {/* Sessions Summary Bar */}
+        {sessions.length > 0 && (
+          <div className="flex items-center justify-between px-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 font-medium">
+              <Layers className="w-4 h-4 text-primary" />
+              <span>{sessions.length} Photobooth {sessions.length === 1 ? 'Session' : 'Sessions'}</span>
+            </div>
+            <span>Click any session to view all photos & clips</span>
+          </div>
+        )}
+
+        {/* Gallery Grid of Collapsed Sessions */}
         {loadingItems ? (
           <div className="py-20 text-center space-y-3">
             <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="text-sm text-muted-foreground">Loading event captures...</p>
           </div>
-        ) : items.length === 0 ? (
+        ) : sessions.length === 0 ? (
           <div className="text-center py-20 px-4 border border-dashed border-border rounded-3xl bg-[var(--surface-1)] space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto text-2xl">
               📸
@@ -456,57 +607,78 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
             </Link>
           </div>
         ) : (
-          <div className="columns-2 sm:columns-3 lg:columns-4 gap-4 space-y-4">
-            {items.map((item, idx) => {
-              const isStrip = item.key.includes('strip.png');
-              const isGif = item.key.endsWith('.gif');
-              const filename = item.key.split('/').pop() || 'photo.png';
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {sessions.map((session, idx) => {
+              const formattedDate = session.createdAt instanceof Date
+                ? session.createdAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '';
 
               return (
                 <div
-                  key={item.key}
-                  className="group relative bg-muted rounded-2xl overflow-hidden break-inside-avoid border border-border hover:border-primary/50 transition-all hover:shadow-lg"
+                  key={session.sessionId || idx}
+                  onClick={() => {
+                    setSelectedSession(session);
+                    setActiveMediaTab(session.stripUrl ? 'strip' : 'gif');
+                  }}
+                  className="group relative bg-[var(--surface-2)] rounded-3xl border border-border overflow-hidden hover:border-primary/50 transition-all hover:shadow-xl cursor-pointer flex flex-col"
                 >
-                  <img
-                    src={item.url}
-                    alt={filename}
-                    className="w-full h-auto block transition-transform group-hover:scale-105"
-                    crossOrigin="anonymous"
-                    loading="lazy"
-                  />
+                  {/* Card Cover Preview */}
+                  <div className="relative aspect-[3/4] w-full bg-black/5 dark:bg-black/40 flex items-center justify-center p-3 overflow-hidden">
+                    {session.coverUrl ? (
+                      <img
+                        src={session.coverUrl}
+                        alt={`Session ${idx + 1}`}
+                        className="max-h-full w-auto object-contain rounded-xl shadow-md transition-transform duration-300 group-hover:scale-105"
+                        crossOrigin="anonymous"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="text-muted-foreground flex flex-col items-center gap-2">
+                        <ImageIcon className="w-8 h-8 opacity-40" />
+                        <span className="text-xs">No preview</span>
+                      </div>
+                    )}
 
-                  {/* Badges */}
-                  <div className="absolute top-2 right-2 flex items-center gap-1">
-                    {isGif && (
-                      <span className="px-2 py-0.5 bg-black/70 backdrop-blur-md rounded-md text-[10px] font-bold text-white uppercase">
-                        GIF
+                    {/* Top Badges */}
+                    <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none">
+                      <span className="px-2.5 py-1 bg-black/60 backdrop-blur-md rounded-full text-[11px] font-medium text-white flex items-center gap-1 shadow-sm">
+                        <Sparkles className="w-3 h-3 text-amber-300" />
+                        {session.itemCount} {session.itemCount === 1 ? 'item' : 'items'}
                       </span>
-                    )}
-                    {isStrip && (
-                      <span className="px-2 py-0.5 bg-primary/90 backdrop-blur-md rounded-md text-[10px] font-bold text-white uppercase">
-                        Strip
+
+                      {session.gifUrl && (
+                        <span className="px-2 py-0.5 bg-black/75 backdrop-blur-md rounded-md text-[10px] font-bold text-white uppercase shadow-sm">
+                          GIF
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Hover Overlay Hint */}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center p-4">
+                      <span className="px-4 py-2 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-md text-foreground rounded-full text-xs font-semibold shadow-lg transform translate-y-2 group-hover:translate-y-0 transition-transform flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-primary" />
+                        View Session
                       </span>
-                    )}
+                    </div>
                   </div>
 
-                  {/* Hover Actions */}
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-3">
-                    <button
-                      onClick={() => downloadSingleFile(item.url, filename)}
-                      className="p-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
-                      title="Download Photo"
-                    >
-                      <Download className="w-4 h-4" />
-                    </button>
-                    <a
-                      href={item.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
-                      title="View Full Size"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
+                  {/* Card Footer */}
+                  <div className="p-3.5 border-t border-border bg-[var(--surface-1)] flex items-center justify-between text-xs">
+                    <div className="space-y-0.5 truncate">
+                      <span className="font-semibold block truncate">
+                        Session #{sessions.length - idx}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground block truncate">
+                        {session.photos.length > 0 ? `${session.photos.length} photos` : 'Photo Strip'}
+                        {session.liveClips.length > 0 ? ` · ${session.liveClips.length} clips` : ''}
+                      </span>
+                    </div>
+
+                    {formattedDate && (
+                      <span className="text-[10px] font-mono text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full shrink-0">
+                        {formattedDate}
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -514,6 +686,249 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           </div>
         )}
       </div>
+
+      {/* ── Collapsed Session Viewer Modal ───────────────────────────────── */}
+      {selectedSession && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-fadeIn"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedSession(null);
+          }}
+        >
+          <div className="bg-[var(--surface-1)] border border-border text-foreground rounded-3xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleUp">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between gap-4 bg-[var(--surface-2)]">
+              <div className="space-y-1 truncate">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-base sm:text-lg truncate">Photobooth Session</h3>
+                  <span className="px-2 py-0.5 bg-primary/10 text-primary text-[11px] font-mono rounded-md font-semibold shrink-0">
+                    {selectedSession.itemCount} items
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  Session ID: <span className="font-mono text-foreground">{selectedSession.sessionId}</span>
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleCopyShareLink(selectedSession.sessionId)}
+                  className="gap-1.5 rounded-full text-xs h-8"
+                  title="Copy direct share link"
+                >
+                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{copiedLink ? 'Copied Link!' : 'Share'}</span>
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="default"
+                  onClick={() => handleDownloadSessionZip(selectedSession)}
+                  disabled={downloadingSessionZip}
+                  className="gap-1.5 rounded-full text-xs h-8 shadow-sm"
+                >
+                  {downloadingSessionZip ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  <span className="hidden sm:inline">{downloadingSessionZip ? 'Zipping...' : 'Download Session'}</span>
+                </Button>
+
+                <button
+                  onClick={() => setSelectedSession(null)}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Close modal (Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-8">
+              {/* Top Hero Section: The Final Strip & Animated GIF */}
+              {(selectedSession.stripUrl || selectedSession.gifUrl) && (
+                <div className="bg-[var(--surface-2)] p-4 sm:p-6 rounded-2xl border border-border flex flex-col items-center gap-4">
+                  {/* Tab Selector if both Strip PNG and Strip GIF are available */}
+                  {selectedSession.stripUrl && selectedSession.gifUrl && (
+                    <div className="flex items-center p-1 bg-muted rounded-full text-xs font-semibold">
+                      <button
+                        onClick={() => setActiveMediaTab('strip')}
+                        className={`px-4 py-1.5 rounded-full transition-all flex items-center gap-1.5 ${
+                          activeMediaTab === 'strip'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <ImageIcon className="w-3.5 h-3.5" />
+                        Final Strip (PNG)
+                      </button>
+                      <button
+                        onClick={() => setActiveMediaTab('gif')}
+                        className={`px-4 py-1.5 rounded-full transition-all flex items-center gap-1.5 ${
+                          activeMediaTab === 'gif'
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        <Film className="w-3.5 h-3.5" />
+                        Animated Strip (GIF)
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Media Display */}
+                  <div className="relative max-w-xs sm:max-w-sm w-full mx-auto shadow-xl rounded-xl overflow-hidden bg-black/5 dark:bg-black/30">
+                    <img
+                      src={
+                        activeMediaTab === 'gif' && selectedSession.gifUrl
+                          ? selectedSession.gifUrl
+                          : selectedSession.stripUrl || selectedSession.coverUrl
+                      }
+                      alt="Photobooth Strip"
+                      className="w-full h-auto object-contain block"
+                      crossOrigin="anonymous"
+                    />
+                  </div>
+
+                  {/* Quick Download Strip Button */}
+                  <div className="flex items-center gap-2 pt-2">
+                    {selectedSession.stripUrl && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadSingleFile(selectedSession.stripUrl!, 'strip.png')}
+                        className="gap-1.5 rounded-full text-xs"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download Strip PNG
+                      </Button>
+                    )}
+
+                    {selectedSession.gifUrl && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => downloadSingleFile(selectedSession.gifUrl!, 'strip.gif')}
+                        className="gap-1.5 rounded-full text-xs"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Download Animated GIF
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Individual Photos Grid */}
+              {selectedSession.photos.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-sm sm:text-base flex items-center gap-2">
+                      <ImageIcon className="w-4 h-4 text-primary" />
+                      Individual Photos ({selectedSession.photos.length})
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {selectedSession.photos.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative aspect-[3/4] bg-muted rounded-2xl overflow-hidden border border-border"
+                      >
+                        <img
+                          src={url}
+                          alt={`Photo ${idx + 1}`}
+                          className="w-full h-full object-cover block transition-transform group-hover:scale-105"
+                          crossOrigin="anonymous"
+                          loading="lazy"
+                        />
+
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
+                          <button
+                            onClick={() => downloadSingleFile(url, `photo_${idx + 1}.png`)}
+                            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
+                            title="Download Photo"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
+                            title="View Full Size"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Live Motion Clips Grid */}
+              {selectedSession.liveClips.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-sm sm:text-base flex items-center gap-2">
+                      <Film className="w-4 h-4 text-primary" />
+                      Live Motion Clips ({selectedSession.liveClips.length})
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                    {selectedSession.liveClips.map((url, idx) => (
+                      <div
+                        key={idx}
+                        className="group relative aspect-[3/4] bg-muted rounded-2xl overflow-hidden border border-border"
+                      >
+                        <img
+                          src={url}
+                          alt={`Live Clip ${idx + 1}`}
+                          className="w-full h-full object-cover block transition-transform group-hover:scale-105"
+                          crossOrigin="anonymous"
+                          loading="lazy"
+                        />
+
+                        <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-black/70 backdrop-blur-md rounded text-[9px] font-bold text-white uppercase">
+                          GIF
+                        </div>
+
+                        {/* Hover Overlay */}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
+                          <button
+                            onClick={() => downloadSingleFile(url, `live_${idx + 1}.gif`)}
+                            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
+                            title="Download Live Clip"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-2 bg-white/20 hover:bg-white/30 backdrop-blur-md text-white rounded-full transition-transform active:scale-95"
+                            title="View Full Size"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
+
