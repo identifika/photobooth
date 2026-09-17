@@ -1,6 +1,6 @@
 {
   "name": "photobooth",
-  "version": "1.1.1",
+  "version": "1.1.4",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -12,7 +12,8 @@
     "cap": "cap",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "version:sync": "node scripts/sync-version.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1076.0",
