@@ -19,13 +19,36 @@ const s3 = new S3Client({
   },
 });
 
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  const origin = request.headers.get('origin');
+  return new NextResponse(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
 export async function POST(request: Request) {
+  const origin = request.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   try {
     const json = await request.json();
     const result = ShareRequestSchema.safeParse(json);
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
+      return NextResponse.json(
+        { error: result.error.issues?.[0]?.message || 'Validation failed' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     // Share page is public — the unguessable sessionId acts as the access token.
@@ -49,7 +72,7 @@ export async function POST(request: Request) {
     
     // Return empty list instead of 404 if no photos yet (prevents red console errors in gallery)
     if (!response.Contents || response.Contents.length === 0) {
-      return NextResponse.json({ items: [] });
+      return NextResponse.json({ items: [] }, { headers: corsHeaders });
     }
 
     const rawBaseUrl = process.env.NEXT_PUBLIC_CDN_URL || process.env.NEXT_PUBLIC_S3_ENDPOINT || process.env.S3_ENDPOINT || '';
@@ -79,9 +102,9 @@ export async function POST(request: Request) {
       return a.key.localeCompare(b.key);
     });
 
-    return NextResponse.json({ items });
+    return NextResponse.json({ items }, { headers: corsHeaders });
   } catch (error) {
     console.error('Failed to list session:', error);
-    return NextResponse.json({ error: 'Failed to retrieve session contents' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to retrieve session contents' }, { status: 500, headers: corsHeaders });
   }
 }

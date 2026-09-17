@@ -75,7 +75,7 @@ export default function PhotoStrip({
                 top: 0,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                width: 'calc(100% + 20px)',
+                width: '100%',
                 maxWidth: 420,
                 height: 10,
                 background: '#1a1a18',

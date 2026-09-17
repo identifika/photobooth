@@ -2,6 +2,7 @@ import { Frame } from './frames';
 import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from './frame-types';
 import { drawQrOnCanvas } from './qr-helper';
 import { resolveDynamicTitle, resolveDynamicDate, formatDate } from './frame-types';
+import { getPublicAppUrl } from './api-config';
 
 export interface DrawFrameContext extends DynamicFrameContext {
   mirrorVideo?: boolean;
@@ -319,7 +320,7 @@ export async function drawFrameElements(
 
     if (el.type === 'qr') {
       const qrEl = el as FrameQrElement;
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || 'https://app.pikabooth.web.id');
+      const baseUrl = getPublicAppUrl();
       let qrText = baseUrl;
       if (qrEl.qrType === 'dynamic_session_share') {
         qrText = context.shareUrl || (context.sessionId ? `${baseUrl}/share?s=${context.sessionId}` : `${baseUrl}/share?s=demo`);

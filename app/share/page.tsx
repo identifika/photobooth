@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getClientAuthToken } from '@/lib/auth-client';
+import { getApiUrl } from '@/lib/api-config';
 import Image from 'next/image';
 import { Download, Loader2, Image as ImageIcon, Video, Home } from 'lucide-react';
 import Link from 'next/link';
@@ -32,7 +33,7 @@ function SharePageContent() {
     }
 
     getClientAuthToken().then(token => {
-      fetch('/api/share', {
+      fetch(getApiUrl('/api/share'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',

@@ -1,4 +1,5 @@
 import { getClientAuthToken } from './auth-client';
+import { getApiUrl } from './api-config';
 
 const BUCKET_NAME = 'photobooth';
 
@@ -23,7 +24,7 @@ export async function uploadFrameImage(
 
   // Fetch the presigned URL from our API route instead of building it client-side
   const token = await getClientAuthToken();
-  const presignRes = await fetch('/api/presign', {
+  const presignRes = await fetch(getApiUrl('/api/presign'), {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',

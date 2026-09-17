@@ -13,6 +13,7 @@ import ShareSection from './ShareSection';
 import { useBulkUpload } from '@/hooks/useBulkUpload';
 import { DEFAULT_EDIT_CONFIG } from '@/lib/edit-types';
 import { downloadFile } from '@/lib/download';
+import { getApiUrl, getPublicAppUrl, getSessionShareUrl } from '@/lib/api-config';
 
 interface Props {
   photos: string[];
@@ -127,7 +128,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
     // Proxy external URLs through our server to avoid canvas CORS taint
     if (src && !src.startsWith('data:') && !src.startsWith('blob:') && src.startsWith('http')) {
       try {
-        const res = await fetch('/api/proxy-image', {
+        const res = await fetch(getApiUrl('/api/proxy-image'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url: src })
@@ -392,9 +393,9 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
 
         if (el.type === 'qr') {
           const qrEl = el as FrameQrElement;
-          const baseUrl = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || 'https://app.pikabooth.web.id');
+          const baseUrl = getPublicAppUrl();
           const qrText = qrEl.qrType === 'dynamic_session_share'
-            ? (displayUploadedUrl || (sessionId ? `${baseUrl}/share?s=${sessionId}` : `${baseUrl}/share?s=demo`))
+            ? (displayUploadedUrl || (sessionId ? getSessionShareUrl(sessionId) : `${baseUrl}/share?s=demo`))
             : qrEl.qrType === 'event_gallery'
             ? (eventSlug ? `${baseUrl}/e/${eventSlug}/gallery` : `${baseUrl}/gallery`)
             : qrEl.qrType === 'wifi'
@@ -691,25 +692,44 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         <p className="mt-2 opacity-60 text-sm">{frame.emoji} {frame.name} · {photos.length} photos</p>
       </div>
 
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto px-4">
         {/* Main strip preview */}
         {stripDataUrl ? (
           <div className="flex flex-col items-center justify-center mb-8 gap-4 w-full">
             {!showStrip ? (
-              <div className="h-[520px] flex items-center justify-center">
+              <div className="min-h-[360px] sm:min-h-[480px] flex flex-col items-center justify-center gap-3 text-center px-4">
                 <button
                   onClick={() => setShowStrip(true)}
-                  className="py-4 px-8 rounded-full font-bold tracking-widest text-lg transition-all hover:scale-105 bg-primary text-primary-foreground shadow-2xl animate-pulse"
+                  className="py-4 px-8 rounded-full font-bold tracking-widest text-lg transition-all hover:scale-105 bg-primary text-primary-foreground shadow-2xl animate-pulse min-h-[52px] cursor-pointer"
                 >
                   🖨️ PRINT STRIP
                 </button>
+                <button
+                  onClick={() => {
+                    setShowStrip(true);
+                    setPrintComplete(true);
+                  }}
+                  className="text-xs text-muted-foreground hover:text-foreground underline transition-colors pt-2 cursor-pointer"
+                >
+                  ⚡ Skip animation & view strip immediately
+                </button>
               </div>
             ) : (
-              <PhotoStrip
-                stripDataUrl={stripDataUrl}
-                trigger={showStrip}
-                onComplete={() => setPrintComplete(true)}
-              />
+              <div className="w-full flex flex-col items-center">
+                <PhotoStrip
+                  stripDataUrl={stripDataUrl}
+                  trigger={showStrip}
+                  onComplete={() => setPrintComplete(true)}
+                />
+                {!printComplete && (
+                  <button
+                    onClick={() => setPrintComplete(true)}
+                    className="mt-3 text-xs text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
+                  >
+                    Skip animation →
+                  </button>
+                )}
+              </div>
             )}
           </div>
         ) : (
@@ -767,25 +787,36 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
               <button
                 onClick={handleUpload}
                 disabled={uploading}
-                className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background"
+                className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background flex items-center justify-center cursor-pointer"
                 style={{ opacity: uploading ? 0.7 : 1 }}
               >
                 {uploading ? '⏳ Uploading...' : '☁️ Upload & Share'}
               </button>
             )}
-            <button onClick={handleDownload} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloading ? 0.7 : 1 }}>
+            <button
+              onClick={handleDownload}
+              className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
+              style={{ opacity: downloading ? 0.7 : 1 }}
+            >
               {downloading ? '✓ Saved!' : '↓ Download Strip'}
             </button>
             {generatingGif ? (
-              <button disabled className="flex-1 py-3 rounded-sm font-medium tracking-wide text-sm cursor-not-allowed border-2 border-input text-muted-foreground bg-transparent" style={{ opacity: 0.5 }}>
+              <button disabled className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide text-sm cursor-not-allowed border-2 border-input text-muted-foreground bg-transparent flex items-center justify-center" style={{ opacity: 0.5 }}>
                 ⏳ GIF...
               </button>
             ) : gifDataUrl ? (
-              <button onClick={handleDownloadGif} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground" style={{ opacity: downloadingGif ? 0.7 : 1 }}>
+              <button
+                onClick={handleDownloadGif}
+                className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
+                style={{ opacity: downloadingGif ? 0.7 : 1 }}
+              >
                 {downloadingGif ? '✓ Saved!' : '↓ Download GIF'}
               </button>
             ) : null}
-            <button onClick={onRestart} className="flex-1 py-3 rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-75 border-2 border-input text-foreground bg-transparent hover:bg-surface-0">
+            <button
+              onClick={onRestart}
+              className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-75 border-2 border-input text-foreground bg-transparent hover:bg-surface-0 flex items-center justify-center cursor-pointer"
+            >
               ↺ New
             </button>
           </div>

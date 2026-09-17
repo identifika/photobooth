@@ -21,26 +21,62 @@ const s3 = new S3Client({
   },
 });
 
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin || '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  const origin = request.headers.get('origin');
+  return new NextResponse(null, {
+    status: 204,
+    headers: getCorsHeaders(origin),
+  });
+}
+
 export async function POST(request: Request) {
+  const origin = request.headers.get('origin');
+  const corsHeaders = getCorsHeaders(origin);
+
   try {
     const json = await request.json();
     const result = UploadRequestSchema.safeParse(json);
 
     if (!result.success) {
-      return NextResponse.json({ error: result.error.issues?.[0]?.message || 'Validation failed' }, { status: 400 });
-    }
-
-    const authContext = await verifyAuthOrApiKey(request);
-    if (!authContext) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: result.error.issues?.[0]?.message || 'Validation failed' },
+        { status: 400, headers: corsHeaders }
+      );
     }
 
     const { image, sessionId, filename: customFilename, prefix } = result.data;
 
+    // Check auth: authenticated users / API keys can upload anything.
+    // Unauthenticated guest users are allowed ONLY if uploading valid photobooth session files:
+    // - sessionId is present (alphanumeric/dashes)
+    // - filename matches standard captures (strip.png, strip.gif, photo_*.png/jpg, live_*.gif)
+    const isSessionUpload = Boolean(
+      sessionId &&
+      /^[a-zA-Z0-9_\-]+$/.test(sessionId) &&
+      customFilename &&
+      /^(strip\.(png|gif|jpe?g|webp)|photo_\d+\.(png|jpe?g|webp)|live_\d+\.gif)$/i.test(customFilename)
+    );
+
+    if (!isSessionUpload) {
+      const authContext = await verifyAuthOrApiKey(request);
+      if (!authContext) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+      }
+    }
+
     // Parse base64
     const matches = image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
-      return NextResponse.json({ error: 'Invalid base64 string' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid base64 string' }, { status: 400, headers: corsHeaders });
     }
 
     const contentType = matches[1];
@@ -48,7 +84,7 @@ export async function POST(request: Request) {
     
     // Only allow PNG, JPEG, GIF, and WEBP to prevent weird uploads
     if (!['image/png', 'image/gif', 'image/jpeg', 'image/webp'].includes(contentType)) {
-      return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
+      return NextResponse.json({ error: 'Unsupported content type' }, { status: 400, headers: corsHeaders });
     }
 
     const buffer = Buffer.from(base64Data, 'base64');
@@ -90,10 +126,10 @@ export async function POST(request: Request) {
     const baseUrl = rawBaseUrl.replace(/\/$/, '');
     const cdnUrl = bucket ? `${baseUrl}/${bucket}/${key}` : `${baseUrl}/${key}`;
 
-    return NextResponse.json({ url: cdnUrl });
+    return NextResponse.json({ url: cdnUrl }, { headers: corsHeaders });
   } catch (error: any) {
     const code = error?.code ?? error?.name ?? 'unknown';
     console.error(`Upload failed [${code}]:`, error);
-    return NextResponse.json({ error: 'Upload failed', code }, { status: 500 });
+    return NextResponse.json({ error: 'Upload failed', code }, { status: 500, headers: corsHeaders });
   }
 }
