@@ -35,12 +35,12 @@ Files: `signal-relay/` (Cargo.toml, src/main.rs, Dockerfile)
       Coolify's build context at that subfolder).
 - [ ] Create new Coolify resource → Dockerfile-based build → point at
       `signal-relay/Dockerfile`.
-- [ ] Assign a domain, e.g. `relay.yourdomain.com`. Let Coolify/Traefik
+- [ ] Assign a domain, e.g. `wss.identifika.my.id`. Let Coolify/Traefik
       issue the TLS cert — **this must be `wss://`, not `ws://`**, or
       Vercel's `https://` pages will block it as mixed content.
 - [ ] Confirm port `8787` is routed through that domain (Coolify handles
       this once the domain is attached to the service).
-- [ ] Smoke test: `wscat -c wss://relay.yourdomain.com/ws/test-room/test-peer`
+- [ ] Smoke test: `wscat -c wss://wss.identifika.my.id/ws/test-room/test-peer`
       should connect without erroring.
 
 ---
@@ -49,7 +49,7 @@ Files: `signal-relay/` (Cargo.toml, src/main.rs, Dockerfile)
 
 - [ ] In the Next.js project's Vercel settings, add:
       ```
-      NEXT_PUBLIC_SIGNAL_URL=wss://relay.yourdomain.com
+      NEXT_PUBLIC_SIGNAL_URL=wss://wss.identifika.my.id
       ```
 - [ ] Add the same to local `.env.local` pointing at `ws://localhost:8787`
       for dev (run the relay locally with `cargo run` while developing).
