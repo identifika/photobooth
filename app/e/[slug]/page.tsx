@@ -161,9 +161,9 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
     return () => { active = false; };
   }, [slug]);
 
-  // Generate unique session ID on mount
+  // Generate unique clean session ID on mount
   useEffect(() => {
-    setSessionId(`evt-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`);
+    setSessionId(Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 7));
   }, [slug]);
 
   // Handle Passcode Unlock
@@ -243,7 +243,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
   };
 
   const handleRestart = () => {
-    setSessionId(`evt-${slug}-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 7)}`);
+    setSessionId(Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 7));
     if (event?.allowFrameSelection) {
       setStep('select');
     } else {

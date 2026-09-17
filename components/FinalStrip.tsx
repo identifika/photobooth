@@ -394,8 +394,9 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         if (el.type === 'qr') {
           const qrEl = el as FrameQrElement;
           const baseUrl = getPublicAppUrl();
+          const shareSessionKey = eventSlug && sessionId ? `${eventSlug}/${sessionId}` : sessionId;
           const qrText = qrEl.qrType === 'dynamic_session_share'
-            ? (displayUploadedUrl || (sessionId ? getSessionShareUrl(sessionId) : `${baseUrl}/share?s=demo`))
+            ? (displayUploadedUrl || (shareSessionKey ? getSessionShareUrl(shareSessionKey) : `${baseUrl}/share?s=demo`))
             : qrEl.qrType === 'event_gallery'
             ? (eventSlug ? `${baseUrl}/e/${eventSlug}/gallery` : `${baseUrl}/gallery`)
             : qrEl.qrType === 'wifi'

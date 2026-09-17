@@ -4,7 +4,10 @@ import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { z } from 'zod';
 
 const ShareRequestSchema = z.object({
-  sessionId: z.string().min(1).refine(val => !val.includes('/') && !val.includes('..'), {
+  sessionId: z.string().min(1).refine(val => {
+    if (val.includes('..') || val.startsWith('/') || val.endsWith('/')) return false;
+    return /^[a-zA-Z0-9_\-]+(\/[a-zA-Z0-9_\-]+)*$/.test(val);
+  }, {
     message: "Invalid session ID format",
   }),
 });
@@ -68,7 +71,19 @@ export async function POST(request: Request) {
       Prefix: prefix,
     });
 
-    const response = await s3.send(command);
+    let response = await s3.send(command);
+    
+    // Fallback: If no items found for slug folder, check if older captures used evt-<slug>
+    if ((!response.Contents || response.Contents.length === 0) && !sessionId.includes('/') && !sessionId.startsWith('evt-')) {
+      const fallbackCommand = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: `evt-${sessionId}`,
+      });
+      const fallbackResponse = await s3.send(fallbackCommand);
+      if (fallbackResponse.Contents && fallbackResponse.Contents.length > 0) {
+        response = fallbackResponse;
+      }
+    }
     
     // Return empty list instead of 404 if no photos yet (prevents red console errors in gallery)
     if (!response.Contents || response.Contents.length === 0) {
@@ -88,9 +103,10 @@ export async function POST(request: Request) {
         lastModified: item.LastModified,
       }));
 
-    // Sort: for events, show newest captures first; for single session, strip first
+    // Sort: for event gallery queries (no slash in sessionId or starts with evt-), show newest captures first; for single session, strip first
+    const isEventGalleryQuery = sessionId.startsWith('evt-') || !sessionId.includes('/');
     items.sort((a, b) => {
-      if (sessionId.startsWith('evt-')) {
+      if (isEventGalleryQuery) {
         const timeA = a.lastModified ? new Date(a.lastModified).getTime() : 0;
         const timeB = b.lastModified ? new Date(b.lastModified).getTime() : 0;
         return timeB - timeA;

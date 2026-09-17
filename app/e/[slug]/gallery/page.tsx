@@ -28,6 +28,7 @@ import {
   Film,
 } from 'lucide-react';
 import Link from 'next/link';
+import { getApiUrl, getPublicAppUrl } from '@/lib/api-config';
 
 interface MediaItem {
   key: string;
@@ -137,7 +138,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
 
     for (const item of items) {
       const parts = item.key.split('/');
-      const sessionId = parts.length > 1 ? parts[0] : 'session';
+      const sessionId = parts.length >= 3 ? `${parts[0]}/${parts[1]}` : (parts.length > 1 ? parts[0] : 'session');
       const filename = parts[parts.length - 1];
 
       if (!sessionMap.has(sessionId)) {
@@ -198,13 +199,13 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
 
       // 2. Fallback to S3
       const token = await getClientAuthToken();
-      const res = await fetch('/api/share', {
+      const res = await fetch(getApiUrl('/api/share'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ sessionId: `evt-${slug}` }),
+        body: JSON.stringify({ sessionId: slug }),
       });
 
       if (res.ok) {
@@ -240,13 +241,13 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
           // If Firestore has no items yet, check S3 fallback
           try {
             const token = await getClientAuthToken();
-            const res = await fetch('/api/share', {
+            const res = await fetch(getApiUrl('/api/share'), {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
               },
-              body: JSON.stringify({ sessionId: `evt-${slug}` }),
+              body: JSON.stringify({ sessionId: slug }),
             });
             if (res.ok) {
               const data = await res.json();
@@ -367,7 +368,8 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
       const content = await zip.generateAsync({ type: 'blob' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(content);
-      link.download = `photobooth-${session.sessionId}.zip`;
+      const safeSessionId = session.sessionId.replace(/[\/\\]/g, '-');
+      link.download = `photobooth-${safeSessionId}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -394,7 +396,7 @@ export default function EventLiveGalleryPage({ params }: { params: Promise<{ slu
   };
 
   const handleCopyShareLink = (sessionId: string) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://app.pikabooth.web.id';
+    const origin = getPublicAppUrl();
     const url = `${origin}/share?s=${sessionId}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopiedLink(true);

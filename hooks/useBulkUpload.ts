@@ -83,6 +83,7 @@ export function useBulkUpload({
         image: stripDataUrl,
         sessionId,
         filename: 'strip.png',
+        ...(eventSlug ? { prefix: eventSlug } : {}),
       });
 
       if (!stripResult || stripResult.error) {
@@ -95,7 +96,12 @@ export function useBulkUpload({
       // Upload GIF
       if (gifDataUrl) {
         secondaryUploadTasks.push(() =>
-          uploadWithRetry({ image: gifDataUrl, sessionId, filename: 'strip.gif' })
+          uploadWithRetry({
+            image: gifDataUrl,
+            sessionId,
+            filename: 'strip.gif',
+            ...(eventSlug ? { prefix: eventSlug } : {}),
+          })
         );
       }
 
@@ -103,7 +109,12 @@ export function useBulkUpload({
       if (polaroidDataUrls && polaroidDataUrls.length > 0) {
         polaroidDataUrls.forEach((pUrl, i) => {
           secondaryUploadTasks.push(() =>
-            uploadWithRetry({ image: pUrl, sessionId, filename: `photo_${i + 1}.png` })
+            uploadWithRetry({
+              image: pUrl,
+              sessionId,
+              filename: `photo_${i + 1}.png`,
+              ...(eventSlug ? { prefix: eventSlug } : {}),
+            })
           );
         });
       }
@@ -113,7 +124,12 @@ export function useBulkUpload({
         liveClipGifs.forEach((gUrl, i) => {
           if (gUrl && gUrl !== 'pending' && gUrl !== 'error') {
             secondaryUploadTasks.push(() =>
-              uploadWithRetry({ image: gUrl, sessionId, filename: `live_${i + 1}.gif` })
+              uploadWithRetry({
+                image: gUrl,
+                sessionId,
+                filename: `live_${i + 1}.gif`,
+                ...(eventSlug ? { prefix: eventSlug } : {}),
+              })
             );
           }
         });
@@ -132,7 +148,8 @@ export function useBulkUpload({
       }
 
       const allResults = [stripResult, ...secondaryResults];
-      const shareUrl = getSessionShareUrl(sessionId);
+      const shareSessionKey = eventSlug ? `${eventSlug}/${sessionId}` : sessionId;
+      const shareUrl = getSessionShareUrl(shareSessionKey);
 
       // If this upload is for an event, record to the event's captures subcollection
       if (eventId) {
@@ -149,7 +166,7 @@ export function useBulkUpload({
           await createEventCapture(eventId, {
             eventId,
             eventSlug: eventSlug || '',
-            sessionId,
+            sessionId: shareSessionKey,
             stripUrl: stripResult.url,
             gifUrl: gifResult?.url,
             photoUrls,

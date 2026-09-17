@@ -93,7 +93,8 @@ function SharePageContent() {
       const content = await zip.generateAsync({ type: 'blob' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(content);
-      link.download = `photobooth-${sessionId}.zip`;
+      const safeSessionName = (sessionId || 'session').replace(/[\/\\]/g, '-');
+      link.download = `photobooth-${safeSessionName}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

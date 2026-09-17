@@ -2,7 +2,7 @@ import { Frame } from './frames';
 import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from './frame-types';
 import { drawQrOnCanvas } from './qr-helper';
 import { resolveDynamicTitle, resolveDynamicDate, formatDate } from './frame-types';
-import { getPublicAppUrl } from './api-config';
+import { getPublicAppUrl, getSessionShareUrl } from './api-config';
 
 export interface DrawFrameContext extends DynamicFrameContext {
   mirrorVideo?: boolean;
@@ -323,7 +323,8 @@ export async function drawFrameElements(
       const baseUrl = getPublicAppUrl();
       let qrText = baseUrl;
       if (qrEl.qrType === 'dynamic_session_share') {
-        qrText = context.shareUrl || (context.sessionId ? `${baseUrl}/share?s=${context.sessionId}` : `${baseUrl}/share?s=demo`);
+        const sessionKey = context.eventSlug && context.sessionId ? `${context.eventSlug}/${context.sessionId}` : context.sessionId;
+        qrText = context.shareUrl || (sessionKey ? getSessionShareUrl(sessionKey) : `${baseUrl}/share?s=demo`);
       } else if (qrEl.qrType === 'event_gallery') {
         qrText = context.eventSlug ? `${baseUrl}/e/${context.eventSlug}/gallery` : `${baseUrl}/gallery`;
       } else if (qrEl.qrType === 'wifi') {

@@ -58,10 +58,13 @@ export async function POST(request: Request) {
     // Check auth: authenticated users / API keys can upload anything.
     // Unauthenticated guest users are allowed ONLY if uploading valid photobooth session files:
     // - sessionId is present (alphanumeric/dashes)
+    // - prefix is optional (alphanumeric/dashes, e.g. event slug)
     // - filename matches standard captures (strip.png, strip.gif, photo_*.png/jpg, live_*.gif)
+    const isPrefixValid = !prefix || /^[a-zA-Z0-9_\-]+$/.test(prefix);
     const isSessionUpload = Boolean(
       sessionId &&
       /^[a-zA-Z0-9_\-]+$/.test(sessionId) &&
+      isPrefixValid &&
       customFilename &&
       /^(strip\.(png|gif|jpe?g|webp)|photo_\d+\.(png|jpe?g|webp)|live_\d+\.gif)$/i.test(customFilename)
     );
