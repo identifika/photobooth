@@ -11,6 +11,7 @@ export function isNativePlatform(): boolean {
     '__TAURI_INTERNALS__' in window ||
     window.location.protocol === 'capacitor:' ||
     window.location.protocol === 'tauri:' ||
+    window.location.hostname.endsWith('.localhost') ||
     (window.location.hostname === 'localhost' && window.location.port === '')
   );
 }

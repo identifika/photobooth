@@ -9,6 +9,7 @@
     "beforeBuildCommand": "pnpm run build:tauri"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Pika",

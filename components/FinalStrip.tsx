@@ -69,6 +69,15 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
   
   const displayUploadedUrl = uploadedUrl || internalUploadedUrl;
 
+  // Auto-upload when strip is ready for events (so guest QR codes and live gallery are instantly live)
+  const autoUploadTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (stripDataUrl && (eventId || eventSlug) && !autoUploadTriggeredRef.current && !displayUploadedUrl && !uploading) {
+      autoUploadTriggeredRef.current = true;
+      handleUpload();
+    }
+  }, [stripDataUrl, eventId, eventSlug, displayUploadedUrl, uploading, handleUpload]);
+
   const roundRect = useCallback((
     ctx: CanvasRenderingContext2D,
     x: number, y: number, w: number, h: number, r: number

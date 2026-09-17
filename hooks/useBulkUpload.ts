@@ -34,33 +34,53 @@ export function useBulkUpload({
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
         const token = await getClientAuthToken();
-        const res = await fetch(uploadUrl, {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify(body),
-        });
+        let resData: any;
+        let resStatus: number;
+
+        // In native Capacitor (Android/iOS), use CapacitorHttp to bypass WebView CORS entirely
+        const isCapacitorNative = typeof window !== 'undefined' && Boolean((window as any)?.Capacitor?.isNativePlatform?.());
+
+        if (isCapacitorNative) {
+          const { CapacitorHttp } = await import('@capacitor/core');
+          const response = await CapacitorHttp.post({
+            url: uploadUrl,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            data: body,
+          });
+          resStatus = response.status;
+          resData = response.data;
+        } else {
+          const res = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(body),
+          });
+          resStatus = res.status;
+          resData = await res.json().catch(() => ({}));
+        }
 
         // Retry on server errors (502/503/504/500 with ECONNRESET code)
-        if (res.status >= 500) {
-          const data = await res.json().catch(() => ({}));
-          lastErr = new Error(data.error ?? `HTTP ${res.status}`);
+        if (resStatus >= 500) {
+          lastErr = new Error(resData?.error ?? `HTTP ${resStatus}`);
           if (attempt < retries - 1) {
             await new Promise(r => setTimeout(r, 600 * Math.pow(2, attempt)));
-            console.warn(`Upload attempt ${attempt + 1} got ${res.status}, retrying...`);
+            console.warn(`Upload attempt ${attempt + 1} got ${resStatus}, retrying...`);
             continue;
           }
           throw lastErr;
         }
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Upload failed with status ${res.status}`);
+        if (resStatus < 200 || resStatus >= 300) {
+          throw new Error(resData?.error || `Upload failed with status ${resStatus}`);
         }
 
-        return res.json();
+        return resData;
       } catch (err: any) {
         lastErr = err;
         if (attempt < retries - 1) {
