@@ -27,15 +27,11 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
   const isMobile = useIsMobile();
   const { settings, isLoaded } = useStudioSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [isGuest, setIsGuest] = useState<boolean | null>(null);
+  const isGuest = !user;
 
   const isAuthorized = user && isAdmin(user?.email);
   const { data: pendingAdminRequests = [] } = usePendingPublishRequests(!!isAuthorized);
   const pendingAdminRequestsCount = pendingAdminRequests.length;
-
-  useEffect(() => {
-    setIsGuest(sessionStorage.getItem('guest') === 'true');
-  }, []);
 
   // Close user menu on outside click
   useEffect(() => {
@@ -183,8 +179,6 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
                       onClick={() => {
                         setShowUserMenu(false);
                         if (isGuest) {
-                          sessionStorage.removeItem('guest');
-                          setIsGuest(false);
                           router.push('/login');
                         } else {
                           signOut();

@@ -61,13 +61,15 @@ export default function Home() {
   const { data: userFrames = [] } = useUserFrames(user?.uid);
   const [retakeIndex, setRetakeIndex] = useState<number | null>(null);
   const [photosBgRemoved, setPhotosBgRemoved] = useState<boolean[]>([]);
-  const [isGuest, setIsGuest] = useState<boolean | null>(null);
+  const isGuest = !user;
   const isMobile = useIsMobile();
   const { alert } = useDialog();
 
   useEffect(() => {
-    setIsGuest(sessionStorage.getItem('guest') === 'true');
-  }, []);
+    if (!user) {
+      sessionStorage.setItem('guest', 'true');
+    }
+  }, [user]);
 
   // Warn before refreshing if session is active
   useEffect(() => {
@@ -181,24 +183,10 @@ export default function Home() {
 
   const currentStepIndex = STEPS.findIndex(s => s.id === step);
 
-  useEffect(() => {
-    if (!loading && isLoaded && isGuest !== null && !user && !isGuest) {
-      router.replace('/login');
-    }
-  }, [loading, isLoaded, isGuest, user, router]);
-
-  if (loading || !isLoaded || isGuest === null) {
+  if (loading || !isLoaded) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</p>
-      </main>
-    );
-  }
-
-  if (!user && !isGuest) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Redirecting...</p>
       </main>
     );
   }
