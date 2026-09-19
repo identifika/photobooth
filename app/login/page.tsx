@@ -1,13 +1,29 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import StudioLogo from '@/components/StudioLogo';
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg)' }}>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Loading...</p>
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const { user, loading, signInWithGoogle, signInWithEmail, signUpWithEmail } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get('redirect') || '/';
   const { settings, isLoaded } = useStudioSettings();
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -17,8 +33,8 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) router.replace('/');
-  }, [user, loading, router]);
+    if (!loading && user) router.replace(redirectTo);
+  }, [user, loading, router, redirectTo]);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,7 +198,7 @@ export default function LoginPage() {
           <button
             onClick={() => {
               sessionStorage.setItem('guest', 'true');
-              router.push('/');
+              router.push(redirectTo);
             }}
             style={{
               width: '100%', height: 40, borderRadius: 8,

@@ -14,6 +14,9 @@ import { Globe, Check, Loader2 } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
+import { useDialog } from '@/components/ui/dialog-provider';
+import { getGuestFrameDraft, saveGuestFrameDraft, clearGuestFrameDraft } from '@/lib/guest-frame';
+
 const EMPTY_CONFIG: FrameConfig = {
   width: 400,
   height: 600,
@@ -40,6 +43,7 @@ function EditorInner() {
   const publicFrameId = searchParams.get('publicId');
   const { resolvedTheme } = useTheme();
   const { settings, isLoaded } = useStudioSettings();
+  const { alert, confirm } = useDialog();
   const isUserAdmin = user ? isAdmin(user.email) : false;
   const isMobile = useIsMobile();
 
@@ -69,6 +73,7 @@ function EditorInner() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [cachedLocally, setCachedLocally] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [published, setPublished] = useState(false);
   const [pendingRequest, setPendingRequest] = useState<PublishRequest | null>(null);
@@ -76,17 +81,18 @@ function EditorInner() {
   const isEdit = !!frameId;
   const isPublicEdit = !!publicFrameId;
 
-  // redirect if not logged in
+  // Only redirect if attempting to edit a specific remote frame without logging in
   useEffect(() => {
-    if (!loading && !user) router.replace('/login');
-  }, [user, loading, router]);
+    if (!loading && !user && (frameId || publicFrameId)) {
+      router.replace(`/login?redirect=${encodeURIComponent(frameId ? `/editor?id=${frameId}` : `/editor?publicId=${publicFrameId}`)}`);
+    }
+  }, [user, loading, frameId, publicFrameId, router]);
 
-  // load existing frame if editing
+  // load existing frame if editing or restore draft from browser cache
   useEffect(() => {
-    if (!user) { setLoaded(true); return; }
-    
     // Load public frame
     if (publicFrameId) {
+      if (!user) return;
       loadPublicFrame(publicFrameId).then((frame) => {
         if (frame) {
           if (frame.config) setConfig(frame.config);
@@ -102,6 +108,7 @@ function EditorInner() {
     
     // Load user frame
     if (frameId) {
+      if (!user) return;
       loadUserFrame(user.uid, frameId).then((frame) => {
         if (frame) {
           setConfig(frame.config);
@@ -119,11 +126,46 @@ function EditorInner() {
       return;
     }
     
+    // For new frames, restore cached draft if one exists in localStorage
+    const draft = getGuestFrameDraft();
+    if (draft) {
+      setConfig(draft.config);
+      setFrameName(draft.name);
+      setFrameEmoji(draft.emoji || '✨');
+      setCategoryId(draft.categoryId || '');
+      setCachedLocally(true);
+    }
     setLoaded(true);
   }, [user, frameId, publicFrameId]);
 
+  // Auto-save draft in browser cache when editing a new frame (guest or user)
+  useEffect(() => {
+    if (!loaded) return;
+    if (!frameId && !publicFrameId) {
+      saveGuestFrameDraft({
+        config,
+        name: frameName,
+        emoji: frameEmoji,
+        categoryId,
+      });
+      setCachedLocally(true);
+    }
+  }, [config, frameName, frameEmoji, categoryId, frameId, publicFrameId, loaded]);
+
   const handleSave = useCallback(async () => {
-    if (!user) return;
+    // Guest user must log in to save to account
+    if (!user) {
+      saveGuestFrameDraft({ config, name: frameName, emoji: frameEmoji, categoryId });
+      setCachedLocally(true);
+      const shouldLogin = await confirm(
+        'Please sign in or create an account to save this frame to your profile.\n\nYour custom frame draft has been safely saved in this browser cache and will be restored when you return!'
+      );
+      if (shouldLogin) {
+        router.push('/login?redirect=/editor');
+      }
+      return;
+    }
+
     setSaving(true);
     setSaved(false);
     try {
@@ -145,6 +187,8 @@ function EditorInner() {
       } else {
         // Create new user frame
         const newId = await createUserFrame(user.uid, { config, name: frameName, emoji: frameEmoji, categoryId });
+        clearGuestFrameDraft();
+        setCachedLocally(false);
         router.replace(`/editor?id=${newId}`);
       }
       setSaved(true);
@@ -155,10 +199,22 @@ function EditorInner() {
     } finally {
       setSaving(false);
     }
-  }, [user, frameId, publicFrameId, config, frameName, frameEmoji, categoryId, sortOrder, isPublicEdit, isUserAdmin, router]);
+  }, [user, frameId, publicFrameId, config, frameName, frameEmoji, categoryId, sortOrder, isPublicEdit, isUserAdmin, router, alert, confirm]);
 
   const handlePublish = useCallback(async () => {
-    if (!user || !frameName.trim()) {
+    if (!user) {
+      saveGuestFrameDraft({ config, name: frameName, emoji: frameEmoji, categoryId });
+      setCachedLocally(true);
+      const shouldLogin = await confirm(
+        'Please sign in or create an account to publish this frame to the community.\n\nYour custom frame draft has been safely saved in this browser cache!'
+      );
+      if (shouldLogin) {
+        router.push('/login?redirect=/editor');
+      }
+      return;
+    }
+
+    if (!frameName.trim()) {
       await alert('Please give your frame a name before publishing.');
       return;
     }
@@ -168,6 +224,8 @@ function EditorInner() {
       let currentFrameId = frameId;
       if (!currentFrameId) {
         currentFrameId = await createUserFrame(user.uid, { config, name: frameName, emoji: frameEmoji, categoryId });
+        clearGuestFrameDraft();
+        setCachedLocally(false);
         router.replace(`/editor?id=${currentFrameId}`);
       } else {
         await updateUserFrame(user.uid, currentFrameId, { config, name: frameName, emoji: frameEmoji, categoryId });
@@ -192,7 +250,7 @@ function EditorInner() {
     } finally {
       setPublishing(false);
     }
-  }, [user, frameId, config, frameName, categoryId, router]);
+  }, [user, frameId, config, frameName, frameEmoji, categoryId, router, alert, confirm]);
 
   if (loading || !loaded) {
     return (
@@ -201,8 +259,6 @@ function EditorInner() {
       </main>
     );
   }
-
-  if (!user) return null;
 
   return (
     <main className="h-screen flex flex-col overflow-hidden bg-background">
@@ -218,9 +274,30 @@ function EditorInner() {
         </button>
         <div className="flex items-center gap-3">
           <ThemeToggle />
+          {cachedLocally && !frameId && !publicFrameId && (
+            <span className="text-xs text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full flex items-center gap-1 font-mono text-[11px]">
+              💾 Draft cached in browser
+            </span>
+          )}
           {saved && <span className="text-xs text-green-600 font-medium animate-fadeIn">✓ Saved</span>}
-          <span className="text-xs text-muted-foreground">{user.displayName || user.email}</span>
-          <img src={user.photoURL || ''} alt="" className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />
+          {user ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{user.displayName || user.email}</span>
+              {user.photoURL && <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full" referrerPolicy="no-referrer" />}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full">Guest</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/login?redirect=/editor')}
+                className="text-xs h-7 px-2.5"
+              >
+                Sign in
+              </Button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -247,11 +324,13 @@ function EditorInner() {
       {/* Save button bar */}
       <div className="flex-none flex items-center justify-between px-6 py-3 border-t border-border">
         <p className="text-xs text-muted-foreground">
-          {isPublicEdit 
-            ? 'Editing community frame — changes visible to all users' 
-            : isEdit 
-              ? 'Overwrites this frame in your collection' 
-              : 'Creates a new frame in your collection'}
+          {!user
+            ? 'Draft cached in browser — Sign in when ready to save to your account'
+            : isPublicEdit 
+              ? 'Editing community frame — changes visible to all users' 
+              : isEdit 
+                ? 'Overwrites this frame in your collection' 
+                : 'Creates a new frame in your collection'}
         </p>
         <div className="flex items-center gap-2">
           {isPublicEdit && isUserAdmin ? (

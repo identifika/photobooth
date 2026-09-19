@@ -7,6 +7,7 @@ import { ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePendingPublishRequests } from '@/hooks/useFrames';
+import { useDialog } from '@/components/ui/dialog-provider';
 import StudioLogo from './StudioLogo';
 
 export interface Step {
@@ -24,6 +25,7 @@ interface HeaderProps {
 export default function Header({ steps, currentStepIndex, onRestart, rightContent }: HeaderProps) {
   const router = useRouter();
   const { user, signOut } = useAuth();
+  const { alert } = useDialog();
   const isMobile = useIsMobile();
   const { settings, isLoaded } = useStudioSettings();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -102,18 +104,16 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
               <button className={`btn ghost ${isMobile ? '!px-2 !py-1 !text-xs' : ''}`} onClick={() => router.push('/date')}>
                 {isMobile ? '💕' : 'Date Mode'}
               </button>
-              {!isGuest && (
-                <button className="btn primary" onClick={() => {
-                  if (isMobile) {
-                    alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
-                  } else {
-                    router.push('/editor');
-                  }
-                }}>
-                  <span style={{ fontSize: 14 }}>+</span>
-                  <span className="hidden sm:inline">New frame</span>
-                </button>
-              )}
+              <button className="btn primary" onClick={async () => {
+                if (isMobile) {
+                  await alert('The Frame Editor is best experienced on a tablet or desktop. Please use a larger screen to create and edit frames.');
+                } else {
+                  router.push('/editor');
+                }
+              }}>
+                <span style={{ fontSize: 14 }}>+</span>
+                <span className="hidden sm:inline">New frame</span>
+              </button>
               {/* User dropdown */}
               <div className="relative" data-user-menu>
                 <button
