@@ -75,7 +75,7 @@ export function guestDraftToFrame(draft: GuestFrameDraft): Frame {
   return {
     id: 'guest-draft',
     name: draft.name?.trim() ? `${draft.name} (Draft)` : 'Custom Frame (Draft)',
-    description: 'Saved locally in your browser',
+    description: 'Saved on this device',
     photoCount,
     layout: photoCount <= 2 ? 'strip-2' : photoCount === 3 ? 'strip-3' : 'grid-2x2',
     aspectRatio: 4 / 3,

@@ -158,7 +158,7 @@ function EditorInner() {
       saveGuestFrameDraft({ config, name: frameName, emoji: frameEmoji, categoryId });
       setCachedLocally(true);
       const shouldLogin = await confirm(
-        'Please sign in or create an account to save this frame to your profile.\n\nYour custom frame draft has been safely saved in this browser cache and will be restored when you return!'
+        'Please sign in or create an account to save this frame to your profile.\n\nYour custom frame draft has been safely saved on this device and will be waiting for you when you return!'
       );
       if (shouldLogin) {
         router.push('/login?redirect=/editor');
@@ -206,7 +206,7 @@ function EditorInner() {
       saveGuestFrameDraft({ config, name: frameName, emoji: frameEmoji, categoryId });
       setCachedLocally(true);
       const shouldLogin = await confirm(
-        'Please sign in or create an account to publish this frame to the community.\n\nYour custom frame draft has been safely saved in this browser cache!'
+        'Please sign in or create an account to publish this frame to the community.\n\nYour custom frame draft has been safely saved on this device!'
       );
       if (shouldLogin) {
         router.push('/login?redirect=/editor');
@@ -292,7 +292,7 @@ function EditorInner() {
           <ThemeToggle />
           {cachedLocally && !frameId && !publicFrameId && (
             <span className="text-xs text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-full flex items-center gap-1 font-mono text-[11px]">
-              💾 Draft cached in browser
+              ✓ Draft saved on this device
             </span>
           )}
           {saved && <span className="text-xs text-green-600 font-medium animate-fadeIn">✓ Saved</span>}
@@ -342,7 +342,7 @@ function EditorInner() {
       <div className="flex-none flex items-center justify-between px-6 py-3 border-t border-border">
         <p className="text-xs text-muted-foreground">
           {!user
-            ? 'Draft cached in browser — Tap "Save & Use" to shoot photos, or sign in to save permanently'
+            ? 'Draft saved on this device — Tap "Save & Use" to shoot photos, or sign in to keep it permanently'
             : isPublicEdit 
               ? 'Editing community frame — changes visible to all users' 
               : isEdit 

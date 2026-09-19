@@ -167,7 +167,7 @@ export default function FrameSelector({ selected, onSelect, userFrames = [] }: P
           <div className="section-label mb-4 flex items-center justify-between">
             <span>My Frames</span>
             {guestDraftFrame && !hasUserFrames && (
-              <span className="text-[11px] font-normal text-muted-foreground font-mono">Cached in browser</span>
+              <span className="text-[11px] font-medium text-muted-foreground">Saved on this device</span>
             )}
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto mb-10">
