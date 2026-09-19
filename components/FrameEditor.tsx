@@ -599,6 +599,7 @@ interface Props {
     categories: { id: string; name: string }[];
     onSave: () => void;
     onCancel: () => void;
+    onSaveAndUse?: () => void;
     isEdit: boolean;
 }
 
@@ -629,7 +630,7 @@ const getTicketMask = (size: number = 14) => {
 
 export default function FrameEditor({
     config, onChange, frameName, onNameChange, frameEmoji, onEmojiChange,
-    onSave, onCancel, isEdit,
+    onSave, onCancel, isEdit, onSaveAndUse,
 }: Props) {
     const { resolvedTheme } = useTheme();
     const isDark = resolvedTheme === 'dark';
@@ -2132,8 +2133,21 @@ export default function FrameEditor({
                 )}
 
                 <div className={`border-t pt-3 space-y-2 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
-                    <Button onClick={onSave} className="w-full">{isEdit ? 'Save Changes' : 'Create Frame'}</Button>
-                    <Button variant="outline" onClick={onCancel} className={`w-full ${isDark ? 'border-slate-600' : ''}`}>Cancel</Button>
+                    {onSaveAndUse && (
+                        <Button
+                            onClick={onSaveAndUse}
+                            className="w-full font-medium shadow-sm transition-all"
+                            style={{ background: 'var(--brand)', color: '#fff' }}
+                        >
+                            ✨ Save & Use Frame
+                        </Button>
+                    )}
+                    <Button onClick={onSave} variant={onSaveAndUse ? "outline" : "default"} className="w-full">
+                        {isEdit ? 'Save Changes' : 'Save Frame'}
+                    </Button>
+                    <Button variant="ghost" onClick={onCancel} className={`w-full ${isDark ? 'border-slate-600' : ''}`}>
+                        Back to Booth
+                    </Button>
                 </div>
             </div>
             

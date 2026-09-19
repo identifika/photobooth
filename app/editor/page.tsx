@@ -10,7 +10,7 @@ import type { FrameConfig } from '@/lib/frame-types';
 import FrameEditor from '@/components/FrameEditor';
 import { Button } from '@/components/ui/button';
 import { useTheme, ThemeToggle } from '@/hooks/useTheme';
-import { Globe, Check, Loader2 } from 'lucide-react';
+import { Globe, Check, Loader2, Sparkles } from 'lucide-react';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
@@ -252,6 +252,22 @@ function EditorInner() {
     }
   }, [user, frameId, config, frameName, frameEmoji, categoryId, router, alert, confirm]);
 
+  const handleSaveAndUse = useCallback(async () => {
+    const nameToUse = frameName.trim() || 'My Custom Frame';
+    saveGuestFrameDraft({
+      config,
+      name: nameToUse,
+      emoji: frameEmoji,
+      categoryId,
+    });
+    setCachedLocally(true);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('use_guest_frame', 'true');
+    }
+    await alert('Your custom frame has been saved! Ready to use in the photobooth.');
+    router.push('/?useGuestFrame=true');
+  }, [config, frameName, frameEmoji, categoryId, alert, router]);
+
   if (loading || !loaded) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-background">
@@ -317,6 +333,7 @@ function EditorInner() {
           categories={[]}
           onSave={handleSave}
           onCancel={() => router.push('/')}
+          onSaveAndUse={!user ? handleSaveAndUse : undefined}
           isEdit={isEdit}
         />
       </div>
@@ -325,7 +342,7 @@ function EditorInner() {
       <div className="flex-none flex items-center justify-between px-6 py-3 border-t border-border">
         <p className="text-xs text-muted-foreground">
           {!user
-            ? 'Draft cached in browser — Sign in when ready to save to your account'
+            ? 'Draft cached in browser — Tap "Save & Use" to shoot photos, or sign in to save permanently'
             : isPublicEdit 
               ? 'Editing community frame — changes visible to all users' 
               : isEdit 
@@ -339,6 +356,16 @@ function EditorInner() {
             </Button>
           ) : (
             <>
+              {!user && (
+                <Button
+                  onClick={handleSaveAndUse}
+                  className="flex items-center gap-1.5 shadow-sm font-medium"
+                  style={{ background: 'var(--brand)', color: '#fff' }}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Save & Use
+                </Button>
+              )}
               {published ? (
                 <span className="text-xs text-green-600 font-medium flex items-center gap-1 animate-fadeIn">
                   <Check className="w-3 h-3" /> Publish request sent
@@ -358,8 +385,8 @@ function EditorInner() {
                   {publishing ? 'Requesting...' : 'Publish to Community'}
                 </Button>
               )}
-              <Button onClick={handleSave} disabled={saving}>
-                {saving ? 'Saving...' : isEdit ? 'Update Frame' : 'Save New Frame'}
+              <Button onClick={handleSave} disabled={saving} variant={!user ? 'outline' : 'default'}>
+                {saving ? 'Saving...' : isEdit ? 'Update Frame' : 'Save Frame'}
               </Button>
             </>
           )}

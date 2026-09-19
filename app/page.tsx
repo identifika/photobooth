@@ -16,6 +16,7 @@ import { useTheme, ThemeToggle } from '@/hooks/useTheme';
 import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { getGuestFrameDraft, guestDraftToFrame } from '@/lib/guest-frame';
 import { useUserFrames, usePendingPublishRequests } from '@/hooks/useFrames';
 
 type Step = 'select' | 'camera' | 'review' | 'background' | 'preview' | 'final';
@@ -70,6 +71,19 @@ export default function Home() {
       sessionStorage.setItem('guest', 'true');
     }
   }, [user]);
+
+  // Auto-select guest custom frame if returning from editor
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('useGuestFrame') === 'true' || sessionStorage.getItem('use_guest_frame') === 'true') {
+      sessionStorage.removeItem('use_guest_frame');
+      const draft = getGuestFrameDraft();
+      if (draft) {
+        setSelectedFrame(guestDraftToFrame(draft));
+      }
+    }
+  }, []);
 
   // Warn before refreshing if session is active
   useEffect(() => {
