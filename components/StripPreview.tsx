@@ -130,24 +130,28 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
         ctx.fillStyle = cfg.color ?? '#f5f0e8';
         ctx.fillRect(0, 0, OUT_W, OUT_H);
       }
-      if (cfg.borderStyle !== 'ticket') {
+      if (cfg.borderStyle !== 'ticket' && cfg.borderStyle !== 'none' && (cfg.borderWidth === undefined ? cfg.bgType !== 'image' : cfg.borderWidth > 0)) {
         ctx.save();
         ctx.strokeStyle = cfg.borderColor ?? '#1a1410';
-        ctx.lineWidth = 6;
+        const bWidth = (cfg.borderWidth ?? 4) * scale;
+        ctx.lineWidth = bWidth;
         if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
         else if (cfg.borderStyle === 'dotted') {
           ctx.setLineDash([6 * scale, 12 * scale]);
           ctx.lineCap = 'round';
         }
-        ctx.strokeRect(3, 3, OUT_W - 6, OUT_H - 6);
+        const offset = bWidth / 2;
+        ctx.strokeRect(offset, offset, OUT_W - bWidth, OUT_H - bWidth);
         ctx.restore();
       }
 
       // Accent bars
-      const accentSz = cfg.accentSize ?? 4;
-      ctx.fillStyle = cfg.accentColor ?? '#e11d48';
-      ctx.fillRect(0, 0, OUT_W, accentSz * scale);
-      ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
+      const accentSz = cfg.accentSize ?? (cfg.bgType === 'image' ? 0 : 4);
+      if (accentSz > 0) {
+        ctx.fillStyle = cfg.accentColor ?? '#e11d48';
+        ctx.fillRect(0, 0, OUT_W, accentSz * scale);
+        ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
+      }
 
       const photoImgs = await Promise.all(photos.map(src => loadImage(src)));
       let photoIdx = 0;

@@ -13,7 +13,7 @@ export interface FramePhotoElement {
   rotation?: number;
   borderColor?: string;
   borderWidth?: number;
-  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket';
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket' | 'none';
   ticketHoleSize?: number;
   hidden?: boolean;
 }
@@ -138,7 +138,7 @@ export interface FrameConfig {
   color?: string;
   borderColor?: string;
   borderWidth?: number;
-  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket';
+  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'ticket' | 'none';
   accentColor?: string;
   accentSize?: number;
   ticketHoleSize?: number;

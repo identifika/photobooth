@@ -126,24 +126,28 @@ export async function drawFrameElements(
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
   }
 
-  if (cfg.borderStyle !== 'ticket') {
+  if (cfg.borderStyle !== 'ticket' && cfg.borderStyle !== 'none' && (cfg.borderWidth === undefined ? cfg.bgType !== 'image' : cfg.borderWidth > 0)) {
     ctx.save();
     ctx.strokeStyle = cfg.borderColor ?? frame.borderColor;
-    ctx.lineWidth = 4 * scale;
+    const bWidth = (cfg.borderWidth ?? 4) * scale;
+    ctx.lineWidth = bWidth;
     if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
     else if (cfg.borderStyle === 'dotted') {
       ctx.setLineDash([6 * scale, 12 * scale]);
       ctx.lineCap = 'round';
     }
-    ctx.strokeRect(3 * scale, 3 * scale, canvasWidth - 6 * scale, canvasHeight - 6 * scale);
+    const offset = bWidth / 2;
+    ctx.strokeRect(offset, offset, canvasWidth - bWidth, canvasHeight - bWidth);
     ctx.restore();
   }
 
   // Accent bars
-  const accentSz = cfg.accentSize ?? 4;
-  ctx.fillStyle = cfg.accentColor ?? frame.accentColor;
-  ctx.fillRect(0, 0, canvasWidth, accentSz * scale);
-  ctx.fillRect(0, canvasHeight - accentSz * scale, canvasWidth, accentSz * scale);
+  const accentSz = cfg.accentSize ?? (cfg.bgType === 'image' ? 0 : 4);
+  if (accentSz > 0) {
+    ctx.fillStyle = cfg.accentColor ?? frame.accentColor;
+    ctx.fillRect(0, 0, canvasWidth, accentSz * scale);
+    ctx.fillRect(0, canvasHeight - accentSz * scale, canvasWidth, accentSz * scale);
+  }
 
   let photoIdx = 0;
 

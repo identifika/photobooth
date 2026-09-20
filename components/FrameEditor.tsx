@@ -1526,13 +1526,16 @@ export default function FrameEditor({
 
                             <div
                                 ref={canvasRef}
-                                className="relative shadow-lg"
+                                className="relative"
                                 style={{
                                     width: canvasW, height: canvasH,
                                     background: resolvedBg(),
-                                    border: config.borderStyle === 'ticket' ? 'none' : `${config.borderWidth ?? 3}px ${config.borderStyle || 'solid'} ${config.borderColor ?? '#1a1410'}`,
+                                    border: (config.borderStyle === 'ticket' || config.borderStyle === 'none' || config.borderWidth === 0)
+                                        ? 'none'
+                                        : `${config.borderWidth ?? (config.bgType === 'image' ? 0 : 3)}px ${config.borderStyle || 'solid'} ${config.borderColor ?? '#1a1410'}`,
                                     ...(config.borderStyle === 'ticket' ? getTicketMask(config.ticketHoleSize ?? 14) : {}),
                                     borderRadius: 4, overflow: 'hidden',
+                                    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
                                 }}
                                 onPointerMove={onPointerMove}
                                 onPointerUp={onPointerUp}
@@ -1541,7 +1544,9 @@ export default function FrameEditor({
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onContextMenu={onCanvasContextMenu}
                             >
-                                <div className="absolute top-0 left-0 right-0" style={{ height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
+                                {accentSize > 0 && config.bgType !== 'image' && (
+                                    <div className="absolute top-0 left-0 right-0" style={{ height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
+                                )}
 
                                 {cursor && !dragging && !resizing && (
                                     <>
@@ -1560,7 +1565,9 @@ export default function FrameEditor({
 
                                 {elements.map(renderElement)}
 
-                                <div className="absolute bottom-0 left-0 right-0" style={{ height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
+                                {accentSize > 0 && config.bgType !== 'image' && (
+                                    <div className="absolute bottom-0 left-0 right-0" style={{ height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1661,14 +1668,22 @@ export default function FrameEditor({
                                         <FieldLabel isDark={isDark}>Border Color</FieldLabel>
                                         <ColorField value={config.borderColor ?? '#1a1410'} placeholder="#1a1410" onChange={(v) => onChange({ ...config, borderColor: v })} isDark={isDark} />
                                     </div>
-                                    <div><FieldLabel isDark={isDark}>Border Width</FieldLabel><Input type="number" min={0} value={config.borderWidth ?? 3} onChange={(e) => onChange({ ...config, borderWidth: +e.target.value })} /></div>
+                                    <div><FieldLabel isDark={isDark}>Border Width</FieldLabel><Input type="number" min={0} value={config.borderWidth ?? (config.borderStyle === 'none' ? 0 : 3)} onChange={(e) => onChange({ ...config, borderWidth: +e.target.value, borderStyle: +e.target.value === 0 ? 'none' : (config.borderStyle === 'none' ? 'solid' : config.borderStyle) })} /></div>
                                     {config.borderStyle === 'ticket' && <div><FieldLabel isDark={isDark}>Ticket Hole Size</FieldLabel><Input type="number" min={2} value={config.ticketHoleSize ?? 14} onChange={(e) => onChange({ ...config, ticketHoleSize: +e.target.value })} /></div>}
                                 </div>
                                 <select
-                                    value={config.borderStyle || 'solid'}
-                                    onChange={(e) => onChange({ ...config, borderStyle: e.target.value as any })}
+                                    value={config.borderStyle || (config.borderWidth === 0 ? 'none' : 'solid')}
+                                    onChange={(e) => {
+                                        const val = e.target.value as any;
+                                        if (val === 'none') {
+                                            onChange({ ...config, borderStyle: 'none', borderWidth: 0 });
+                                        } else {
+                                            onChange({ ...config, borderStyle: val, borderWidth: config.borderWidth ? config.borderWidth : 3 });
+                                        }
+                                    }}
                                     className={`w-full rounded-lg border px-2 py-1.5 text-xs outline-none ${isDark ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-transparent border-gray-300 text-gray-900'}`}
                                 >
+                                    <option value="none">None (No Border)</option>
                                     <option value="solid">Solid</option>
                                     <option value="dashed">Dashed</option>
                                     <option value="dotted">Dotted</option>
