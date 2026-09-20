@@ -4,6 +4,7 @@ import { Frame } from '@/lib/frames';
 import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from '@/lib/frame-types';
 import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
 import { drawQrOnCanvas } from '@/lib/qr-helper';
+import { getApiUrl } from '@/lib/api-config';
 
 interface Props {
   photos: string[];
@@ -70,14 +71,42 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
       .replace('DD', String(d).padStart(2, '0'));
   }, []);
 
-  const loadImage = useCallback((src: string): Promise<HTMLImageElement> =>
-    new Promise((res, rej) => {
+  const loadImage = useCallback(async (src: string): Promise<HTMLImageElement> => {
+    let fetchSrc = src;
+    let objectUrlToRevoke = '';
+
+    // Proxy external URLs through our server to avoid canvas CORS taint / errors
+    if (src && !src.startsWith('data:') && !src.startsWith('blob:') && src.startsWith('http')) {
+      try {
+        const res = await fetch(getApiUrl('/api/proxy-image'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: src }),
+        });
+        if (res.ok) {
+          const blob = await res.blob();
+          fetchSrc = URL.createObjectURL(blob);
+          objectUrlToRevoke = fetchSrc;
+        }
+      } catch (err) {
+        console.error('proxy failed', err);
+      }
+    }
+
+    return new Promise((res, rej) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
-      img.onload = () => res(img);
-      img.onerror = rej;
-      img.src = src;
-    }), []);
+      img.onload = () => {
+        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+        res(img);
+      };
+      img.onerror = (e) => {
+        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
+        rej(e);
+      };
+      img.src = fetchSrc;
+    });
+  }, []);
 
   const renderStrip = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -96,6 +125,10 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
       canvas.width = OUT_W;
       canvas.height = OUT_H;
 
+      const frameBgColor = cfg.color ?? frame.color ?? '#f5f0e8';
+      const frameBorderColor = cfg.borderColor ?? frame.borderColor ?? '#1a1410';
+      const frameAccentColor = cfg.accentColor ?? frame.accentColor ?? '#c9a84c';
+
       // Background
       const bgType = cfg.bgType ?? 'solid';
       if (bgType === 'gradient') {
@@ -109,7 +142,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
           cx + Math.cos(angle) * diag,
           cy + Math.sin(angle) * diag
         );
-        grad.addColorStop(0, cfg.bgGradientFrom ?? '#f5f0e8');
+        grad.addColorStop(0, cfg.bgGradientFrom ?? frameBgColor);
         grad.addColorStop(1, cfg.bgGradientTo ?? '#e8dfd0');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
@@ -123,16 +156,16 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
           else { dw = OUT_W; dh = OUT_W / imgRatio; dy = (OUT_H - dh) / 2; }
           ctx.drawImage(bgImg, dx, dy, dw, dh);
         } catch {
-          ctx.fillStyle = cfg.color ?? '#f5f0e8';
+          ctx.fillStyle = frameBgColor;
           ctx.fillRect(0, 0, OUT_W, OUT_H);
         }
       } else {
-        ctx.fillStyle = cfg.color ?? '#f5f0e8';
+        ctx.fillStyle = frameBgColor;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
       }
       if (cfg.borderStyle !== 'ticket' && cfg.borderStyle !== 'none' && (cfg.borderWidth === undefined ? cfg.bgType !== 'image' : cfg.borderWidth > 0)) {
         ctx.save();
-        ctx.strokeStyle = cfg.borderColor ?? '#1a1410';
+        ctx.strokeStyle = frameBorderColor;
         const bWidth = (cfg.borderWidth ?? 4) * scale;
         ctx.lineWidth = bWidth;
         if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
@@ -148,7 +181,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
       // Accent bars
       const accentSz = cfg.accentSize ?? (cfg.bgType === 'image' ? 0 : 4);
       if (accentSz > 0) {
-        ctx.fillStyle = cfg.accentColor ?? '#e11d48';
+        ctx.fillStyle = frameAccentColor;
         ctx.fillRect(0, 0, OUT_W, accentSz * scale);
         ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
       }
@@ -175,7 +208,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
           }
           
           // Fill background for the slot first
-          ctx.fillStyle = `${cfg.borderColor ?? '#1a1410'}18`;
+          ctx.fillStyle = `${frameBorderColor}18`;
           if ((el as any).borderStyle === 'ticket') {
             buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
           } else {
@@ -225,7 +258,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
               }
             }
           } else if (!hasImage) {
-            ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
+            ctx.strokeStyle = `${frameBorderColor}40`;
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
             roundRect(ctx, x, y, w, h, el.borderRadius * scale);
@@ -482,7 +515,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
         <div className="animate-slideUp">
           <div style={{
             display: 'inline-block',
-            boxShadow: frame.config?.borderStyle === 'ticket' ? 'none' : `0 24px 80px ${frame.borderColor}30, 0 8px 24px rgba(0,0,0,0.1)`,
+            boxShadow: frame.config?.borderStyle === 'ticket' ? 'none' : `0 24px 80px ${(frame.config?.borderColor ?? frame.borderColor) || '#1a1410'}30, 0 8px 24px rgba(0,0,0,0.1)`,
             filter: frame.config?.borderStyle === 'ticket' ? 'drop-shadow(0 8px 24px rgba(0,0,0,0.15))' : 'none',
             transform: 'rotate(-0.5deg)',
           }}>
@@ -519,7 +552,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
                   aspectRatio: String(currentAspectRatio),
                 borderRadius: 6,
                 overflow: 'hidden',
-                border: `2px solid ${frame.borderColor}`,
+                border: `2px solid ${(frame.config?.borderColor ?? frame.borderColor) || '#1a1410'}`,
                 background: 'var(--surface-2)',
               }}
             >

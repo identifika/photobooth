@@ -186,6 +186,10 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       canvas.width = OUT_W;
       canvas.height = OUT_H;
 
+      const frameBgColor = cfg.color ?? frame.color ?? '#f5f0e8';
+      const frameBorderColor = cfg.borderColor ?? frame.borderColor ?? '#1a1410';
+      const frameAccentColor = cfg.accentColor ?? frame.accentColor ?? '#c9a84c';
+
       // Background
       const bgType = cfg.bgType ?? 'solid';
       if (bgType === 'gradient') {
@@ -199,7 +203,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
           cx + Math.cos(angle) * diag,
           cy + Math.sin(angle) * diag
         );
-        grad.addColorStop(0, cfg.bgGradientFrom ?? '#f5f0e8');
+        grad.addColorStop(0, cfg.bgGradientFrom ?? frameBgColor);
         grad.addColorStop(1, cfg.bgGradientTo ?? '#e8dfd0');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
@@ -213,16 +217,16 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
           else { dw = OUT_W; dh = OUT_W / imgRatio; dy = (OUT_H - dh) / 2; }
           ctx.drawImage(bgImg, dx, dy, dw, dh);
         } catch {
-          ctx.fillStyle = cfg.color ?? '#f5f0e8';
+          ctx.fillStyle = frameBgColor;
           ctx.fillRect(0, 0, OUT_W, OUT_H);
         }
       } else {
-        ctx.fillStyle = cfg.color ?? '#f5f0e8';
+        ctx.fillStyle = frameBgColor;
         ctx.fillRect(0, 0, OUT_W, OUT_H);
       }
       if (cfg.borderStyle !== 'ticket' && cfg.borderStyle !== 'none' && (cfg.borderWidth === undefined ? cfg.bgType !== 'image' : cfg.borderWidth > 0)) {
         ctx.save();
-        ctx.strokeStyle = cfg.borderColor ?? '#1a1410';
+        ctx.strokeStyle = frameBorderColor;
         const bWidth = (cfg.borderWidth ?? 4) * scale;
         ctx.lineWidth = bWidth;
         if (cfg.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
@@ -238,7 +242,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
       // Accent bars
       const accentSz = cfg.accentSize ?? (cfg.bgType === 'image' ? 0 : 4);
       if (accentSz > 0) {
-        ctx.fillStyle = cfg.accentColor ?? '#e11d48';
+        ctx.fillStyle = frameAccentColor;
         ctx.fillRect(0, 0, OUT_W, accentSz * scale);
         ctx.fillRect(0, OUT_H - accentSz * scale, OUT_W, accentSz * scale);
       }
@@ -264,7 +268,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
           }
 
           // Fill background for the slot first
-          ctx.fillStyle = `${cfg.borderColor ?? '#1a1410'}18`;
+          ctx.fillStyle = `${frameBorderColor}18`;
           if ((el as any).borderStyle === 'ticket') {
             buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
           } else {
@@ -315,7 +319,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
               }
             }
           } else if (!hasImage) {
-            ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
+            ctx.strokeStyle = `${frameBorderColor}40`;
             ctx.lineWidth = 3;
             ctx.setLineDash([12, 8]);
             roundRect(ctx, x, y, w, h, el.borderRadius * scale);
