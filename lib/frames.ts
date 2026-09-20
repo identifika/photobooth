@@ -309,39 +309,77 @@ export const FRAMES: Frame[] = [
   },
 ];
 
-export function layoutToConfig(layout: Frame['layout'], photoCount: number, width = 400, height = 600): FrameConfig {
+export function layoutToConfig(
+  layout: Frame['layout'],
+  photoCount: number,
+  width = 400,
+  height = 600,
+  frame?: Partial<Frame>
+): FrameConfig {
   const pad = 20;
-  const gap = 8;
+  const gap = 10;
   const elements: FrameElement[] = [];
 
+  const color = frame?.color ?? '#f5f0e8';
+  const borderColor = frame?.borderColor ?? '#1a1410';
+  const accentColor = frame?.accentColor ?? '#c9a84c';
+
   if (layout === 'grid-2x2') {
-    const w = (width - pad * 2 - gap) / 2;
+    const w = Math.round((width - pad * 2 - gap) / 2);
     const h = w;
-    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p3', type: 'photo', x: pad, y: pad + 60 + h + gap + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p4', type: 'photo', x: pad + w + gap, y: pad + 60 + h + gap + 60, width: w, height: h, borderRadius: 4 });
+    const startY = Math.round((height - 40 - (h * 2 + gap)) / 2);
+    elements.push({ id: 'p1', type: 'photo', x: pad, y: startY, width: w, height: h, borderRadius: 6 });
+    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: startY, width: w, height: h, borderRadius: 6 });
+    elements.push({ id: 'p3', type: 'photo', x: pad, y: startY + h + gap, width: w, height: h, borderRadius: 6 });
+    elements.push({ id: 'p4', type: 'photo', x: pad + w + gap, y: startY + h + gap, width: w, height: h, borderRadius: 6 });
   } else if (layout === 'strip-2') {
-    const w = (width - pad * 2 - gap) / 2;
-    const h = Math.round(w * 3 / 4);
-    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    const w = width - pad * 2;
+    const h = Math.round((height - pad * 2 - gap - 50) / 2);
+    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 15, width: w, height: h, borderRadius: 8 });
+    elements.push({ id: 'p2', type: 'photo', x: pad, y: pad + 15 + h + gap, width: w, height: h, borderRadius: 8 });
   } else if (layout === 'strip-3') {
-    const w = (width - pad * 2 - gap * 2) / 3;
-    const h = Math.round(w * 3 / 4);
-    elements.push({ id: 'p1', type: 'photo', x: pad, y: pad + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p2', type: 'photo', x: pad + w + gap, y: pad + 60, width: w, height: h, borderRadius: 4 });
-    elements.push({ id: 'p3', type: 'photo', x: pad + (w + gap) * 2, y: pad + 60, width: w, height: h, borderRadius: 4 });
+    const w = width - pad * 2;
+    const h = Math.round((height - pad * 2 - gap * 2 - 50) / 3);
+    for (let i = 0; i < 3; i++) {
+      elements.push({ id: `p${i + 1}`, type: 'photo', x: pad, y: pad + 15 + i * (h + gap), width: w, height: h, borderRadius: 6 });
+    }
   } else {
     // strip-4 (default)
     const w = width - pad * 2;
-    const h = Math.round((w * 3 / 4) * 0.4);
+    const h = Math.round((height - pad * 2 - gap * 3 - 50) / 4);
     for (let i = 0; i < 4; i++) {
-      elements.push({ id: `p${i + 1}`, type: 'photo', x: pad, y: pad + 60 + i * (h + gap), width: w, height: h, borderRadius: 4 });
+      elements.push({ id: `p${i + 1}`, type: 'photo', x: pad, y: pad + 15 + i * (h + gap), width: w, height: h, borderRadius: 6 });
     }
   }
 
-  return { width, height, elements, accentSize: 4 };
+  // Add frame title at the bottom
+  if (frame?.name) {
+    elements.push({
+      id: 'title-el',
+      type: 'title',
+      x: pad,
+      y: height - 38,
+      width: width - pad * 2,
+      height: 22,
+      text: frame.name,
+      font: 'Playfair Display',
+      fontSize: 12,
+      color: borderColor,
+      align: 'center',
+    });
+  }
+
+  return {
+    width,
+    height,
+    elements,
+    accentSize: 4,
+    color,
+    borderColor,
+    accentColor,
+    borderWidth: 2,
+    borderStyle: 'solid',
+  };
 }
 
 /** Load public frames from Firestore, falling back to static list. */
@@ -364,7 +402,7 @@ export async function loadPublicFrames(): Promise<Frame[]> {
         accentColor: f.accentColor,
         emoji: f.emoji,
         // Use stored config if available, otherwise generate from layout
-        config: f.config ?? layoutToConfig(f.layout, f.photoCount),
+        config: f.config ?? layoutToConfig(f.layout, f.photoCount, f.width ?? 400, f.height ?? 600, f),
         width: f.width,
         height: f.height,
       }));
@@ -373,9 +411,9 @@ export async function loadPublicFrames(): Promise<Frame[]> {
     // Firestore unavailable — use static fallback
   }
 
-  // Convert static legacy frames to also have config
+  // Convert static legacy frames to also have config, preserving pre-existing config if present
   return FRAMES.map((f) => ({
     ...f,
-    config: layoutToConfig(f.layout, f.photoCount),
+    config: f.config ?? layoutToConfig(f.layout, f.photoCount, f.width ?? 400, f.height ?? 600, f),
   }));
 }

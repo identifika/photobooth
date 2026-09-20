@@ -23,6 +23,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { fileToDataUrl, svgToDataUrl, SVG_PRESETS, exportFrameConfigToSvg } from '@/lib/svg-helper';
+import { downloadFile } from '@/lib/download';
+import { Download, Sparkles, Code2, Upload, FileCode, X } from 'lucide-react';
 
 // ── Constants ──
 
@@ -653,6 +656,14 @@ export default function FrameEditor({
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+    // ── SVG Studio Modal state ──
+    const [svgModalOpen, setSvgModalOpen] = useState(false);
+    const [svgModalTarget, setSvgModalTarget] = useState<'background' | 'new-element' | string>('background');
+    const [svgActiveTab, setSvgActiveTab] = useState<'preset' | 'paste' | 'upload'>('preset');
+    const [svgPastedCode, setSvgPastedCode] = useState('');
+    const [svgError, setSvgError] = useState('');
+    const [svgPreviewUrl, setSvgPreviewUrl] = useState('');
+
     // ── Undo/Redo history ──
     const historyRef = useRef<FrameConfig[]>([]);
     const futureRef = useRef<FrameConfig[]>([]);
@@ -1065,7 +1076,13 @@ export default function FrameEditor({
     const handleImageUpload = async (file: File, elementId: string) => {
         try {
             setUploadingIds((prev) => new Set(prev).add(elementId));
-            const url = await uploadFrameImage(file, 'frame-elements', currentUserId);
+            let url: string;
+            try {
+                url = await uploadFrameImage(file, 'frame-elements', currentUserId);
+            } catch (err) {
+                console.warn('S3 upload failed, falling back to data URL:', err);
+                url = await fileToDataUrl(file);
+            }
             updateElement(elementId, { src: url } as any);
         } catch (error: any) {
             await alert(error.message || 'Upload failed');
@@ -1077,6 +1094,112 @@ export default function FrameEditor({
             });
         }
     };
+
+    const handleBgUpload = async (file: File) => {
+        setBgUploading(true);
+        try {
+            let url: string;
+            try {
+                url = await uploadFrameImage(file, 'frame-backgrounds', currentUserId);
+            } catch (err) {
+                console.warn('S3 upload failed, falling back to data URL:', err);
+                url = await fileToDataUrl(file);
+            }
+            setBgImage(url);
+        } catch (err: any) {
+            await alert(err.message || 'Upload failed');
+        } finally {
+            setBgUploading(false);
+        }
+    };
+
+    const openSvgModal = (target: 'background' | 'new-element' | string, initialTab: 'preset' | 'paste' | 'upload' = 'preset') => {
+        setSvgModalTarget(target);
+        setSvgActiveTab(initialTab);
+        setSvgPastedCode('');
+        setSvgError('');
+        setSvgPreviewUrl('');
+        setSvgModalOpen(true);
+    };
+
+    const applySvgUrl = (url: string) => {
+        pushHistory();
+        if (svgModalTarget === 'background') {
+            onChange({ ...config, bgType: 'image', bgImage: url });
+        } else if (svgModalTarget === 'new-element') {
+            const newEl: FrameImageElement = {
+                id: uid(),
+                type: 'image',
+                x: Math.round(canvasW * 0.15),
+                y: Math.round(canvasH * 0.15),
+                width: Math.round(canvasW * 0.7),
+                height: Math.round(canvasH * 0.45),
+                src: url,
+                objectFit: 'contain',
+            };
+            updateElements([...elements, newEl]);
+            setSelectedIds(new Set([newEl.id]));
+        } else if (svgModalTarget) {
+            updateElement(svgModalTarget, { src: url } as any);
+        }
+        setSvgModalOpen(false);
+    };
+
+    const handleApplyPastedSvg = () => {
+        try {
+            if (!svgPastedCode.trim()) {
+                setSvgError('Please enter some SVG markup.');
+                return;
+            }
+            const dataUrl = svgToDataUrl(svgPastedCode);
+            applySvgUrl(dataUrl);
+        } catch (e: any) {
+            setSvgError(e.message || 'Invalid SVG markup');
+        }
+    };
+
+    const handleSvgFileChosen = async (file: File) => {
+        try {
+            let url: string;
+            try {
+                url = await uploadFrameImage(file, svgModalTarget === 'background' ? 'frame-backgrounds' : 'frame-elements', currentUserId);
+            } catch (err) {
+                console.warn('S3 upload failed, falling back to data URL:', err);
+                url = await fileToDataUrl(file);
+            }
+            applySvgUrl(url);
+        } catch (e: any) {
+            await alert(e.message || 'Failed to process file');
+        }
+    };
+
+    const handleExportSvg = () => {
+        try {
+            const svgDoc = exportFrameConfigToSvg(config, frameName);
+            const blob = new Blob([svgDoc], { type: 'image/svg+xml;charset=utf-8' });
+            const blobUrl = URL.createObjectURL(blob);
+            const safeName = (frameName || 'photobooth-frame').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+            void downloadFile(blobUrl, `${safeName}.svg`);
+        } catch (e: any) {
+            void alert(e.message || 'Failed to export SVG');
+        }
+    };
+
+    useEffect(() => {
+        if (!svgPastedCode.trim()) {
+            setSvgPreviewUrl('');
+            setSvgError('');
+            return;
+        }
+        try {
+            const dataUrl = svgToDataUrl(svgPastedCode);
+            setSvgPreviewUrl(dataUrl);
+            setSvgError('');
+        } catch (e: any) {
+            setSvgPreviewUrl('');
+            setSvgError(e.message || 'Invalid SVG');
+        }
+    }, [svgPastedCode]);
 
     // ── Context Menu Builders and Handlers ──
     const buildElementMenuItems = useCallback((id: string): ContextMenuItem[] => {
@@ -1353,6 +1476,7 @@ export default function FrameEditor({
                         <Button variant="outline" size="sm" onClick={addPhoto} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📷 Photo Slot</Button>
                         <Button variant="outline" size="sm" onClick={addTitle} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✏️ Title Text</Button>
                         <Button variant="outline" size="sm" onClick={addImage} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🖼 Image</Button>
+                        <Button variant="outline" size="sm" onClick={() => openSvgModal('new-element', 'preset')} className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700 text-brand' : 'text-brand'}`}>🎨 SVG / Vector</Button>
                         <Button variant="outline" size="sm" onClick={addEmojiRow} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✨ Emoji Row</Button>
                         <Button variant="outline" size="sm" onClick={() => addSticker('✨')} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🌟 Emoji Sticker</Button>
                         <Button variant="outline" size="sm" onClick={addDate} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📅 Date Stamp</Button>
@@ -1502,9 +1626,20 @@ export default function FrameEditor({
                     </button>
                     <button onClick={zoomIn} className={`w-7 h-7 rounded border flex items-center justify-center text-sm transition ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-gray-200 hover:bg-gray-100'}`} title="Zoom In">+</button>
                     <span className={`text-[10px] ml-2 ${isDark ? 'text-slate-400' : 'text-gray-400'}`}>Ctrl+scroll to zoom</span>
-                    <div className="ml-auto flex gap-1">
+                    <div className="ml-auto flex items-center gap-1.5">
                         <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)" className={`w-7 h-7 rounded border flex items-center justify-center text-sm transition disabled:opacity-30 ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-gray-200 hover:bg-gray-100'}`}>↩</button>
                         <button onClick={redo} disabled={!canRedo} title="Redo (⌘⇧Z)" className={`w-7 h-7 rounded border flex items-center justify-center text-sm transition disabled:opacity-30 ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-gray-200 hover:bg-gray-100'}`}>↪</button>
+                        <div className={`h-4 w-px mx-1 ${isDark ? 'bg-slate-700' : 'bg-gray-200'}`} />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleExportSvg}
+                            title="Export this frame as an SVG file"
+                            className={`h-7 px-2.5 text-xs flex items-center gap-1.5 font-medium ${isDark ? 'border-slate-600 hover:bg-slate-700' : 'border-gray-200 hover:bg-gray-100'}`}
+                        >
+                            <Download className="w-3.5 h-3.5 text-brand" />
+                            <span>Export SVG</span>
+                        </Button>
                     </div>
                 </div>
 
@@ -1631,31 +1766,64 @@ export default function FrameEditor({
                                 <div className="space-y-2">
                                     {bgImage ? (
                                         <div className="relative group">
-                                            <div className="h-20 rounded border overflow-hidden flex items-center justify-center bg-gray-50">
+                                            <div className="h-24 rounded border overflow-hidden flex items-center justify-center bg-gray-50 relative">
                                                 <img src={bgImage} alt="" className="max-h-full max-w-full object-cover w-full h-full" style={{ objectFit: 'cover' }} />
+                                                {(bgImage.includes('svg') || bgImage.startsWith('data:image/svg')) && (
+                                                    <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/75 text-white rounded text-[9px] font-mono tracking-wider">
+                                                        SVG Vector
+                                                    </span>
+                                                )}
                                             </div>
-                                            <button onClick={() => setBgImage('')} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">×</button>
+                                            <div className="flex gap-1.5 mt-1.5">
+                                                <Button size="sm" variant="outline" onClick={() => openSvgModal('background', 'preset')} className="flex-1 text-[11px] h-7">
+                                                    Change...
+                                                </Button>
+                                                <Button size="sm" variant="ghost" onClick={() => setBgImage('')} className="text-[11px] h-7 text-red-500 hover:text-red-600">
+                                                    Remove
+                                                </Button>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <label className="flex h-16 cursor-pointer items-center justify-center rounded border-2 border-dashed border-gray-300 text-xs text-gray-400 hover:border-gray-400 transition">
-                                            {bgUploading ? 'Uploading...' : 'Click to upload bg image'}
-                                            <input type="file" accept="image/*" className="hidden" disabled={bgUploading} onChange={async (e) => {
-                                                const f = e.target.files?.[0];
-                                                if (f) {
-                                                    setBgUploading(true);
-                                                    try {
-                                                        const url = await uploadFrameImage(f, 'frame-backgrounds', currentUserId);
-                                                        setBgImage(url);
-                                                    } catch (err: any) {
-                                                        await alert(err.message || 'Upload failed');
-                                                    } finally {
-                                                        setBgUploading(false);
-                                                    }
-                                                }
-                                            }} />
-                                        </label>
+                                        <div className="space-y-1.5">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openSvgModal('background', 'preset')}
+                                                className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}
+                                            >
+                                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                                                <span>Choose SVG Preset</span>
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => openSvgModal('background', 'paste')}
+                                                className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}
+                                            >
+                                                <Code2 className="w-3.5 h-3.5 text-blue-500" />
+                                                <span>Paste SVG Code</span>
+                                            </Button>
+                                            <label className="flex h-10 cursor-pointer items-center justify-center rounded border border-dashed border-gray-300 text-xs text-gray-500 hover:border-gray-400 transition gap-1.5">
+                                                <Upload className="w-3.5 h-3.5" />
+                                                <span>{bgUploading ? 'Uploading...' : 'Upload SVG / Image'}</span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*,.svg,image/svg+xml"
+                                                    className="hidden"
+                                                    disabled={bgUploading}
+                                                    onChange={async (e) => {
+                                                        const f = e.target.files?.[0];
+                                                        if (f) void handleBgUpload(f);
+                                                    }}
+                                                />
+                                            </label>
+                                        </div>
                                     )}
-                                    <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-gray-400'}`}>Image fills the canvas (cover).</p>
+                                    <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-gray-400'}`}>
+                                        Supports scalable vector SVGs, PNGs, and JPEGs.
+                                    </p>
                                 </div>
                             )}
                         </div>
@@ -1913,21 +2081,42 @@ export default function FrameEditor({
                             return (
                                 <div className={`border-t pt-3 space-y-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
                                     <div>
-                                        <FieldLabel isDark={isDark}>Image</FieldLabel>
+                                        <FieldLabel isDark={isDark}>Image Source</FieldLabel>
                                         {el.src ? (
                                             <div className="relative group">
-                                                <div className="h-20 rounded border overflow-hidden flex items-center justify-center bg-gray-50"><img src={el.src} alt="" className="max-h-full max-w-full object-contain" /></div>
-                                                <label className="absolute bottom-1 left-1 flex items-center justify-center gap-1 bg-white border border-gray-200 rounded text-[10px] px-1.5 py-0.5 cursor-pointer hover:bg-gray-50 transition text-gray-700">
-                                                    <span>{uploadingIds.has(el.id) ? '...' : 'Change'}</span>
-                                                    <input type="file" accept="image/*" className="hidden" disabled={uploadingIds.has(el.id)} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleImageUpload(f, el.id); }} />
-                                                </label>
-                                                <button onClick={() => updateElement(el.id, { src: '' })} className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">×</button>
+                                                <div className="h-24 rounded border overflow-hidden flex items-center justify-center bg-gray-50 relative">
+                                                    <img src={el.src} alt="" className="max-h-full max-w-full object-contain" />
+                                                    {(el.src.includes('svg') || el.src.startsWith('data:image/svg')) && (
+                                                        <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/75 text-white rounded text-[9px] font-mono tracking-wider">
+                                                            SVG Vector
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="flex gap-1.5 mt-1.5">
+                                                    <Button size="sm" variant="outline" onClick={() => openSvgModal(el.id, 'paste')} className="flex-1 text-[11px] h-7">
+                                                        Paste SVG
+                                                    </Button>
+                                                    <label className="flex-1 flex items-center justify-center bg-transparent border rounded text-[11px] h-7 cursor-pointer hover:bg-gray-50 transition text-foreground">
+                                                        <span>Upload</span>
+                                                        <input type="file" accept="image/*,.svg,image/svg+xml" className="hidden" disabled={uploadingIds.has(el.id)} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleImageUpload(f, el.id); }} />
+                                                    </label>
+                                                    <Button size="sm" variant="ghost" onClick={() => updateElement(el.id, { src: '' } as any)} className="text-[11px] h-7 text-red-500">
+                                                        ×
+                                                    </Button>
+                                                </div>
                                             </div>
                                         ) : (
-                                            <label className="flex h-16 cursor-pointer items-center justify-center rounded border-2 border-dashed border-gray-300 text-xs text-gray-400 hover:border-gray-400 transition">
-                                                {uploadingIds.has(el.id) ? 'Uploading...' : 'Click to upload'}
-                                                <input type="file" accept="image/*" className="hidden" disabled={uploadingIds.has(el.id)} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleImageUpload(f, el.id); }} />
-                                            </label>
+                                            <div className="space-y-1.5">
+                                                <Button size="sm" variant="outline" onClick={() => openSvgModal(el.id, 'paste')} className="w-full text-xs h-8 justify-start gap-1.5">
+                                                    <Code2 className="w-3.5 h-3.5 text-blue-500" />
+                                                    <span>Paste SVG Code</span>
+                                                </Button>
+                                                <label className="flex h-12 cursor-pointer items-center justify-center rounded border border-dashed border-gray-300 text-xs text-gray-400 hover:border-gray-400 transition gap-1.5">
+                                                    <Upload className="w-3.5 h-3.5" />
+                                                    <span>{uploadingIds.has(el.id) ? 'Uploading...' : 'Upload SVG / Image'}</span>
+                                                    <input type="file" accept="image/*,.svg,image/svg+xml" className="hidden" disabled={uploadingIds.has(el.id)} onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleImageUpload(f, el.id); }} />
+                                                </label>
+                                            </div>
                                         )}
                                     </div>
                                     <div>
@@ -2165,6 +2354,247 @@ export default function FrameEditor({
                     </Button>
                 </div>
             </div>
+
+            {/* ── SVG Studio & Vector Modal ── */}
+            {svgModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div
+                        className={`w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden ${
+                            isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-800'
+                        }`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-slate-800' : 'border-gray-100'}`}>
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white shadow-sm" style={{ background: 'var(--brand, #4f46e5)' }}>
+                                    <Sparkles className="w-4 h-4" />
+                                </div>
+                                <div>
+                                    <h3 className="font-semibold text-base leading-tight">SVG Studio</h3>
+                                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        {svgModalTarget === 'background'
+                                            ? 'Set frame background graphic'
+                                            : svgModalTarget === 'new-element'
+                                            ? 'Add new vector graphic element'
+                                            : 'Update vector graphic element'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setSvgModalOpen(false)}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                    isDark ? 'hover:bg-slate-800 text-slate-400 hover:text-slate-200' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-700'
+                                }`}
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Navigation Tabs */}
+                        <div className={`flex border-b px-5 pt-2 gap-2 text-xs font-medium ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-gray-100 bg-gray-50/50'}`}>
+                            <button
+                                onClick={() => setSvgActiveTab('preset')}
+                                className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+                                    svgActiveTab === 'preset'
+                                        ? 'border-brand text-brand font-semibold'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                Presets
+                            </button>
+                            <button
+                                onClick={() => setSvgActiveTab('paste')}
+                                className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+                                    svgActiveTab === 'paste'
+                                        ? 'border-brand text-brand font-semibold'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Code2 className="w-3.5 h-3.5" />
+                                Paste SVG Code
+                            </button>
+                            <button
+                                onClick={() => setSvgActiveTab('upload')}
+                                className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
+                                    svgActiveTab === 'upload'
+                                        ? 'border-brand text-brand font-semibold'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Upload className="w-3.5 h-3.5" />
+                                Upload File
+                            </button>
+                        </div>
+
+                        {/* Tab Content */}
+                        <div className="flex-1 overflow-y-auto p-5">
+                            {svgActiveTab === 'preset' && (
+                                <div className="space-y-4">
+                                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        Choose one of our handcrafted vector frame designs. Scalable and razor-sharp at any print resolution:
+                                    </p>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                        {SVG_PRESETS.map((preset) => (
+                                            <div
+                                                key={preset.id}
+                                                onClick={() => applySvgUrl(preset.url)}
+                                                className={`group relative rounded-xl border p-2.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md ${
+                                                    isDark
+                                                        ? 'border-slate-800 bg-slate-800/50 hover:border-brand/60 hover:bg-slate-800'
+                                                        : 'border-gray-200 bg-gray-50 hover:border-brand/60 hover:bg-white'
+                                                }`}
+                                            >
+                                                <div className="aspect-[2/3] w-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2 border border-black/5 dark:border-white/5">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={preset.url}
+                                                        alt={preset.name}
+                                                        className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300"
+                                                    />
+                                                </div>
+                                                <h4 className="font-medium text-xs truncate">{preset.name}</h4>
+                                                <p className={`text-[10px] truncate ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                                    {preset.description}
+                                                </p>
+                                                <span className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded capitalize ${
+                                                    isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
+                                                }`}>
+                                                    {preset.category}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {svgActiveTab === 'paste' && (
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                            Paste your raw <code className="font-mono px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 text-[11px]">&lt;svg&gt;...&lt;/svg&gt;</code> markup:
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setSvgPastedCode(
+                                                    `<svg width="400" height="600" viewBox="0 0 400 600" fill="none" xmlns="http://www.w3.org/2000/svg">\n  <rect width="400" height="600" fill="#FFFDF8" rx="20"/>\n  <circle cx="200" cy="150" r="80" fill="#E8B4B8" opacity="0.4"/>\n  <circle cx="280" cy="220" r="50" fill="#A3C4BC" opacity="0.4"/>\n  <rect x="30" y="30" width="340" height="540" rx="14" stroke="#4A3E3D" stroke-width="2" stroke-dasharray="8 6"/>\n  <text x="200" y="550" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="600" fill="#4A3E3D">STUDIO PHOTOBOOTH</text>\n</svg>`
+                                                );
+                                            }}
+                                            className={`text-[11px] px-2 py-1 rounded transition-colors ${
+                                                isDark ? 'bg-slate-800 text-brand hover:bg-slate-700' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
+                                            }`}
+                                        >
+                                            Insert Sample Template
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                            <textarea
+                                                value={svgPastedCode}
+                                                onChange={(e) => setSvgPastedCode(e.target.value)}
+                                                placeholder={`<svg viewBox="0 0 400 600" xmlns="http://www.w3.org/2000/svg">\n  <rect width="100%" height="100%" fill="#fef3c7"/>\n  ...\n</svg>`}
+                                                className={`w-full h-64 p-3 font-mono text-xs rounded-xl border outline-none resize-none transition-all ${
+                                                    isDark
+                                                        ? 'bg-slate-950 border-slate-800 text-slate-200 focus:border-brand'
+                                                        : 'bg-slate-50 border-gray-200 text-gray-800 focus:border-brand'
+                                                }`}
+                                                spellCheck={false}
+                                            />
+                                            {svgError && (
+                                                <p className="mt-1.5 text-xs text-rose-500 font-medium">
+                                                    ⚠️ {svgError}
+                                                </p>
+                                            )}
+                                        </div>
+
+                                        <div className={`flex flex-col items-center justify-center rounded-xl border p-3 ${
+                                            isDark ? 'border-slate-800 bg-slate-950/50' : 'border-gray-200 bg-slate-50/50'
+                                        }`}>
+                                            <span className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
+                                                Live Preview
+                                            </span>
+                                            <div className="flex-1 w-full max-h-56 flex items-center justify-center overflow-hidden">
+                                                {svgPreviewUrl ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img
+                                                        src={svgPreviewUrl}
+                                                        alt="SVG Preview"
+                                                        className="max-h-56 max-w-full object-contain rounded shadow-sm border border-black/10 dark:border-white/10"
+                                                    />
+                                                ) : (
+                                                    <div className={`flex flex-col items-center justify-center text-center p-4 ${isDark ? 'text-slate-600' : 'text-gray-400'}`}>
+                                                        <FileCode className="w-8 h-8 mb-2 opacity-50" />
+                                                        <p className="text-xs">Paste valid SVG markup to view live preview</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <Button variant="outline" size="sm" onClick={() => setSvgModalOpen(false)}>
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={handleApplyPastedSvg}
+                                            disabled={!svgPastedCode.trim() || !!svgError}
+                                            style={{ background: 'var(--brand, #4f46e5)', color: '#fff' }}
+                                        >
+                                            Apply SVG to Frame
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {svgActiveTab === 'upload' && (
+                                <div className="space-y-4">
+                                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                        Upload any standalone <code className="font-mono text-[11px]">.svg</code> or vector file from your computer:
+                                    </p>
+
+                                    <label
+                                        className={`flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-8 cursor-pointer transition-all ${
+                                            isDark
+                                                ? 'border-slate-700 bg-slate-800/30 hover:border-brand hover:bg-slate-800/60'
+                                                : 'border-gray-300 bg-gray-50 hover:border-brand hover:bg-indigo-50/40'
+                                        }`}
+                                    >
+                                        <input
+                                            type="file"
+                                            accept=".svg,image/svg+xml,image/*"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) handleSvgFileChosen(file);
+                                            }}
+                                        />
+                                        <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3 bg-brand/10 text-brand">
+                                            <Upload className="w-6 h-6" />
+                                        </div>
+                                        <span className="font-semibold text-sm mb-1">Click to select or drag & drop</span>
+                                        <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                                            Supports .SVG, .PNG, .WEBP, .JPG (Auto-scales crisply)
+                                        </span>
+                                    </label>
+
+                                    <div className={`rounded-xl p-3 text-xs flex items-start gap-2.5 ${
+                                        isDark ? 'bg-slate-800/70 border border-slate-700 text-slate-300' : 'bg-blue-50 border border-blue-200 text-blue-800'
+                                    }`}>
+                                        <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-brand" />
+                                        <span>
+                                            <strong>Pro Tip:</strong> SVGs are infinite-resolution vector graphics. Whether printed on a compact 2x6 strip or a giant poster, they remain crystal clear without pixelation.
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             
             <ContextMenu menu={contextMenu} onClose={closeContextMenu} isDark={isDark} />
         </div>

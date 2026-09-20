@@ -32,7 +32,7 @@ export async function uploadFrameImage(
     },
     body: JSON.stringify({
       filename: path,
-      contentType: file.type || 'application/octet-stream',
+      contentType: file.type || (file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream'),
     }),
   });
 
@@ -47,7 +47,7 @@ export async function uploadFrameImage(
     method: 'PUT',
     body: file,
     headers: {
-      'Content-Type': file.type || 'application/octet-stream',
+      'Content-Type': file.type || (file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : 'application/octet-stream'),
       'Cache-Control': 'max-age=31536000, public',
     },
   });
@@ -75,8 +75,9 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10MB raw file cap
 const ACCEPTED_MIME_PREFIXES = ['image/'];
 
 function validateImageFile(file: File): void {
-  if (!ACCEPTED_MIME_PREFIXES.some((p) => file.type.startsWith(p))) {
-    throw new Error('Only image files are allowed.');
+  const isSvg = file.name.toLowerCase().endsWith('.svg');
+  if (!isSvg && !ACCEPTED_MIME_PREFIXES.some((p) => file.type.startsWith(p))) {
+    throw new Error('Only image files (PNG, JPG, SVG, WebP) are allowed.');
   }
   if (file.size > MAX_UPLOAD_BYTES) {
     throw new Error(
