@@ -1,22 +1,61 @@
-const IS_NATIVE = typeof window !== 'undefined' && ('Capacitor' in window);
+import { Capacitor } from '@capacitor/core';
+
+const isNativePlatform = () => typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
 /**
  * Download a data URL or base64 string as a file.
- * Web: uses <a> download trick.
+ * Web: uses <a> download with Blob Object URL.
  * Native: uses Capacitor Filesystem + Share.
  */
 export async function downloadFile(dataUrl: string, filename: string): Promise<void> {
-  if (IS_NATIVE) {
+  if (isNativePlatform()) {
     return nativeDownload(dataUrl, filename);
   }
   return webDownload(dataUrl, filename);
 }
 
-function webDownload(dataUrl: string, filename: string): void {
+async function webDownload(dataUrl: string, filename: string): Promise<void> {
+  let blobUrl: string | null = null;
+
+  try {
+    if (dataUrl.startsWith('data:') || dataUrl.startsWith('blob:') || dataUrl.startsWith('http')) {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      blobUrl = URL.createObjectURL(blob);
+    } else {
+      // Raw base64 fallback
+      const byteCharacters = atob(dataUrl);
+      const byteNumbers = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const mime = filename.endsWith('.gif')
+        ? 'image/gif'
+        : filename.endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+      const blob = new Blob([byteNumbers], { type: mime });
+      blobUrl = URL.createObjectURL(blob);
+    }
+  } catch (err) {
+    console.warn('Failed to convert to blob URL, falling back to direct link:', err);
+    blobUrl = null;
+  }
+
   const a = document.createElement('a');
-  a.href = dataUrl;
+  a.href = blobUrl || dataUrl;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+
+  setTimeout(() => {
+    if (document.body.contains(a)) {
+      document.body.removeChild(a);
+    }
+    if (blobUrl) {
+      URL.revokeObjectURL(blobUrl);
+    }
+  }, 1000);
 }
 
 async function nativeDownload(dataUrl: string, filename: string): Promise<void> {

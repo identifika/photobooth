@@ -3,6 +3,7 @@
 // flip your role or peerId mid-date.
 
 import type { Frame } from './frames';
+import { isNativePlatform } from './api-config';
 
 export type Role = "host" | "guest";
 
@@ -66,9 +67,9 @@ export function getOrJoinRoomSession(roomId: string): RoomSession {
 
 export function inviteLinkFor(roomId: string): string {
   if (typeof window === "undefined") return "";
-  const IS_NATIVE = 'Capacitor' in window || '__TAURI_INTERNALS__' in window || '__TAURI__' in window;
+  const isNative = isNativePlatform();
   // On native: origin is tauri://localhost or http://localhost — use the public web URL
   // On web: use whatever domain the user is currently on
-  const base = IS_NATIVE ? 'https://app.pikabooth.web.id' : window.location.origin;
+  const base = isNative ? 'https://app.pikabooth.web.id' : window.location.origin;
   return `${base}/date?room=${roomId}`;
 }

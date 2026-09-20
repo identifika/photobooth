@@ -9,8 +9,9 @@ import {
   User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '@/lib/firebase';
+import { Capacitor } from '@capacitor/core';
 
-const IS_NATIVE = typeof window !== 'undefined' && ('Capacitor' in window);
+const IS_NATIVE = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 
 interface AuthCtx {
   user: User | null;

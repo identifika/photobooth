@@ -1,8 +1,9 @@
 import { auth } from './firebase';
+import { Capacitor } from '@capacitor/core';
 
 export async function getClientAuthToken(): Promise<string | null> {
-  const IS_NATIVE = typeof window !== 'undefined' && ('Capacitor' in window);
-  if (IS_NATIVE) {
+  const isNative = typeof window !== 'undefined' && Capacitor.isNativePlatform();
+  if (isNative) {
     try {
       const { FirebaseAuthentication } = await import('@capacitor-firebase/authentication');
       const result = await FirebaseAuthentication.getIdToken();

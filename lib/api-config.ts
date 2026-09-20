@@ -3,10 +3,12 @@
  * Handles differences between standard Web, Capacitor (iOS/Android), and Tauri (Desktop).
  */
 
+import { Capacitor } from '@capacitor/core';
+
 export function isNativePlatform(): boolean {
   if (typeof window === 'undefined') return false;
   return (
-    'Capacitor' in window ||
+    Capacitor.isNativePlatform() ||
     '__TAURI__' in window ||
     '__TAURI_INTERNALS__' in window ||
     window.location.protocol === 'capacitor:' ||

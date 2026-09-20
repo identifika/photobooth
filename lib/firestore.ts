@@ -2,8 +2,9 @@
 // web SDK in browser. Only exposes what the app actually needs.
 
 import type { FrameConfig } from './frame-types';
+import { Capacitor } from '@capacitor/core';
 
-const IS_NATIVE = typeof window !== 'undefined' && ('Capacitor' in window);
+const IS_NATIVE = typeof window !== 'undefined' && Capacitor.isNativePlatform();
 const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'photobooth-ad7ab';
 const DATABASE_ID = 'default';
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents`;
