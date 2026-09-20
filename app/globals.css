@@ -208,9 +208,9 @@
   --border-strong: var(--border);
   --bg-accent: var(--accent);
   --text-accent: var(--accent-foreground);
-  --bg-success: var(--chart-2);
-  --border-success: var(--chart-2);
-  --text-success: var(--chart-2);
+  --bg-success: color-mix(in srgb, var(--brand) 14%, var(--surface-1));
+  --border-success: color-mix(in srgb, var(--brand) 45%, var(--border-strong));
+  --text-success: var(--brand);
 }
 
 /* ---------------------------------------------------- */
@@ -269,6 +269,9 @@
 .film-frame span {
   position: relative;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .film-label {
@@ -288,10 +291,20 @@
   transition: background 0.25s;
 }
 
+.film-connector.is-past {
+  background: color-mix(in srgb, var(--brand) 65%, var(--border));
+}
+
 .film-cell.is-past .film-frame {
   background: var(--bg-success);
   border-color: var(--border-success);
   color: var(--text-success);
+}
+
+.film-cell.is-past .film-label {
+  color: var(--text-primary);
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .film-cell.is-active .film-frame {
@@ -304,10 +317,6 @@
 .film-cell.is-active .film-label {
   color: var(--brand);
   font-weight: 700;
-}
-
-.film-cell.is-past .film-connector {
-  background: var(--border-success);
 }
 
 /* Frame card */

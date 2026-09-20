@@ -8,6 +8,7 @@ import { useStudioSettings } from '@/hooks/useStudioSettings';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { usePendingPublishRequests } from '@/hooks/useFrames';
 import { useDialog } from '@/components/ui/dialog-provider';
+import { Check } from 'lucide-react';
 import StudioLogo from './StudioLogo';
 
 export interface Step {
@@ -83,10 +84,20 @@ export default function Header({ steps, currentStepIndex, onRestart, rightConten
               return (
                 <div key={s.id} className="flex items-center">
                   <div className={`film-cell ${isActive ? 'is-active' : ''} ${isPast ? 'is-past' : ''}`}>
-                    <div className="film-frame"><span>{String(i + 1).padStart(2, '0')}</span></div>
+                    <div className="film-frame">
+                      <span>
+                        {isPast ? (
+                          <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        ) : (
+                          String(i + 1).padStart(2, '0')
+                        )}
+                      </span>
+                    </div>
                     <div className="film-label">{s.label}</div>
                   </div>
-                  {i < steps.length - 1 && <div className="film-connector" />}
+                  {i < steps.length - 1 && (
+                    <div className={`film-connector ${isPast ? 'is-past' : ''}`} />
+                  )}
                 </div>
               );
             })}
