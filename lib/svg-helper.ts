@@ -1,5 +1,5 @@
 import type { FrameConfig, FrameElement, FrameTitleElement, FrameDateElement, FrameEmojiElement, FrameStickerElement, FramePhotoElement, FrameImageElement } from './frame-types';
-import { formatDate } from './frame-types';
+import { formatDate, resolveDynamicDate } from './frame-types';
 
 /**
  * Sanitizes and normalizes raw SVG string so that it can be safely and reliably
@@ -187,17 +187,19 @@ export function exportFrameConfigToSvg(config: FrameConfig, frameName: string = 
     if (el.type === 'title') {
       const t = el as FrameTitleElement;
       const textAnchor = t.align === 'left' ? 'start' : t.align === 'right' ? 'end' : 'middle';
-      const textX = t.align === 'left' ? t.x : t.align === 'right' ? t.x + t.width : t.x + t.width / 2;
+      const textX = t.align === 'left' ? t.x : t.align === 'right' ? t.x + (t.width ?? 200) : t.x + (t.width ?? 200) / 2;
+      const textY = t.y + (t.height ?? 30) / 2;
       return `
-      <text id="${t.id}" x="${textX}" y="${t.y + t.fontSize}" text-anchor="${textAnchor}" font-family="${t.font}, serif" font-size="${t.fontSize}" font-weight="700" fill="${t.color}">${t.text || ''}</text>`;
+      <text id="${t.id}" x="${textX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="central" font-family="${t.font || 'Playfair Display'}, serif" font-size="${t.fontSize}" font-weight="700" fill="${t.color}">${t.text || ''}</text>`;
     }
     if (el.type === 'date') {
       const d = el as FrameDateElement;
       const textAnchor = d.align === 'left' ? 'start' : d.align === 'right' ? 'end' : 'middle';
-      const textX = d.align === 'left' ? d.x : d.align === 'right' ? d.x + d.width : d.x + d.width / 2;
-      const textStr = formatDate(new Date(), d.format || 'MMM DD, YYYY');
+      const textX = d.align === 'left' ? d.x : d.align === 'right' ? d.x + (d.width ?? 180) : d.x + (d.width ?? 180) / 2;
+      const textY = d.y + (d.height ?? 30) / 2;
+      const textStr = formatDate(resolveDynamicDate(d), d.format || 'MMM DD, YYYY');
       return `
-      <text id="${d.id}" x="${textX}" y="${d.y + d.fontSize}" text-anchor="${textAnchor}" font-family="${d.font}, serif" font-size="${d.fontSize}" font-weight="500" fill="${d.color}">${textStr}</text>`;
+      <text id="${d.id}" x="${textX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="central" font-family="${d.font || 'Inter'}, sans-serif" font-size="${d.fontSize}" font-weight="500" fill="${d.color}">${textStr}</text>`;
     }
     if (el.type === 'image' && el.src) {
       return `

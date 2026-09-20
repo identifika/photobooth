@@ -247,19 +247,42 @@ export function resolveDynamicTitle(
 }
 
 /**
+ * Safely parses string or Date into a Date object without timezone shift bugs on YYYY-MM-DD
+ */
+function parseDateSafe(val: string | Date | undefined): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'string' && val.trim()) {
+    const match = val.trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      const [, y, m, d] = match.map(Number);
+      return new Date(y, m - 1, d, 12, 0, 0);
+    }
+    const parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+}
+
+/**
  * Resolves the Date for a FrameDateElement
  */
 export function resolveDynamicDate(
   el: FrameDateElement,
   context?: DynamicFrameContext
 ): Date {
-  if (context?.eventDate) {
-    const d = new Date(context.eventDate);
-    if (!isNaN(d.getTime())) return d;
-  }
   if (el.useEventDate && el.customDate) {
-    const d = new Date(el.customDate);
-    if (!isNaN(d.getTime())) return d;
+    const d = parseDateSafe(el.customDate);
+    if (d) return d;
+  }
+  if (context?.eventDate) {
+    const d = parseDateSafe(context.eventDate);
+    if (d) return d;
+  }
+  if (el.customDate) {
+    const d = parseDateSafe(el.customDate);
+    if (d) return d;
   }
   return new Date();
 }
+

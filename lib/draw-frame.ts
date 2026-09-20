@@ -149,13 +149,15 @@ export async function drawFrameElements(
     ctx.fillRect(0, canvasHeight - accentSz * scale, canvasWidth, accentSz * scale);
   }
 
+  const frameBorderColor = cfg.borderColor ?? frame.borderColor ?? '#1a1410';
   let photoIdx = 0;
 
   for (const el of cfg.elements) {
-    const x = el.x * scale;
-    const y = el.y * scale;
-    const w = el.width * scale;
-    const h = el.height * scale;
+    if ((el as any).hidden) continue;
+    const x = (el.x ?? 0) * scale;
+    const y = (el.y ?? 0) * scale;
+    const w = (el.width ?? (el.type === 'date' ? 180 : 200)) * scale;
+    const h = (el.height ?? (el.type === 'date' ? 30 : 30)) * scale;
 
     if (el.type === 'photo') {
       const rot = (el as any).rotation ?? 0;
@@ -169,7 +171,7 @@ export async function drawFrameElements(
       }
 
       // Fill background for the slot first
-      ctx.fillStyle = `${cfg.borderColor ?? '#1a1410'}18`;
+      ctx.fillStyle = `${frameBorderColor}18`;
       if ((el as any).borderStyle === 'ticket') {
         buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
       } else {
@@ -178,80 +180,98 @@ export async function drawFrameElements(
       }
       ctx.fill();
 
-      const hasSource = photoIdx < photoSources.length && photoSources[photoIdx] !== null;
-      if (hasSource) {
-        const source = photoSources[photoIdx]!;
-        
-        // Ensure source has dimensions before drawing
+      const source = photoIdx < photoSources.length ? photoSources[photoIdx] : null;
+      if (source) {
+        ctx.save();
+        if ((el as any).borderStyle === 'ticket') {
+          buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
+        } else {
+          ctx.beginPath();
+          roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+        }
+        ctx.clip();
+
+        // Calculate aspect ratio fit (cover)
         const srcW = source instanceof HTMLVideoElement ? source.videoWidth : source.width;
         const srcH = source instanceof HTMLVideoElement ? source.videoHeight : source.height;
 
         if (srcW > 0 && srcH > 0) {
-            ctx.save();
-            if ((el as any).borderStyle === 'ticket') {
-              buildTicketPath(ctx, x, y, w, h, ((el as any).ticketHoleSize ?? 14) * scale);
-            } else {
-              ctx.beginPath();
-              roundRect(ctx, x, y, w, h, el.borderRadius * scale);
-            }
-            ctx.clip();
-            const sourceRatio = srcW / srcH;
-            const slotRatio = w / h;
-            let dw = w, dh = h, dx = x, dy = y;
-            if (sourceRatio > slotRatio) { dh = h; dw = h * sourceRatio; dx = x - (dw - w) / 2; }
-            else { dw = w; dh = w / sourceRatio; dy = y - (dh - h) / 2; }
-            
-            if (mirrorVideo && source instanceof HTMLVideoElement) {
-              ctx.translate(dx + dw / 2, dy + dh / 2);
-              ctx.scale(-1, 1);
-              ctx.translate(-(dx + dw / 2), -(dy + dh / 2));
-            }
+          const imgRatio = srcW / srcH;
+          const slotRatio = w / h;
+          let dw = w;
+          let dh = h;
+          let dx = x;
+          let dy = y;
+
+          if (imgRatio > slotRatio) {
+            dh = h;
+            dw = h * imgRatio;
+            dx = x - (dw - w) / 2;
+          } else {
+            dw = w;
+            dh = w / imgRatio;
+            dy = y - (dh - h) / 2;
+          }
+
+          if (source instanceof HTMLVideoElement && mirrorVideo) {
+            ctx.translate(dx + dw, dy);
+            ctx.scale(-1, 1);
+            ctx.drawImage(source, 0, 0, dw, dh);
+          } else {
             ctx.drawImage(source, dx, dy, dw, dh);
-            ctx.restore();
+          }
         }
-        photoIdx++;
-      } else {
-        photoIdx++;
+        ctx.restore();
       }
 
-      // Draw border on top
+      // Draw photo slot border
       const photoEl = el as any;
       if (photoEl.borderWidth !== undefined) {
         if (photoEl.borderWidth > 0 || photoEl.borderStyle === 'ticket') {
           if (photoEl.borderWidth > 0 && photoEl.borderStyle !== 'ticket') {
-              ctx.strokeStyle = photoEl.borderColor || '#000000';
-              ctx.lineWidth = photoEl.borderWidth * scale;
-              if (photoEl.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
-              else if (photoEl.borderStyle === 'dotted') {
-                ctx.setLineDash([6 * scale, 12 * scale]);
-                ctx.lineCap = 'round';
-              } else {
-                ctx.setLineDash([]);
-              }
-              roundRect(ctx, x, y, w, h, el.borderRadius * scale);
-              ctx.stroke();
+            ctx.strokeStyle = photoEl.borderColor || '#000000';
+            ctx.lineWidth = photoEl.borderWidth * scale;
+            if (photoEl.borderStyle === 'dashed') ctx.setLineDash([15 * scale, 10 * scale]);
+            else if (photoEl.borderStyle === 'dotted') {
+              ctx.setLineDash([6 * scale, 12 * scale]);
+              ctx.lineCap = 'round';
+            } else {
+              ctx.setLineDash([]);
+            }
+            roundRect(ctx, x, y, w, h, el.borderRadius * scale);
+            ctx.stroke();
           }
         }
-      } else if (!hasSource) {
-        ctx.strokeStyle = `${cfg.borderColor ?? '#1a1410'}40`;
-        ctx.lineWidth = 3;
-        ctx.setLineDash([12, 8]);
+      } else if (!source) {
+        ctx.strokeStyle = `${frameBorderColor}40`;
+        ctx.lineWidth = 2 * scale;
+        ctx.setLineDash([6 * scale, 4 * scale]);
         roundRect(ctx, x, y, w, h, el.borderRadius * scale);
         ctx.stroke();
       }
       ctx.setLineDash([]);
       ctx.restore();
+      photoIdx++;
     }
 
     if (el.type === 'title') {
       const titleEl = el as FrameTitleElement;
       const textToDraw = resolveDynamicTitle(titleEl, context);
+      const rot = (el as any).rotation ?? 0;
       ctx.save();
-      ctx.fillStyle = titleEl.color;
-      ctx.font = `${titleEl.fontSize * scale}px "${titleEl.font}", serif`;
+      if (rot !== 0) {
+        ctx.translate(x + w / 2, y + h / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.translate(-(x + w / 2), -(y + h / 2));
+      }
+      ctx.fillStyle = titleEl.color || '#000000';
+      const font = titleEl.font || 'Playfair Display';
+      ctx.font = `bold ${titleEl.fontSize * scale}px "${font}", serif`;
       ctx.textAlign = titleEl.align === 'left' ? 'left' : titleEl.align === 'right' ? 'right' : 'center';
+      ctx.textBaseline = 'middle';
       const textX = titleEl.align === 'left' ? x : titleEl.align === 'right' ? x + w : x + w / 2;
-      ctx.fillText(textToDraw, textX, y + titleEl.fontSize * scale + 8);
+      const textY = y + (h > 0 ? h / 2 : (titleEl.fontSize * scale) / 2);
+      ctx.fillText(textToDraw, textX, textY);
       ctx.restore();
     }
 
@@ -259,12 +279,21 @@ export async function drawFrameElements(
       const dateEl = el as FrameDateElement;
       const dateObj = resolveDynamicDate(dateEl, context);
       const textToDraw = formatDate(dateObj, dateEl.format || 'MMM DD, YYYY');
+      const rot = (el as any).rotation ?? 0;
       ctx.save();
-      ctx.fillStyle = dateEl.color;
-      ctx.font = `${dateEl.fontSize * scale}px "${dateEl.font}", serif`;
+      if (rot !== 0) {
+        ctx.translate(x + w / 2, y + h / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+        ctx.translate(-(x + w / 2), -(y + h / 2));
+      }
+      ctx.fillStyle = dateEl.color || '#000000';
+      const font = dateEl.font || 'Inter';
+      ctx.font = `500 ${dateEl.fontSize * scale}px "${font}", sans-serif`;
       ctx.textAlign = dateEl.align === 'left' ? 'left' : dateEl.align === 'right' ? 'right' : 'center';
+      ctx.textBaseline = 'middle';
       const textX = dateEl.align === 'left' ? x : dateEl.align === 'right' ? x + w : x + w / 2;
-      ctx.fillText(textToDraw, textX, y + dateEl.fontSize * scale + 8);
+      const textY = y + (h > 0 ? h / 2 : (dateEl.fontSize * scale) / 2);
+      ctx.fillText(textToDraw, textX, textY);
       ctx.restore();
     }
 

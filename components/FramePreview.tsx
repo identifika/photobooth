@@ -78,13 +78,16 @@ export default function FramePreview({ config, scale = 0.5, context }: Props) {
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: accentSize, background: config.accentColor ?? '#c9a84c' }} />
 
         {elements.map((el) => {
+          if ((el as any).hidden) return null;
           const base: React.CSSProperties = {
             position: 'absolute',
-            left: el.x,
-            top: el.y,
-            width: el.width,
-            height: el.height,
+            left: el.x ?? 0,
+            top: el.y ?? 0,
+            width: el.width ?? 180,
+            height: el.height ?? 30,
             opacity: (el as any).opacity !== undefined ? (el as any).opacity : 1,
+            transform: (el as any).rotation ? `rotate(${(el as any).rotation}deg)` : undefined,
+            transformOrigin: 'center center',
           };
 
           if (el.type === 'photo') {
@@ -102,7 +105,6 @@ export default function FramePreview({ config, scale = 0.5, context }: Props) {
                 borderRadius: photoEl.borderRadius,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 12, color: config.borderColor ?? '#1a1410', opacity: 0.5,
-                transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
               }}>📷</div>
             );
           }
@@ -115,7 +117,7 @@ export default function FramePreview({ config, scale = 0.5, context }: Props) {
                 ...base,
                 display: 'flex', alignItems: 'center',
                 justifyContent: t.align === 'left' ? 'flex-start' : t.align === 'right' ? 'flex-end' : 'center',
-                fontFamily: `'${t.font}', serif`,
+                fontFamily: `'${t.font || 'Playfair Display'}', serif`,
                 fontSize: t.fontSize,
                 color: t.color,
                 fontWeight: 700,
@@ -136,10 +138,10 @@ export default function FramePreview({ config, scale = 0.5, context }: Props) {
                 ...base,
                 display: 'flex', alignItems: 'center',
                 justifyContent: d.align === 'left' ? 'flex-start' : d.align === 'right' ? 'flex-end' : 'center',
-                fontFamily: `'${d.font}', serif`,
+                fontFamily: `'${d.font || 'Inter'}', sans-serif`,
                 fontSize: d.fontSize,
                 color: d.color,
-                fontWeight: 700,
+                fontWeight: 500,
                 textAlign: d.align,
                 userSelect: 'none',
               }}>

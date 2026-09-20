@@ -249,12 +249,14 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
 
       const photoImgs = await Promise.all(photos.map(src => loadImage(src)));
       let photoIdx = 0;
+      const photoPositions: any[] = [];
 
       for (const el of cfg.elements) {
-        const x = el.x * scale;
-        const y = el.y * scale;
-        const w = el.width * scale;
-        const h = el.height * scale;
+        if ((el as any).hidden) continue;
+        const x = (el.x ?? 0) * scale;
+        const y = (el.y ?? 0) * scale;
+        const w = (el.width ?? (el.type === 'date' ? 180 : 200)) * scale;
+        const h = (el.height ?? (el.type === 'date' ? 30 : 30)) * scale;
 
         if (el.type === 'photo') {
           const rot = (el as any).rotation ?? 0;
@@ -297,6 +299,7 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
             ctx.drawImage(img, dx, dy, dw, dh);
             if (filterCss !== 'none') ctx.filter = 'none';
             ctx.restore();
+            photoPositions.push({ x, y, w, h });
             photoIdx++;
           }
 
@@ -320,8 +323,8 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
             }
           } else if (!hasImage) {
             ctx.strokeStyle = `${frameBorderColor}40`;
-            ctx.lineWidth = 3;
-            ctx.setLineDash([12, 8]);
+            ctx.lineWidth = 2 * scale;
+            ctx.setLineDash([6 * scale, 4 * scale]);
             roundRect(ctx, x, y, w, h, el.borderRadius * scale);
             ctx.stroke();
           }
@@ -332,12 +335,21 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
         if (el.type === 'title') {
           const t = el as FrameTitleElement;
           const titleText = resolveDynamicTitle(t, eventContext);
+          const rot = (el as any).rotation ?? 0;
           ctx.save();
-          ctx.fillStyle = t.color;
-          ctx.font = `bold ${t.fontSize * scale}px "${t.font}", serif`;
+          if (rot !== 0) {
+            ctx.translate(x + w / 2, y + h / 2);
+            ctx.rotate((rot * Math.PI) / 180);
+            ctx.translate(-(x + w / 2), -(y + h / 2));
+          }
+          ctx.fillStyle = t.color || '#000000';
+          const font = t.font || 'Playfair Display';
+          ctx.font = `bold ${t.fontSize * scale}px "${font}", serif`;
           ctx.textAlign = t.align === 'left' ? 'left' : t.align === 'right' ? 'right' : 'center';
+          ctx.textBaseline = 'middle';
           const textX = t.align === 'left' ? x : t.align === 'right' ? x + w : x + w / 2;
-          ctx.fillText(titleText, textX, y + t.fontSize * scale + 8);
+          const textY = y + (h > 0 ? h / 2 : (t.fontSize * scale) / 2);
+          ctx.fillText(titleText, textX, textY);
           ctx.restore();
         }
 
@@ -345,12 +357,21 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
           const d = el as FrameDateElement;
           const dateObj = resolveDynamicDate(d, eventContext);
           const dateText = formatDate(dateObj, d.format || 'MMM DD, YYYY');
+          const rot = (el as any).rotation ?? 0;
           ctx.save();
-          ctx.fillStyle = d.color;
-          ctx.font = `bold ${d.fontSize * scale}px "${d.font}", serif`;
+          if (rot !== 0) {
+            ctx.translate(x + w / 2, y + h / 2);
+            ctx.rotate((rot * Math.PI) / 180);
+            ctx.translate(-(x + w / 2), -(y + h / 2));
+          }
+          ctx.fillStyle = d.color || '#000000';
+          const font = d.font || 'Inter';
+          ctx.font = `500 ${d.fontSize * scale}px "${font}", sans-serif`;
           ctx.textAlign = d.align === 'left' ? 'left' : d.align === 'right' ? 'right' : 'center';
+          ctx.textBaseline = 'middle';
           const textX = d.align === 'left' ? x : d.align === 'right' ? x + w : x + w / 2;
-          ctx.fillText(dateText, textX, y + d.fontSize * scale + 8);
+          const textY = y + (h > 0 ? h / 2 : (d.fontSize * scale) / 2);
+          ctx.fillText(dateText, textX, textY);
           ctx.restore();
         }
 

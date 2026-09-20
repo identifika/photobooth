@@ -2236,6 +2236,7 @@ export default function FrameEditor({
                                         <FieldLabel isDark={isDark}>Color</FieldLabel>
                                         <ColorField value={el.color} onChange={(v) => updateElement(el.id, { color: v })} isDark={isDark} />
                                     </div>
+                                    <WHFields w={el.width} h={el.height} onW={(v) => updateElement(el.id, { width: v })} onH={(v) => updateElement(el.id, { height: v })} isDark={isDark} />
                                     <XYFields x={el.x} y={el.y} onX={(v) => updateElement(el.id, { x: v })} onY={(v) => updateElement(el.id, { y: v })} isDark={isDark} />
                                 </div>
                             );
