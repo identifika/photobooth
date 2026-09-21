@@ -23,7 +23,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useDialog } from '@/components/ui/dialog-provider';
-import { fileToDataUrl, svgToDataUrl, SVG_PRESETS, exportFrameConfigToSvg } from '@/lib/svg-helper';
+import { fileToDataUrl, svgToDataUrl, exportFrameConfigToSvg } from '@/lib/svg-helper';
 import { downloadFile } from '@/lib/download';
 import { Download, Sparkles, Code2, Upload, FileCode, X } from 'lucide-react';
 
@@ -659,7 +659,7 @@ export default function FrameEditor({
     // ── SVG Studio Modal state ──
     const [svgModalOpen, setSvgModalOpen] = useState(false);
     const [svgModalTarget, setSvgModalTarget] = useState<'background' | 'new-element' | string>('background');
-    const [svgActiveTab, setSvgActiveTab] = useState<'preset' | 'paste' | 'upload'>('preset');
+    const [svgActiveTab, setSvgActiveTab] = useState<'paste' | 'upload'>('paste');
     const [svgPastedCode, setSvgPastedCode] = useState('');
     const [svgError, setSvgError] = useState('');
     const [svgPreviewUrl, setSvgPreviewUrl] = useState('');
@@ -2395,17 +2395,6 @@ export default function FrameEditor({
                         {/* Navigation Tabs */}
                         <div className={`flex border-b px-5 pt-2 gap-2 text-xs font-medium ${isDark ? 'border-slate-800 bg-slate-900/50' : 'border-gray-100 bg-gray-50/50'}`}>
                             <button
-                                onClick={() => setSvgActiveTab('preset')}
-                                className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
-                                    svgActiveTab === 'preset'
-                                        ? 'border-brand text-brand font-semibold'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
-                                }`}
-                            >
-                                <Sparkles className="w-3.5 h-3.5" />
-                                Presets
-                            </button>
-                            <button
                                 onClick={() => setSvgActiveTab('paste')}
                                 className={`pb-2.5 px-3 border-b-2 transition-all flex items-center gap-1.5 ${
                                     svgActiveTab === 'paste'
@@ -2431,44 +2420,6 @@ export default function FrameEditor({
 
                         {/* Tab Content */}
                         <div className="flex-1 overflow-y-auto p-5">
-                            {svgActiveTab === 'preset' && (
-                                <div className="space-y-4">
-                                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
-                                        Choose one of our handcrafted vector frame designs. Scalable and razor-sharp at any print resolution:
-                                    </p>
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                        {SVG_PRESETS.map((preset) => (
-                                            <div
-                                                key={preset.id}
-                                                onClick={() => applySvgUrl(preset.url)}
-                                                className={`group relative rounded-xl border p-2.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md ${
-                                                    isDark
-                                                        ? 'border-slate-800 bg-slate-800/50 hover:border-brand/60 hover:bg-slate-800'
-                                                        : 'border-gray-200 bg-gray-50 hover:border-brand/60 hover:bg-white'
-                                                }`}
-                                            >
-                                                <div className="aspect-[2/3] w-full rounded-lg overflow-hidden bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2 border border-black/5 dark:border-white/5">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        src={preset.url}
-                                                        alt={preset.name}
-                                                        className="w-full h-full object-contain p-1 group-hover:scale-105 transition-transform duration-300"
-                                                    />
-                                                </div>
-                                                <h4 className="font-medium text-xs truncate">{preset.name}</h4>
-                                                <p className={`text-[10px] truncate ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
-                                                    {preset.description}
-                                                </p>
-                                                <span className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded capitalize ${
-                                                    isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-200 text-gray-600'
-                                                }`}>
-                                                    {preset.category}
-                                                </span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
 
                             {svgActiveTab === 'paste' && (
                                 <div className="space-y-4">
