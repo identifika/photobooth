@@ -1113,7 +1113,7 @@ export default function FrameEditor({
         }
     };
 
-    const openSvgModal = (target: 'background' | 'new-element' | string, initialTab: 'preset' | 'paste' | 'upload' = 'preset') => {
+    const openSvgModal = (target: 'background' | 'new-element' | string, initialTab: 'paste' | 'upload' = 'paste') => {
         setSvgModalTarget(target);
         setSvgActiveTab(initialTab);
         setSvgPastedCode('');
@@ -1476,7 +1476,7 @@ export default function FrameEditor({
                         <Button variant="outline" size="sm" onClick={addPhoto} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📷 Photo Slot</Button>
                         <Button variant="outline" size="sm" onClick={addTitle} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✏️ Title Text</Button>
                         <Button variant="outline" size="sm" onClick={addImage} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🖼 Image</Button>
-                        <Button variant="outline" size="sm" onClick={() => openSvgModal('new-element', 'preset')} className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700 text-brand' : 'text-brand'}`}>🎨 SVG / Vector</Button>
+                        <Button variant="outline" size="sm" onClick={() => openSvgModal('new-element', 'paste')} className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700 text-brand' : 'text-brand'}`}>🎨 SVG / Vector</Button>
                         <Button variant="outline" size="sm" onClick={addEmojiRow} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>✨ Emoji Row</Button>
                         <Button variant="outline" size="sm" onClick={() => addSticker('✨')} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>🌟 Emoji Sticker</Button>
                         <Button variant="outline" size="sm" onClick={addDate} className={`w-full justify-start text-xs ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}>📅 Date Stamp</Button>
@@ -1775,7 +1775,7 @@ export default function FrameEditor({
                                                 )}
                                             </div>
                                             <div className="flex gap-1.5 mt-1.5">
-                                                <Button size="sm" variant="outline" onClick={() => openSvgModal('background', 'preset')} className="flex-1 text-[11px] h-7">
+                                                <Button size="sm" variant="outline" onClick={() => openSvgModal('background', 'paste')} className="flex-1 text-[11px] h-7">
                                                     Change...
                                                 </Button>
                                                 <Button size="sm" variant="ghost" onClick={() => setBgImage('')} className="text-[11px] h-7 text-red-500 hover:text-red-600">
@@ -1785,16 +1785,6 @@ export default function FrameEditor({
                                         </div>
                                     ) : (
                                         <div className="space-y-1.5">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => openSvgModal('background', 'preset')}
-                                                className={`w-full justify-start text-xs flex items-center gap-1.5 ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}
-                                            >
-                                                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                                                <span>Choose SVG Preset</span>
-                                            </Button>
                                             <Button
                                                 type="button"
                                                 variant="outline"
