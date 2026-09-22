@@ -51,5 +51,11 @@
 	<string>Pika needs microphone access for video recording during date sessions.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Pika needs photo library access to save your photobooth strips.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Pika needs permission to save photobooth strips to your photo library.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

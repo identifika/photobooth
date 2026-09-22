@@ -12,7 +12,7 @@ import PolaroidGrid from './PolaroidGrid';
 import ShareSection from './ShareSection';
 import { useBulkUpload } from '@/hooks/useBulkUpload';
 import { DEFAULT_EDIT_CONFIG } from '@/lib/edit-types';
-import { downloadFile } from '@/lib/download';
+import { downloadFile, shareFile, isNativePlatform } from '@/lib/download';
 import { getApiUrl, getPublicAppUrl, getSessionShareUrl } from '@/lib/api-config';
 import { loadImageForCanvas } from '@/lib/image-loader';
 
@@ -34,6 +34,13 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
   const [downloading, setDownloading] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
+  const [isNative, setIsNative] = useState(false);
+
+  useEffect(() => {
+    setIsNative(isNativePlatform());
+  }, []);
 
   const {
     gifDataUrl,
@@ -669,12 +676,37 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
 
   const handleDownload = async () => {
     setDownloading(true);
+    setDownloadFeedback(null);
     try {
-      await downloadFile(stripDataUrl, `photobooth-${frame.id}-${Date.now()}.jpg`);
+      const res = await downloadFile(stripDataUrl, `photobooth-${frame.id}-${Date.now()}.jpg`);
+      if (res && typeof res === 'object') {
+        if (res.success) {
+          setDownloadFeedback(res.path ? `Saved to ${res.path}` : 'Saved to device gallery!');
+        } else {
+          setDownloadFeedback(res.error || 'Failed to save to device');
+        }
+      } else {
+        setDownloadFeedback('Saved to Downloads!');
+      }
     } catch (err) {
       console.error('Download failed:', err);
+      setDownloadFeedback('Download failed');
+    } finally {
+      setTimeout(() => setDownloading(false), 1500);
+      setTimeout(() => setDownloadFeedback(null), 4500);
     }
-    setTimeout(() => setDownloading(false), 1500);
+  };
+
+  const handleNativeShare = async () => {
+    if (!stripDataUrl) return;
+    setSharing(true);
+    try {
+      await shareFile(stripDataUrl, `photobooth-${frame.id}-${Date.now()}.jpg`);
+    } catch (err) {
+      console.error('Share failed:', err);
+    } finally {
+      setSharing(false);
+    }
   };
 
 
@@ -789,43 +821,85 @@ export default function FinalStrip({ photos, liveClips, frame, filter, uploadedU
 
         {/* Action buttons */}
         {printComplete && stripDataUrl && (
-          <div className="flex flex-col sm:flex-row gap-3 animate-slideUp" style={{ animationDelay: '0.3s' }}>
-            {!displayUploadedUrl && (
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background flex items-center justify-center cursor-pointer"
-                style={{ opacity: uploading ? 0.7 : 1 }}
-              >
-                {uploading ? '⏳ Uploading...' : '☁️ Upload & Share'}
-              </button>
+          <div className="flex flex-col gap-3 animate-slideUp" style={{ animationDelay: '0.3s' }}>
+            {downloadFeedback && (
+              <div className="py-2.5 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary text-sm font-medium text-center flex items-center justify-center gap-2">
+                <span>✓</span> {downloadFeedback}
+              </div>
             )}
-            <button
-              onClick={handleDownload}
-              className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
-              style={{ opacity: downloading ? 0.7 : 1 }}
-            >
-              {downloading ? '✓ Saved!' : '↓ Download Strip'}
-            </button>
-            {generatingGif ? (
-              <button disabled className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide text-sm cursor-not-allowed border-2 border-input text-muted-foreground bg-transparent flex items-center justify-center" style={{ opacity: 0.5 }}>
-                ⏳ GIF...
-              </button>
-            ) : gifDataUrl ? (
+            <div className="flex flex-col sm:flex-row gap-3">
+              {isNative ? (
+                <>
+                  <button
+                    onClick={handleDownload}
+                    disabled={downloading}
+                    className="flex-1 py-3.5 px-4 min-h-[48px] rounded-xl font-semibold tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer shadow-md active:scale-95"
+                    style={{ opacity: downloading ? 0.7 : 1 }}
+                  >
+                    {downloading ? '💾 Saving to Device...' : '💾 Save to Device'}
+                  </button>
+                  <button
+                    onClick={handleNativeShare}
+                    disabled={sharing}
+                    className="flex-1 py-3.5 px-4 min-h-[48px] rounded-xl font-semibold tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background flex items-center justify-center cursor-pointer shadow-md active:scale-95"
+                    style={{ opacity: sharing ? 0.7 : 1 }}
+                  >
+                    {sharing ? '📤 Sharing...' : '📤 Share Strip'}
+                  </button>
+                  {!displayUploadedUrl && (
+                    <button
+                      onClick={handleUpload}
+                      disabled={uploading}
+                      className="flex-1 py-3.5 px-4 min-h-[48px] rounded-xl font-medium tracking-wide transition-all text-sm hover:opacity-90 border-2 border-input text-foreground bg-transparent flex items-center justify-center cursor-pointer"
+                      style={{ opacity: uploading ? 0.7 : 1 }}
+                    >
+                      {uploading ? '⏳ Uploading...' : '☁️ Cloud QR'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {!displayUploadedUrl && (
+                    <button
+                      onClick={handleUpload}
+                      disabled={uploading}
+                      className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-foreground text-background flex items-center justify-center cursor-pointer"
+                      style={{ opacity: uploading ? 0.7 : 1 }}
+                    >
+                      {uploading ? '⏳ Uploading...' : '☁️ Upload & Share'}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleDownload}
+                    className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
+                    style={{ opacity: downloading ? 0.7 : 1 }}
+                  >
+                    {downloading ? '✓ Saved!' : '↓ Download Strip'}
+                  </button>
+                </>
+              )}
+
+              {generatingGif ? (
+                <button disabled className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide text-sm cursor-not-allowed border-2 border-input text-muted-foreground bg-transparent flex items-center justify-center" style={{ opacity: 0.5 }}>
+                  ⏳ GIF...
+                </button>
+              ) : gifDataUrl ? (
+                <button
+                  onClick={handleDownloadGif}
+                  className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
+                  style={{ opacity: downloadingGif ? 0.7 : 1 }}
+                >
+                  {downloadingGif ? '✓ Saved!' : isNative ? '💾 Save GIF' : '↓ Download GIF'}
+                </button>
+              ) : null}
+
               <button
-                onClick={handleDownloadGif}
-                className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-90 bg-primary text-primary-foreground flex items-center justify-center cursor-pointer"
-                style={{ opacity: downloadingGif ? 0.7 : 1 }}
+                onClick={onRestart}
+                className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-75 border-2 border-input text-foreground bg-transparent hover:bg-surface-0 flex items-center justify-center cursor-pointer"
               >
-                {downloadingGif ? '✓ Saved!' : '↓ Download GIF'}
+                ↺ New
               </button>
-            ) : null}
-            <button
-              onClick={onRestart}
-              className="flex-1 py-3.5 px-4 min-h-[48px] rounded-sm font-medium tracking-wide transition-all text-sm hover:opacity-75 border-2 border-input text-foreground bg-transparent hover:bg-surface-0 flex items-center justify-center cursor-pointer"
-            >
-              ↺ New
-            </button>
+            </div>
           </div>
         )}
       </div>

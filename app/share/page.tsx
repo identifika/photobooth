@@ -9,6 +9,7 @@ import { Download, Loader2, Image as ImageIcon, Video, Home } from 'lucide-react
 import Link from 'next/link';
 import JSZip from 'jszip';
 import Header from '@/components/Header';
+import { downloadFile as saveFile } from '@/lib/download';
 
 interface MediaItem {
   key: string;
@@ -61,18 +62,12 @@ function SharePageContent() {
     });
   }, [sessionId]);
 
-  const downloadFile = (url: string, filename: string) => {
-    fetch(url)
-      .then(response => response.blob())
-      .then(blob => {
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      })
-      .catch(console.error);
+  const downloadFile = async (url: string, filename: string) => {
+    try {
+      await saveFile(url, filename);
+    } catch (err) {
+      console.error('Download failed:', err);
+    }
   };
 
   const handleDownloadAll = async () => {
@@ -91,13 +86,22 @@ function SharePageContent() {
       await Promise.all(fetchPromises);
       
       const content = await zip.generateAsync({ type: 'blob' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(content);
       const safeSessionName = (sessionId || 'session').replace(/[\/\\]/g, '-');
-      link.download = `photobooth-${safeSessionName}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const filename = `photobooth-${safeSessionName}.zip`;
+
+      const reader = new FileReader();
+      await new Promise<void>((resolve, reject) => {
+        reader.onloadend = async () => {
+          try {
+            await saveFile(reader.result as string, filename);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(content);
+      });
     } catch (err) {
       console.error('Failed to create zip', err);
       alert('Failed to download zip file');
