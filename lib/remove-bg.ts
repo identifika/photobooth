@@ -1,41 +1,24 @@
 'use client';
 import { pipeline, env } from '@huggingface/transformers';
 
-// Configure to cache models in browser
+// Configure to load models from custom CDN instead of Hugging Face
+const CDN_URL = process.env.NEXT_PUBLIC_CDN_URL || 'https://cdn.aramadani.my.id';
 env.allowLocalModels = false;
+env.allowRemoteModels = true;
+env.remoteHost = `${CDN_URL.replace(/\/+$/, '')}/`;
+env.remotePathTemplate = 'photobooth/models/{model}/';
 env.useBrowserCache = true;
 
 let segmenterPromise: Promise<any> | null = null;
-let fetchConfigured = false;
 
-function configureFetchWithToken() {
-  if (fetchConfigured) return;
-  fetchConfigured = true;
-  
-  const hfToken = typeof window !== 'undefined' 
-    ? (window as any).__NEXT_PUBLIC_HF_TOKEN 
-    : null;
-  
-  if (hfToken) {
-    const origFetch = env.fetch ?? globalThis.fetch;
-    env.fetch = (input: string | URL, init?: any) => {
-      return origFetch(input, {
-        ...init,
-        headers: {
-          ...init?.headers,
-          Authorization: `Bearer ${hfToken}`,
-        },
-      });
-    };
-  }
+export function preloadBgModel() {
+  return getSegmenter();
 }
 
 function getSegmenter() {
   if (!segmenterPromise) {
-    configureFetchWithToken();
-
-    segmenterPromise = pipeline('background-removal', 'Xenova/modnet', {
-      dtype: 'q4',
+    segmenterPromise = pipeline('background-removal', 'modnet', {
+      dtype: 'q8', // Loads onnx/model_quantized.onnx (6.6 MB)
     });
   }
   return segmenterPromise;
