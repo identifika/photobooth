@@ -1,6 +1,6 @@
 "use client";
 
-import { Capacitor } from "@capacitor/core";
+import { getApiUrl } from "./api-config";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type SignalMsg =
@@ -29,12 +29,7 @@ const ICE_SERVERS: RTCIceServer[] = [
 // Fetch fresh TURN credentials from Turnix via server-side route
 async function getIceServers(): Promise<{ iceServers: RTCIceServer[]; ttlSeconds: number }> {
   try {
-    // On native (Capacitor/Tauri), API routes don't exist in static export
-    // so we must hit the hosted web app's API endpoint instead
-    const isNative = Capacitor.isNativePlatform();
-    const apiUrl = isNative
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/api/turn-credentials`
-      : "/api/turn-credentials";
+    const apiUrl = getApiUrl('/api/turn-credentials');
 
     const res = await fetch(apiUrl, {
       method: "POST",

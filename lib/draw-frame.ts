@@ -3,6 +3,7 @@ import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameC
 import { drawQrOnCanvas } from './qr-helper';
 import { resolveDynamicTitle, resolveDynamicDate, formatDate } from './frame-types';
 import { getPublicAppUrl, getSessionShareUrl } from './api-config';
+import { loadImageForCanvas } from './image-loader';
 
 export interface DrawFrameContext extends DynamicFrameContext {
   mirrorVideo?: boolean;
@@ -55,13 +56,7 @@ export function buildTicketPath(
 }
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((res, rej) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => res(img);
-    img.onerror = rej;
-    img.src = src;
-  });
+  return loadImageForCanvas(src);
 }
 
 /**

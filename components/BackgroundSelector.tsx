@@ -17,6 +17,8 @@ import { listUserBackgrounds, createUserBackground, deleteUserBackground, type U
 import { requestBackgroundPublish } from '@/lib/publish-requests';
 import { Trash2, Globe, Upload, Loader2 } from 'lucide-react';
 import { getClientAuthToken } from '@/lib/auth-client';
+import { getApiUrl } from '@/lib/api-config';
+import { fetchImageAsDataUrl } from '@/lib/image-loader';
 
 export interface EditorSyncData {
   activeTab: Tab;
@@ -208,7 +210,7 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
       if (!dataUrl) { setUploadingBg(false); return; }
       try {
         const token = await getClientAuthToken();
-        const res = await fetch('/api/upload', {
+        const res = await fetch(getApiUrl('/api/upload'), {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -433,29 +435,8 @@ export default function BackgroundSelector({ photos, frame, syncData, onSync, on
     });
   }, [adjustments]);
 
-  /**
-   * Fetch an external URL as a local data URL so canvas can draw it
-   * without CORS taint issues. Falls back to the original src on failure.
-   */
   const fetchAsDataUrl = async (src: string): Promise<string> => {
-    if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src;
-    try {
-      const res = await fetch('/api/proxy-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: src })
-      });
-      if (!res.ok) throw new Error(`proxy ${res.status}`);
-      const blob = await res.blob();
-      return new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      return src; // fall back to original, crossOrigin canvas will attempt anyway
-    }
+    return fetchImageAsDataUrl(src);
   };
 
   const compositeImage = async (fgSrc: string, originalSrc: string): Promise<string> => {

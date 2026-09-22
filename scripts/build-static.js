@@ -28,6 +28,16 @@ try {
   const isTauri = process.env.TAURI_ENV === '1';
   const envVar = isTauri ? 'TAURI_ENV=1' : 'STATIC_EXPORT=1';
 
+  // Clear any stale dev cache/types from .next to avoid validator errors
+  const nextDir = path.join(ROOT, '.next');
+  if (fs.existsSync(nextDir)) {
+    try {
+      fs.rmSync(nextDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  }
+
   console.log(`Building static export with ${envVar}...`);
   execSync(`npx cross-env ${envVar} next build`, {
     cwd: ROOT,

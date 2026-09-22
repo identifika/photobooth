@@ -10,6 +10,7 @@ import { Trash2, Plus, X } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import type { BackgroundOption } from '@/lib/edit-types';
 import { getClientAuthToken } from '@/lib/auth-client';
+import { getApiUrl } from '@/lib/api-config';
 
 export function MyBackgrounds({ isAuthorized }: { isAuthorized: boolean }) {
   const { user } = useAuth();
@@ -83,7 +84,7 @@ export function MyBackgrounds({ isAuthorized }: { isAuthorized: boolean }) {
       if (mountedRef.current) setUploading(true);
       try {
         const token = await getClientAuthToken();
-        const res = await fetch('/api/upload', {
+        const res = await fetch(getApiUrl('/api/upload'), {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

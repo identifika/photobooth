@@ -23,6 +23,21 @@ const nextConfig: NextConfig = {
       }
     })(),
   },
+  ...(!isTauri && !isStatic ? {
+    async headers() {
+      return [
+        {
+          source: '/api/:path*',
+          headers: [
+            { key: 'Access-Control-Allow-Origin', value: '*' },
+            { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PUT, DELETE, PATCH, OPTIONS' },
+            { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization, Range, X-Requested-With' },
+            { key: 'Access-Control-Max-Age', value: '86400' },
+          ],
+        },
+      ];
+    },
+  } : {}),
   // Rewrites removed — using /api/turn-credentials server route instead
   // (rewrites don't work in static export mode for Tauri/Capacitor)
 };

@@ -5,10 +5,27 @@ const turnixToken = process.env.TURNIX_TOKEN;
 // Turnix credential TTL — must match the ttl param sent below
 const CREDENTIAL_TTL_SECONDS = 120;
 
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Max-Age': '86400',
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
+
 export async function POST(req: NextRequest) {
   if (!turnixToken) {
     console.error('TURNIX_TOKEN not set in environment');
-    return NextResponse.json({ error: 'server misconfigured' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'server misconfigured' },
+      { status: 500, headers: CORS_HEADERS }
+    );
   }
 
   const body = await req.json().catch(() => ({}));
@@ -41,7 +58,7 @@ export async function POST(req: NextRequest) {
       console.error('Turnix credential error:', res.status, errText);
       return NextResponse.json(
         { error: 'failed to fetch ICE credentials' },
-        { status: 502 }
+        { status: 502, headers: CORS_HEADERS }
       );
     }
 
@@ -51,6 +68,7 @@ export async function POST(req: NextRequest) {
       { iceServers: data.iceServers ?? [], ttlSeconds: CREDENTIAL_TTL_SECONDS },
       {
         headers: {
+          ...CORS_HEADERS,
           'Cache-Control': `private, max-age=${CREDENTIAL_TTL_SECONDS - 10}`,
         },
       }
@@ -59,7 +77,7 @@ export async function POST(req: NextRequest) {
     console.error('Turnix fetch failed:', err);
     return NextResponse.json(
       { error: 'ICE credential request failed' },
-      { status: 502 }
+      { status: 502, headers: CORS_HEADERS }
     );
   }
 }

@@ -21,6 +21,7 @@ import { requestFramePublish, requestFilterPublish } from '@/lib/publish-request
 import { deletePublicFilterAsOwner } from '@/lib/public-filters';
 import { MyBackgrounds } from '@/components/MyBackgrounds';
 import { getClientAuthToken } from '@/lib/auth-client';
+import { getApiUrl } from '@/lib/api-config';
 import StudioLogo from '@/components/StudioLogo';
 
 const EMOJI_OPTIONS = ['📷', '🎬', '📸', '🎞️', '✨', '💫', '🌟', '⭐️', '🎭', '🪩', '🎪', '🎨'];
@@ -76,7 +77,7 @@ export default function SettingsPage() {
       setUploadingLogo(true);
       try {
         const token = await getClientAuthToken();
-        const res = await fetch('/api/upload', {
+        const res = await fetch(getApiUrl('/api/upload'), {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',

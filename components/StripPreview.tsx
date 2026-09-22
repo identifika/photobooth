@@ -4,7 +4,7 @@ import { Frame } from '@/lib/frames';
 import type { FrameQrElement, FrameTitleElement, FrameDateElement, DynamicFrameContext } from '@/lib/frame-types';
 import { resolveDynamicTitle, resolveDynamicDate, formatDate } from '@/lib/frame-types';
 import { drawQrOnCanvas } from '@/lib/qr-helper';
-import { getApiUrl } from '@/lib/api-config';
+import { loadImageForCanvas } from '@/lib/image-loader';
 
 interface Props {
   photos: string[];
@@ -71,41 +71,8 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
       .replace('DD', String(d).padStart(2, '0'));
   }, []);
 
-  const loadImage = useCallback(async (src: string): Promise<HTMLImageElement> => {
-    let fetchSrc = src;
-    let objectUrlToRevoke = '';
-
-    // Proxy external URLs through our server to avoid canvas CORS taint / errors
-    if (src && !src.startsWith('data:') && !src.startsWith('blob:') && src.startsWith('http')) {
-      try {
-        const res = await fetch(getApiUrl('/api/proxy-image'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: src }),
-        });
-        if (res.ok) {
-          const blob = await res.blob();
-          fetchSrc = URL.createObjectURL(blob);
-          objectUrlToRevoke = fetchSrc;
-        }
-      } catch (err) {
-        console.error('proxy failed', err);
-      }
-    }
-
-    return new Promise((res, rej) => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
-        res(img);
-      };
-      img.onerror = (e) => {
-        if (objectUrlToRevoke) URL.revokeObjectURL(objectUrlToRevoke);
-        rej(e);
-      };
-      img.src = fetchSrc;
-    });
+  const loadImage = useCallback((src: string): Promise<HTMLImageElement> => {
+    return loadImageForCanvas(src);
   }, []);
 
   const renderStrip = useCallback(async () => {
