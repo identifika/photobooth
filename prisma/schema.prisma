@@ -1,0 +1,237 @@
+// Firestore document ids are stored as the primary key so an import can keep
+// existing event, frame, and share links. New rows get a cuid when no id is set.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventMode {
+  kiosk
+  guest_mobile
+  hybrid
+}
+
+enum FrameLayout {
+  strip_2   @map("strip-2")
+  strip_3   @map("strip-3")
+  strip_4   @map("strip-4")
+  grid_2x2  @map("grid-2x2")
+}
+
+enum BackgroundType {
+  original
+  green
+  gradient
+  folder
+  upload
+}
+
+enum PublishRequestType {
+  frame
+  filter
+  background
+}
+
+enum PublishStatus {
+  pending
+  approved
+  rejected
+}
+
+model Event {
+  id                  String         @id @default(cuid())
+  slug                String         @unique
+  name                String
+  tagline             String?
+  brideName           String?        @map("bride_name")
+  groomName           String?        @map("groom_name")
+  hostUid             String         @map("host_uid")
+  hostEmail           String?        @map("host_email")
+  eventDate           String         @map("event_date")
+  venue               String?
+  primaryFrameId      String         @default("") @map("primary_frame_id")
+  frameIds            String[]       @default([]) @map("frame_ids")
+  allowFrameSelection Boolean        @default(true) @map("allow_frame_selection")
+  mode                EventMode      @default(hybrid)
+  enableLiveGallery   Boolean        @default(true) @map("enable_live_gallery")
+  requirePasscode     String?        @map("require_passcode")
+  customLogoUrl       String?        @map("custom_logo_url")
+  themeColor          String         @default("#e11d48") @map("theme_color")
+  customMessage       String?        @map("custom_message")
+  hashtag             String?
+  wifiSsid            String?        @map("wifi_ssid")
+  wifiPassword        String?        @map("wifi_password")
+  active              Boolean        @default(true)
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+  captures            EventCapture[]
+
+  @@index([hostUid])
+  @@map("events")
+}
+
+model EventCapture {
+  id           String   @id @default(cuid())
+  eventId      String   @map("event_id")
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  eventSlug    String   @map("event_slug")
+  sessionId    String   @map("session_id")
+  stripUrl     String   @map("strip_url")
+  gifUrl       String?  @map("gif_url")
+  photoUrls    String[] @default([]) @map("photo_urls")
+  liveClipUrls String[] @default([]) @map("live_clip_urls")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([eventId, createdAt])
+  @@index([sessionId])
+  @@map("event_captures")
+}
+
+model UserFrame {
+  id         String   @id @default(cuid())
+  uid        String
+  name       String
+  emoji      String?
+  categoryId String   @map("category_id")
+  config     Json
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([uid])
+  @@map("user_frames")
+}
+
+model PublicFrame {
+  id          String      @id @default(cuid())
+  name        String
+  description String      @default("")
+  photoCount  Int         @default(4) @map("photo_count")
+  layout      FrameLayout @default(strip_4)
+  aspectRatio Float       @default(1.333333) @map("aspect_ratio")
+  color       String      @default("#f5f0e8")
+  borderColor String      @default("#1a1410") @map("border_color")
+  accentColor String      @default("#c9a84c") @map("accent_color")
+  emoji       String      @default("🎨")
+  config      Json?
+  width       Int?
+  height      Int?
+  ownerUid    String?     @map("owner_uid")
+  ownerName   String?     @map("owner_name")
+  sortOrder   Int         @default(0) @map("sort_order")
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  @@index([ownerUid])
+  @@index([active, sortOrder])
+  @@map("public_frames")
+}
+
+model UserFilter {
+  id          String   @id @default(cuid())
+  uid         String
+  name        String
+  emoji       String   @default("📷")
+  adjustments Json
+  css         String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([uid])
+  @@map("user_filters")
+}
+
+model PublicFilter {
+  id          String   @id @default(cuid())
+  name        String
+  emoji       String   @default("📷")
+  adjustments Json
+  css         String?
+  description String   @default("")
+  ownerUid    String?  @map("owner_uid")
+  ownerName   String?  @map("owner_name")
+  sortOrder   Int      @default(0) @map("sort_order")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([ownerUid])
+  @@index([active, sortOrder])
+  @@map("public_filters")
+}
+
+model UserBackground {
+  id        String         @id @default(cuid())
+  ownerUid  String         @map("owner_uid")
+  ownerName String?        @map("owner_name")
+  type      BackgroundType
+  name      String
+  src       String?
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@index([ownerUid])
+  @@map("user_backgrounds")
+}
+
+model PublicBackground {
+  id        String         @id @default(cuid())
+  ownerUid  String?        @map("owner_uid")
+  ownerName String?        @map("owner_name")
+  type      BackgroundType
+  name      String
+  src       String?
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@index([ownerUid])
+  @@map("public_backgrounds")
+}
+
+model PublishRequest {
+  id              String             @id @default(cuid())
+  type            PublishRequestType @default(frame)
+  status          PublishStatus      @default(pending)
+  frameId         String?            @map("frame_id")
+  filterId        String?            @map("filter_id")
+  backgroundId    String?            @map("background_id")
+  userUid         String             @map("user_uid")
+  userDisplayName String?            @map("user_display_name")
+  frame           Json?
+  filter          Json?
+  background      Json?
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([userUid])
+  @@map("publish_requests")
+}
+
+/// Merges Firestore `api_keys` and `user_api_keys`.
+model ApiKey {
+  id         String    @id @default(cuid())
+  uid        String
+  name       String
+  key        String    @unique
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime? @map("last_used_at")
+
+  @@index([uid])
+  @@map("api_keys")
+}
+
+/// Replaces the single Firestore document `public_settings/studio`.
+model StudioSettings {
+  id         String   @id @default("studio")
+  studioName String   @default("Pika") @map("studio_name")
+  studioLogo String   @default("📷") @map("studio_logo")
+  tagline    String   @default("Capture the moment")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("studio_settings")
+}

@@ -13,7 +13,10 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "version:sync": "node scripts/sync-version.js"
+    "version:sync": "node scripts/sync-version.js",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1076.0",
@@ -29,6 +32,8 @@
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@huggingface/transformers": "^4.2.0",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "7.10.0",
     "@tauri-apps/api": "^2.11.1",
     "@types/gif.js": "^0.2.5",
     "@types/qrcode": "^1.5.6",
@@ -38,6 +43,7 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",
     "next": "^16.2.10",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "19.2.4",
@@ -57,11 +63,14 @@
     "@tailwindcss/postcss": "^4",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "cross-env": "^7.0.3",
+    "dotenv": "^18.0.5",
     "eslint": "^9",
     "eslint-config-next": "^16.2.10",
+    "prisma": "7.10.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

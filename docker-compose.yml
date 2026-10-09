@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: photobooth-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: photobooth
+      POSTGRES_PASSWORD: photobooth
+      POSTGRES_DB: photobooth
+    volumes:
+      - photobooth_pg:/var/lib/postgresql/data
+
+volumes:
+  photobooth_pg:
