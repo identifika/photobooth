@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import FrameSelector from '@/components/FrameSelector';
 import FramePreview from '@/components/FramePreview';
 import Camera from '@/components/Camera';
+import CaptureModeSwitch, { type CaptureSource } from '@/components/CaptureModeSwitch';
+import DevicePhotoPicker from '@/components/DevicePhotoPicker';
 import PhotoReview from '@/components/PhotoReview';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
@@ -76,9 +78,11 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
 
   // Booth State
   const [step, setStep] = useState<Step>('select');
+  const [captureSource, setCaptureSource] = useState<CaptureSource>('camera');
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [eventFrames, setEventFrames] = useState<Frame[]>([]);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [deviceQueue, setDeviceQueue] = useState<string[]>([]);
   const [liveClips, setLiveClips] = useState<(string[] | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
@@ -181,12 +185,24 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
     if (!selectedFrame) return;
     setPhotos([]);
     setLiveClips([]);
+    setDeviceQueue([]);
     setStep('camera');
   };
 
   const handleCapture = (dataUrl: string, liveFrames: string[] | null) => {
     setPendingPhoto(dataUrl);
     setPendingFrames(liveFrames);
+    setStep('review');
+  };
+
+  const handleDevicePhotos = (dataUrls: string[]) => {
+    if (dataUrls.length === 0) return;
+    const [first, ...rest] = dataUrls;
+    setPendingPhoto(first);
+    setPendingFrames(null);
+    if (retakeIndex !== null || rest.length > 0) {
+      setDeviceQueue(retakeIndex !== null ? [] : rest);
+    }
     setStep('review');
   };
 
@@ -206,21 +222,30 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
       setRetakeIndex(null);
       setPendingPhoto(null);
       setPendingFrames(null);
+      setDeviceQueue([]);
       setStep('preview');
     } else {
       const newPhotos = [...photos, finalPhotoUrl];
       const newClips = [...liveClips, pendingFrames];
       const newBgRemoved = [...photosBgRemoved, bgRemoved];
-      setPendingPhoto(null);
-      setPendingFrames(null);
       setPhotos(newPhotos);
       setLiveClips(newClips);
       setPhotosBgRemoved(newBgRemoved);
-      if (newPhotos.length >= selectedFrame.photoCount) {
-        setStep('preview');
-      } else {
-        setStep('camera');
+
+      const slotsLeft = selectedFrame.photoCount - newPhotos.length;
+      if (slotsLeft > 0 && deviceQueue.length > 0) {
+        const [next, ...rest] = deviceQueue;
+        setDeviceQueue(rest);
+        setPendingPhoto(next);
+        setPendingFrames(null);
+        setStep('review');
+        return;
       }
+
+      setPendingPhoto(null);
+      setPendingFrames(null);
+      setDeviceQueue([]);
+      setStep(slotsLeft > 0 ? 'camera' : 'preview');
     }
   };
 
@@ -239,6 +264,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
     setRetakeIndex(index);
     setPendingPhoto(null);
     setPendingFrames(null);
+    setDeviceQueue([]);
     setStep('camera');
   };
 
@@ -254,6 +280,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
     setPhotosBgRemoved([]);
     setPendingPhoto(null);
     setPendingFrames(null);
+    setDeviceQueue([]);
     setRetakeIndex(null);
   };
 
@@ -485,7 +512,8 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
                   })}
                 </div>
 
-                <div className="text-center pt-4">
+                <div className="text-center pt-4 space-y-3 max-w-sm mx-auto">
+                  <CaptureModeSwitch value={captureSource} onChange={setCaptureSource} />
                   <Button
                     size="lg"
                     onClick={handleStart}
@@ -494,7 +522,9 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
                     style={{ background: event.themeColor || undefined }}
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    Start Session ({selectedFrame?.photoCount || 4} Photos)
+                    {captureSource === 'device'
+                      ? `Choose Photos (${selectedFrame?.photoCount || 4})`
+                      : `Start Session (${selectedFrame?.photoCount || 4} Photos)`}
                   </Button>
                 </div>
               </div>
@@ -543,15 +573,18 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
                   <p className="text-xs text-muted-foreground">{selectedFrame?.photoCount || 4} synchronized photo captures</p>
                 </div>
 
-                <Button
-                  size="lg"
-                  onClick={handleStart}
-                  className="w-full rounded-full gap-2 shadow-lg font-bold"
-                  style={{ background: event.themeColor || undefined }}
-                >
-                  <CameraIcon className="w-4 h-4" />
-                  Tap to Start Taking Photos
-                </Button>
+                <div className="space-y-3">
+                  <CaptureModeSwitch value={captureSource} onChange={setCaptureSource} />
+                  <Button
+                    size="lg"
+                    onClick={handleStart}
+                    className="w-full rounded-full gap-2 shadow-lg font-bold"
+                    style={{ background: event.themeColor || undefined }}
+                  >
+                    <CameraIcon className="w-4 h-4" />
+                    {captureSource === 'device' ? 'Choose Photos from This Device' : 'Tap to Start Taking Photos'}
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -560,14 +593,25 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
         {/* Step: Camera Capture */}
         {step === 'camera' && selectedFrame && (
           <div className="space-y-4">
-            <Camera
-              frame={selectedFrame}
-              photoIndex={retakeIndex !== null ? retakeIndex : photos.length}
-              totalPhotos={selectedFrame.photoCount}
-              onCapture={handleCapture}
-              isRetake={retakeIndex !== null}
-              retakeIndex={retakeIndex !== null ? retakeIndex : undefined}
-            />
+            {captureSource === 'device' ? (
+              <DevicePhotoPicker
+                frame={selectedFrame}
+                photoIndex={photos.length}
+                totalPhotos={selectedFrame.photoCount}
+                onPhotos={handleDevicePhotos}
+                isRetake={retakeIndex !== null}
+                retakeIndex={retakeIndex !== null ? retakeIndex : undefined}
+              />
+            ) : (
+              <Camera
+                frame={selectedFrame}
+                photoIndex={retakeIndex !== null ? retakeIndex : photos.length}
+                totalPhotos={selectedFrame.photoCount}
+                onCapture={handleCapture}
+                isRetake={retakeIndex !== null}
+                retakeIndex={retakeIndex !== null ? retakeIndex : undefined}
+              />
+            )}
           </div>
         )}
 
@@ -580,6 +624,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
             frame={selectedFrame}
             onAccept={handleAccept}
             onRetry={handleRetry}
+            retryLabel={captureSource === 'device' ? 'Choose another' : undefined}
           />
         )}
 
@@ -601,6 +646,7 @@ export default function EventBoothPage({ params }: { params: Promise<{ slug: str
             } : undefined}
             onRetakePhoto={handleRetakePhoto}
             onConfirm={() => setStep('background')}
+            retakeLabel={captureSource === 'device' ? 'Replace' : undefined}
           />
         )}
 

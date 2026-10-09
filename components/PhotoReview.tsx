@@ -12,9 +12,10 @@ interface Props {
   onAccept: (url: string, bgRemoved: boolean) => void;
   onRetry: () => void;
   autoRemoveBg?: boolean;
+  retryLabel?: string;
 }
 
-export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, onAccept, onRetry, autoRemoveBg }: Props) {
+export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, onAccept, onRetry, autoRemoveBg, retryLabel = '↺ Retake' }: Props) {
   const [processing, setProcessing] = useState(false);
   const [removeBgEnabled, setRemoveBgEnabled] = useState(false);
   const [transparentUrl, setTransparentUrl] = useState<string | null>(null);
@@ -143,7 +144,7 @@ export default function PhotoReview({ photoUrl, photoIndex, totalPhotos, frame, 
             onClick={onRetry}
             className="flex-1 py-3 rounded-sm font-medium text-sm tracking-wide transition-all border-2 border-input text-foreground bg-transparent hover:bg-surface-0"
           >
-            ↺ Retake
+            {retryLabel}
           </button>
           <button
             onClick={() => onAccept(finalUrl, removeBgEnabled)}

@@ -4,6 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
 import FrameSelector from '@/components/FrameSelector';
 import Camera from '@/components/Camera';
+import CaptureModeSwitch, { type CaptureSource } from '@/components/CaptureModeSwitch';
+import DevicePhotoPicker from '@/components/DevicePhotoPicker';
 import PhotoReview from '@/components/PhotoReview';
 import BackgroundSelector from '@/components/BackgroundSelector';
 import FinalStrip from '@/components/FinalStrip';
@@ -54,8 +56,10 @@ export default function Home() {
   const router = useRouter();
   const { settings, isLoaded } = useStudioSettings();
   const [step, setStep] = useState<Step>('select');
+  const [captureSource, setCaptureSource] = useState<CaptureSource>('camera');
   const [selectedFrame, setSelectedFrame] = useState<Frame | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
+  const [deviceQueue, setDeviceQueue] = useState<string[]>([]);
   const [liveClips, setLiveClips] = useState<(string[] | null)[]>([]);
   const [pendingPhoto, setPendingPhoto] = useState<string | null>(null);
   const [pendingFrames, setPendingFrames] = useState<string[] | null>(null);
@@ -106,12 +110,24 @@ export default function Home() {
     if (!selectedFrame) return;
     setPhotos([]);
     setLiveClips([]);
+    setDeviceQueue([]);
     setStep('camera');
   };
 
   const handleCapture = (dataUrl: string, liveFrames: string[] | null) => {
     setPendingPhoto(dataUrl);
     setPendingFrames(liveFrames);
+    setStep('review');
+  };
+
+  const handleDevicePhotos = (dataUrls: string[]) => {
+    if (dataUrls.length === 0) return;
+    const [first, ...rest] = dataUrls;
+    setPendingPhoto(first);
+    setPendingFrames(null);
+    if (retakeIndex !== null || rest.length > 0) {
+      setDeviceQueue(retakeIndex !== null ? [] : rest);
+    }
     setStep('review');
   };
 
@@ -132,22 +148,31 @@ export default function Home() {
       setRetakeIndex(null);
       setPendingPhoto(null);
       setPendingFrames(null);
+      setDeviceQueue([]);
       setStep('preview');
     } else {
       // Normal flow - append new photo
       const newPhotos = [...photos, finalPhotoUrl];
       const newClips = [...liveClips, pendingFrames];
       const newBgRemoved = [...photosBgRemoved, bgRemoved];
-      setPendingPhoto(null);
-      setPendingFrames(null);
       setPhotos(newPhotos);
       setLiveClips(newClips);
       setPhotosBgRemoved(newBgRemoved);
-      if (newPhotos.length >= selectedFrame.photoCount) {
-        setStep('preview');
-      } else {
-        setStep('camera');
+
+      const slotsLeft = selectedFrame.photoCount - newPhotos.length;
+      if (slotsLeft > 0 && deviceQueue.length > 0) {
+        const [next, ...rest] = deviceQueue;
+        setDeviceQueue(rest);
+        setPendingPhoto(next);
+        setPendingFrames(null);
+        setStep('review');
+        return;
       }
+
+      setPendingPhoto(null);
+      setPendingFrames(null);
+      setDeviceQueue([]);
+      setStep(slotsLeft > 0 ? 'camera' : 'preview');
     }
   };
 
@@ -167,6 +192,7 @@ export default function Home() {
     setRetakeIndex(index);
     setPendingPhoto(null);
     setPendingFrames(null);
+    setDeviceQueue([]);
     setStep('camera');
   };
 
@@ -182,6 +208,7 @@ export default function Home() {
     setPhotosBgRemoved([]);
     setPendingPhoto(null);
     setPendingFrames(null);
+    setDeviceQueue([]);
     setRetakeIndex(null);
   };
 
@@ -214,7 +241,7 @@ export default function Home() {
       />
 
       {/* Main content */}
-      <main style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px' }}>
+      <main style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? `20px 12px ${selectedFrame && step === 'select' ? 220 : 80}px` : `32px 24px ${selectedFrame && step === 'select' ? 200 : 80}px` }}>
 
         {/* Frame badge */}
         {selectedFrame && step !== 'select' && (
@@ -233,15 +260,21 @@ export default function Home() {
               userFrames={userFrames.map(userFrameToFrame)}
             />
             {selectedFrame && (
-              <div className={`fixed z-50 animate-fadeIn ${isMobile ? 'bottom-6 left-4 right-4' : ''}`} style={isMobile ? {} : { bottom: '48px', right: '24px' }}>
-                <button
-                  className={`begin-btn ${isMobile ? 'w-full justify-center' : ''}`}
-                  onClick={handleStart}
-                  style={{ boxShadow: 'var(--shadow-md)', ...(isMobile ? { display: 'flex', width: '100%', padding: '0 16px' } : {}) }}
-                >
-                  Begin session
-                  <span className="arrow">→</span>
-                </button>
+              <div className="fixed z-50 animate-fadeIn" style={isMobile ? { bottom: 48, left: 16, right: 16 } : { bottom: 48, right: 24, width: 280 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10, borderRadius: 16, background: 'var(--surface-2)', border: '0.5px solid var(--border)', boxShadow: 'var(--shadow-md)' }}>
+                  <CaptureModeSwitch value={captureSource} onChange={setCaptureSource} />
+                  <p className="text-center text-[11px]" style={{ color: 'var(--text-muted)', margin: 0 }}>
+                    {captureSource === 'device' ? 'Use photos already on this device' : 'Take photos with the camera'}
+                  </p>
+                  <button
+                    className="begin-btn w-full justify-center"
+                    onClick={handleStart}
+                    style={{ display: 'flex', width: '100%', padding: '0 16px' }}
+                  >
+                    {captureSource === 'device' ? 'Choose photos' : 'Begin session'}
+                    <span className="arrow">→</span>
+                  </button>
+                </div>
               </div>
             )}
           </>
@@ -249,25 +282,37 @@ export default function Home() {
 
         {/* Step: Camera */}
         {step === 'camera' && selectedFrame && (
-          <Camera
-            frame={selectedFrame}
-            photoIndex={photos.length}
-            totalPhotos={selectedFrame.photoCount}
-            onCapture={handleCapture}
-            isRetake={retakeIndex !== null}
-            retakeIndex={retakeIndex ?? undefined}
-          />
+          captureSource === 'device' ? (
+            <DevicePhotoPicker
+              frame={selectedFrame}
+              photoIndex={photos.length}
+              totalPhotos={selectedFrame.photoCount}
+              onPhotos={handleDevicePhotos}
+              isRetake={retakeIndex !== null}
+              retakeIndex={retakeIndex ?? undefined}
+            />
+          ) : (
+            <Camera
+              frame={selectedFrame}
+              photoIndex={photos.length}
+              totalPhotos={selectedFrame.photoCount}
+              onCapture={handleCapture}
+              isRetake={retakeIndex !== null}
+              retakeIndex={retakeIndex ?? undefined}
+            />
+          )
         )}
 
         {/* Step: Review */}
         {step === 'review' && selectedFrame && pendingPhoto && (
           <PhotoReview
             photoUrl={pendingPhoto}
-            photoIndex={photos.length}
+            photoIndex={retakeIndex !== null ? retakeIndex : photos.length}
             totalPhotos={selectedFrame.photoCount}
             frame={selectedFrame}
             onAccept={handleAccept}
             onRetry={handleRetry}
+            retryLabel={captureSource === 'device' ? 'Choose another' : undefined}
             autoRemoveBg={retakeIndex !== null && photosBgRemoved[retakeIndex] === true}
           />
         )}
@@ -289,6 +334,7 @@ export default function Home() {
             frame={selectedFrame}
             onRetakePhoto={handleRetakePhoto}
             onConfirm={handleConfirmPreview}
+            retakeLabel={captureSource === 'device' ? 'Replace' : undefined}
           />
         )}
 

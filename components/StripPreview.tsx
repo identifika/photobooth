@@ -13,9 +13,10 @@ interface Props {
   eventContext?: DynamicFrameContext;
   onRetakePhoto: (index: number) => void;
   onConfirm: () => void;
+  retakeLabel?: string;
 }
 
-export default function StripPreview({ photos, liveClips, frame, eventContext, onRetakePhoto, onConfirm }: Props) {
+export default function StripPreview({ photos, liveClips, frame, eventContext, onRetakePhoto, onConfirm, retakeLabel = 'Retake' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stripDataUrl, setStripDataUrl] = useState('');
 
@@ -545,7 +546,7 @@ export default function StripPreview({ photos, liveClips, frame, eventContext, o
               <img src={photo} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
                 <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-medium">
-                  Retake
+                  {retakeLabel}
                 </span>
               </div>
               <div className="absolute top-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full">
