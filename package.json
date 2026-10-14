@@ -70,8 +70,10 @@
     "dotenv": "^18.0.5",
     "eslint": "^9",
     "eslint-config-next": "^16.2.10",
+    "firebase-admin": "^14.5.0",
     "prisma": "7.10.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

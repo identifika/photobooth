@@ -8,7 +8,8 @@
  * and upserts into Postgres via Prisma, preserving document IDs.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import 'dotenv/config';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 import { prisma } from '../lib/db';
 import { toPrismaLayout } from '../lib/frame-converters';
@@ -32,6 +33,19 @@ function loadServiceAccount(): any | null {
     } catch {
       console.warn('Failed to read service account from', SA_PATH);
     }
+  }
+
+  // Auto-detect service account file in project directory
+  try {
+    const root = process.cwd();
+    const files = readdirSync(root);
+    const candidate = files.find((f) => f.includes('firebase-adminsdk') && f.endsWith('.json')) || files.find((f) => f === 'service-account.json');
+    if (candidate) {
+      console.log(`Auto-detected service account key: ${candidate}`);
+      return JSON.parse(readFileSync(resolve(root, candidate), 'utf-8'));
+    }
+  } catch (err) {
+    console.warn('Failed to auto-detect service account:', err);
   }
 
   return null;
@@ -77,18 +91,32 @@ export async function runImport() {
   console.log('Service account loaded for project:', sa.project_id);
 
   // Initialize Firebase Admin dynamically
-  const adminPkg = 'firebase-admin';
-  const admin = await (Function('moduleName', 'return import(moduleName)')(adminPkg)).catch(() => null) as any;
-  if (!admin) {
+  const adminApp = await (Function('m', 'return import(m)')('firebase-admin')).catch(() => null) as any;
+  const adminFs = await (Function('m', 'return import(m)')('firebase-admin/firestore')).catch(() => null) as any;
+  const adminAuth = await (Function('m', 'return import(m)')('firebase-admin/auth')).catch(() => null) as any;
+
+  if (!adminApp || !adminFs) {
     console.warn('firebase-admin is not installed. To run import, install it with `pnpm add -D firebase-admin`.');
     return;
   }
-  if (!admin.apps?.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(sa),
-    });
+
+  const app = adminApp.getApps?.().length
+    ? adminApp.getApp()
+    : adminApp.initializeApp({
+        credential: adminApp.cert(sa),
+      });
+
+  let db: any;
+  try {
+    db = adminFs.getFirestore(app, 'default');
+    await db.listCollections();
+    console.log('Connected to Firestore database: "default"');
+  } catch {
+    db = adminFs.getFirestore(app);
+    console.log('Connected to Firestore database: "(default)"');
   }
-  const db = admin.firestore();
+
+  const auth = adminAuth?.getAuth ? adminAuth.getAuth(app) : null;
 
   // 1. Studio Settings
   console.log('Importing public_settings/studio...');
@@ -501,11 +529,14 @@ export async function runImport() {
   // 13. Firebase Auth Users
   console.log('Importing Firebase Auth users into Postgres User table...');
   try {
-    let nextPageToken: string | undefined = undefined;
-    let userCount = 0;
-    do {
-      const listUsersResult: any = await admin.auth().listUsers(1000, nextPageToken);
-      for (const u of listUsersResult.users) {
+    if (!auth) {
+      console.log('Firebase Auth not available, skipping user import');
+    } else {
+      let nextPageToken: string | undefined = undefined;
+      let userCount = 0;
+      do {
+        const listUsersResult: any = await auth.listUsers(1000, nextPageToken);
+        for (const u of listUsersResult.users) {
         if (!u.email) continue;
         const googleProvider = u.providerData?.find((p: any) => p.providerId === 'google.com');
         await prisma.user.upsert({
@@ -528,8 +559,37 @@ export async function runImport() {
       nextPageToken = listUsersResult.pageToken;
     } while (nextPageToken);
     console.log(`✓ Imported ${userCount} users from Firebase Auth`);
+    }
   } catch (err) {
     console.warn('Skipping Auth users import (check permissions):', err);
+  }
+
+  // 14. Firestore users collection
+  console.log('Importing Firestore users collection...');
+  try {
+    const snap = await db.collection('users').get();
+    for (const doc of snap.docs) {
+      const d = doc.data();
+      const email = (d.email || '').toLowerCase().trim();
+      if (!email) continue;
+      await prisma.user.upsert({
+        where: { id: doc.id },
+        create: {
+          id: doc.id,
+          email,
+          name: d.displayName || d.name || email.split('@')[0],
+          googleSub: d.googleSub || null,
+          createdAt: parseDate(d.createdAt),
+        },
+        update: {
+          email,
+          name: d.displayName || d.name || undefined,
+        },
+      });
+    }
+    console.log(`✓ Imported ${snap.size} from Firestore users collection`);
+  } catch (err) {
+    console.warn('Skipping Firestore users collection:', err);
   }
 
   console.log('=== Firestore import complete ===');
