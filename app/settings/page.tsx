@@ -9,7 +9,7 @@ import { isAdmin } from '@/hooks/useAdmin';
 import { listUserFrames, deleteUserFrame, type UserFrame } from '@/lib/user-frames';
 import useSWR from 'swr';
 import { listUserApiKeys, createApiKey, deleteApiKey, type ApiKey } from '@/lib/api-keys';
-import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor, Key, Copy, Check, Code, Plus } from 'lucide-react';
+import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor, Key, Copy, Check, Code, Plus, Bot, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { apiFetch } from '@/lib/api-client';
@@ -39,6 +39,15 @@ export default function SettingsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [tagline, setTagline] = useState('');
   const [saved, setSaved] = useState(false);
+
+  // AI Agent Configuration (Admin Only)
+  const [aiProvider, setAiProvider] = useState('gemini');
+  const [aiModel, setAiModel] = useState('');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [showAiKey, setShowAiKey] = useState(false);
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiDailyLimit, setAiDailyLimit] = useState(3);
+  const [aiSaved, setAiSaved] = useState(false);
 
   // Set Password (for Google-only users)
   const hasPasswordProvider = user?.providerData?.some(p => p.providerId === 'password') ?? false;
@@ -174,6 +183,11 @@ export default function SettingsPage() {
       setStudioName(settings.studioName);
       setStudioLogo(settings.studioLogo);
       setTagline(settings.tagline);
+      setAiProvider(settings.aiProvider || 'gemini');
+      setAiModel(settings.aiModel || '');
+      setAiApiKey(settings.aiApiKey || '');
+      setAiBaseUrl(settings.aiBaseUrl || '');
+      setAiDailyLimit(typeof settings.aiDailyLimit === 'number' ? settings.aiDailyLimit : 3);
       document.title = `Settings — ${settings.studioName}`;
     }
   }, [isLoaded, settings]);
@@ -191,6 +205,18 @@ export default function SettingsPage() {
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSaveAi = async () => {
+    await updateSettings({
+      aiProvider,
+      aiModel: aiModel.trim(),
+      aiApiKey: aiApiKey.trim(),
+      aiBaseUrl: aiBaseUrl.trim(),
+      aiDailyLimit: Number(aiDailyLimit) || 3,
+    });
+    setAiSaved(true);
+    setTimeout(() => setAiSaved(false), 2000);
   };
 
   const handleReset = () => {
@@ -718,6 +744,173 @@ export default function SettingsPage() {
                     )}
                     <button className="btn primary" onClick={handleSave}>Save Changes</button>
                   </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ── AI & Frame Generator Configuration (Admin Only) ────── */}
+          {isAuthorized && (
+            <section className="mt-8">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="font-semibold text-xs uppercase tracking-widest flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  AI Frame Generator Configuration
+                </h2>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded" style={{ background: 'var(--brand-muted, rgba(234, 179, 8, 0.15))', color: 'var(--brand)' }}>
+                  Admin
+                </span>
+              </div>
+              <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* Provider Selector */}
+                <div>
+                  <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>
+                    AI Provider
+                  </label>
+                  <select
+                    value={aiProvider}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAiProvider(val);
+                      if (val === 'cursor' && !aiBaseUrl) setAiBaseUrl('https://api.cursor.sh/v1');
+                    }}
+                    style={{
+                      width: '100%', height: 38, borderRadius: 8,
+                      border: '0.5px solid var(--border-strong)',
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-primary)',
+                      padding: '0 12px', fontSize: 13, outline: 'none',
+                    }}
+                  >
+                    <option value="gemini">Google Gemini (Default)</option>
+                    <option value="openai">OpenAI (Official)</option>
+                    <option value="groq">Groq (Ultra-fast Llama)</option>
+                    <option value="cursor">Cursor AI (OpenAI-compatible proxy)</option>
+                    <option value="custom">Custom / OpenRouter / Ollama / Other Proxy</option>
+                  </select>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Select which LLM provider generates photobooth frames.
+                  </p>
+                </div>
+
+                {/* Model Name */}
+                <div>
+                  <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Model Name
+                  </label>
+                  <input
+                    value={aiModel}
+                    onChange={(e) => setAiModel(e.target.value)}
+                    placeholder={
+                      aiProvider === 'gemini'
+                        ? 'gemini-2.5-flash (default)'
+                        : aiProvider === 'openai'
+                        ? 'gpt-4o-mini (default)'
+                        : aiProvider === 'groq'
+                        ? 'llama-3.3-70b-versatile (default)'
+                        : 'e.g. gpt-4o, claude-3-5-sonnet, or custom model name'
+                    }
+                    style={{
+                      width: '100%', height: 38, borderRadius: 8,
+                      border: '0.5px solid var(--border-strong)',
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-primary)',
+                      padding: '0 12px', fontSize: 13, outline: 'none',
+                    }}
+                  />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Leave blank to use the provider default model.
+                  </p>
+                </div>
+
+                {/* Custom Base URL (Cursor AI, OpenRouter, Ollama, etc.) */}
+                <div>
+                  <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Custom Base URL (Optional)
+                  </label>
+                  <input
+                    value={aiBaseUrl}
+                    onChange={(e) => setAiBaseUrl(e.target.value)}
+                    placeholder="e.g. https://api.cursor.sh/v1 or https://openrouter.ai/api/v1"
+                    style={{
+                      width: '100%', height: 38, borderRadius: 8,
+                      border: '0.5px solid var(--border-strong)',
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-primary)',
+                      padding: '0 12px', fontSize: 13, outline: 'none',
+                    }}
+                  />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    For Cursor AI, OpenRouter, or local proxies. Leave empty for official provider URLs.
+                  </p>
+                </div>
+
+                {/* Custom API Key */}
+                <div>
+                  <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>
+                    API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showAiKey ? 'text' : 'password'}
+                      value={aiApiKey}
+                      onChange={(e) => setAiApiKey(e.target.value)}
+                      placeholder="Leave blank to use server .env fallback key"
+                      style={{
+                        width: '100%', height: 38, borderRadius: 8,
+                        border: '0.5px solid var(--border-strong)',
+                        background: 'var(--surface-1)',
+                        color: 'var(--text-primary)',
+                        padding: '0 38px 0 12px', fontSize: 13, outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAiKey(!showAiKey)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showAiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Securely stored in your PostgreSQL database and only accessible by admins.
+                  </p>
+                </div>
+
+                {/* Daily Limit */}
+                <div>
+                  <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Daily Generation Limit per User
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={aiDailyLimit}
+                    onChange={(e) => setAiDailyLimit(Number(e.target.value) || 0)}
+                    style={{
+                      width: '100%', height: 38, borderRadius: 8,
+                      border: '0.5px solid var(--border-strong)',
+                      background: 'var(--surface-1)',
+                      color: 'var(--text-primary)',
+                      padding: '0 12px', fontSize: 13, outline: 'none',
+                    }}
+                  />
+                  <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>
+                    Max prompts per UTC day for non-admin logged-in users. Admins always have unlimited generations.
+                  </p>
+                </div>
+
+                {/* Save AI Settings */}
+                <div className="flex items-center justify-end gap-3 pt-2">
+                  {aiSaved && (
+                    <span className="text-sm flex items-center gap-1 font-medium" style={{ color: 'var(--text-success)' }}>
+                      ✓ AI Settings Saved
+                    </span>
+                  )}
+                  <button className="btn primary" onClick={handleSaveAi}>
+                    Save AI Settings
+                  </button>
                 </div>
               </div>
             </section>

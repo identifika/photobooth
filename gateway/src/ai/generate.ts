@@ -2,7 +2,7 @@ import type { GatewayConfig } from '../config.js';
 import { metrics, SingleFlight, TtlCache } from '../cache.js';
 import { sha256, type AuthUser } from '../auth.js';
 import { pooledFetch } from '../http.js';
-import { getDbDailyUsage, incrementDbDailyUsage, decrementDbDailyUsage } from '../db.js';
+import { getDbDailyUsage, incrementDbDailyUsage, decrementDbDailyUsage, getDbStudioSettings } from '../db.js';
 import {
   buildUserInstruction,
   generateAlgorithmicFrames,
@@ -45,12 +45,15 @@ function todayKey(uid: string): string {
 }
 
 export async function readUsage(config: GatewayConfig, user: AuthUser | null): Promise<UsageStatus> {
+  const dbSettings = config.databaseUrl ? await getDbStudioSettings(config.databaseUrl) : null;
+  const effectiveLimit = typeof dbSettings?.aiDailyLimit === 'number' ? dbSettings.aiDailyLimit : config.aiDailyLimit;
+
   if (!user) {
     return {
       authenticated: false,
       isAdmin: false,
       usedToday: 0,
-      maxDaily: config.aiDailyLimit,
+      maxDaily: effectiveLimit,
       remainingToday: 0,
     };
   }
@@ -72,8 +75,8 @@ export async function readUsage(config: GatewayConfig, user: AuthUser | null): P
     authenticated: true,
     isAdmin: false,
     usedToday,
-    maxDaily: config.aiDailyLimit,
-    remainingToday: Math.max(0, config.aiDailyLimit - usedToday),
+    maxDaily: effectiveLimit,
+    remainingToday: Math.max(0, effectiveLimit - usedToday),
   };
 }
 
@@ -384,16 +387,26 @@ export async function generateFrames(
   user: AuthUser,
   input: GenerateInput
 ): Promise<{ result: GeneratedFrames; usage: UsageStatus; cache: 'HIT' | 'MISS' }> {
+  const dbSettings = config.databaseUrl ? await getDbStudioSettings(config.databaseUrl) : null;
+  const effectiveConfig: GatewayConfig = dbSettings ? {
+    ...config,
+    aiProvider: dbSettings.aiProvider || config.aiProvider,
+    aiModel: dbSettings.aiModel || config.aiModel,
+    aiApiKey: dbSettings.aiApiKey || config.aiApiKey,
+    aiBaseUrl: dbSettings.aiBaseUrl || config.aiBaseUrl,
+    aiDailyLimit: typeof dbSettings.aiDailyLimit === 'number' ? dbSettings.aiDailyLimit : config.aiDailyLimit,
+  } : config;
+
   const key = generationCacheKey(user, input);
   const cached = aiCache.get(key);
   if (cached?.state === 'fresh') {
     metrics.aiCacheHits += 1;
-    return { result: cached.value, usage: await readUsage(config, user), cache: 'HIT' };
+    return { result: cached.value, usage: await readUsage(effectiveConfig, user), cache: 'HIT' };
   }
 
-  const limit = await readUsage(config, user);
+  const limit = await readUsage(effectiveConfig, user);
   if (!user.isAdmin && (limit.remainingToday ?? 0) <= 0) {
-    const error = new Error(`You have reached your daily limit of ${config.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
+    const error = new Error(`You have reached your daily limit of ${effectiveConfig.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
       status: number;
       code: string;
       usage: UsageStatus;
@@ -408,9 +421,9 @@ export async function generateFrames(
   let produced = false;
   const result = await aiFlight.do(key, async () => {
     if (!user.isAdmin) {
-      const current = await readUsage(config, user);
-      if ((current.usedToday ?? 0) >= config.aiDailyLimit) {
-        const error = new Error(`You have reached your daily limit of ${config.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
+      const current = await readUsage(effectiveConfig, user);
+      if ((current.usedToday ?? 0) >= effectiveConfig.aiDailyLimit) {
+        const error = new Error(`You have reached your daily limit of ${effectiveConfig.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
           status: number;
           code: string;
           usage: UsageStatus;
@@ -421,14 +434,14 @@ export async function generateFrames(
         throw error;
       }
 
-      if (config.databaseUrl) {
-        await incrementDbDailyUsage(config.databaseUrl, user.uid, user.email || '', today, input.prompt);
+      if (effectiveConfig.databaseUrl) {
+        await incrementDbDailyUsage(effectiveConfig.databaseUrl, user.uid, user.email || '', today, input.prompt);
       }
       bumpUsage(user.uid);
     }
     try {
-      const generated = await generateUncached(config, input);
-      aiCache.set(key, generated, input.idempotencyKey ? 60 * 60_000 : config.cacheAiTtlMs, config.cacheSwrMs);
+      const generated = await generateUncached(effectiveConfig, input);
+      aiCache.set(key, generated, input.idempotencyKey ? 60 * 60_000 : effectiveConfig.cacheAiTtlMs, effectiveConfig.cacheSwrMs);
       produced = true;
       return generated;
     } catch (error) {

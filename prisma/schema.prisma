@@ -244,11 +244,16 @@ model AiDailyUsage {
 
 /// Replaces the single Firestore document `public_settings/studio`.
 model StudioSettings {
-  id         String   @id @default("studio")
-  studioName String   @default("Pika") @map("studio_name")
-  studioLogo String   @default("📷") @map("studio_logo")
-  tagline    String   @default("Capture the moment")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  id           String   @id @default("studio")
+  studioName   String   @default("Pika") @map("studio_name")
+  studioLogo   String   @default("📷") @map("studio_logo")
+  tagline      String   @default("Capture the moment")
+  aiProvider   String   @default("gemini") @map("ai_provider")
+  aiModel      String   @default("gemini-2.5-flash") @map("ai_model")
+  aiApiKey     String?  @map("ai_api_key")
+  aiBaseUrl    String?  @map("ai_base_url")
+  aiDailyLimit Int      @default(3) @map("ai_daily_limit")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("studio_settings")
 }

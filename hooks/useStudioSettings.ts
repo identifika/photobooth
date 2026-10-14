@@ -6,12 +6,22 @@ export interface StudioSettings {
   studioName: string;
   studioLogo: string; // emoji or image URL
   tagline: string;
+  aiProvider?: string;
+  aiModel?: string;
+  aiApiKey?: string;
+  aiBaseUrl?: string;
+  aiDailyLimit?: number;
 }
 
 const DEFAULT_SETTINGS: StudioSettings = {
   studioName: 'Pika',
   studioLogo: '📷',
   tagline: 'Capture the moment',
+  aiProvider: 'gemini',
+  aiModel: 'gemini-2.5-flash',
+  aiApiKey: '',
+  aiBaseUrl: '',
+  aiDailyLimit: 3,
 };
 
 export function useStudioSettings() {

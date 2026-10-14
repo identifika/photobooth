@@ -846,9 +846,24 @@ async function callOpenAICompatible(
 
 // ── Main Route Handler ──
 
+async function getEffectiveAiConfig() {
+  const dbSettings = await prisma.studioSettings.findUnique({ where: { id: 'studio' } }).catch(() => null);
+
+  const dailyLimit = typeof dbSettings?.aiDailyLimit === 'number' && Number.isFinite(dbSettings.aiDailyLimit)
+    ? dbSettings.aiDailyLimit
+    : 3;
+  const provider = (dbSettings?.aiProvider || process.env.AI_PROVIDER || 'gemini').toLowerCase().trim();
+  const model = (dbSettings?.aiModel || process.env.AI_MODEL || '').trim();
+  const apiKey = (dbSettings?.aiApiKey || process.env.AI_API_KEY || '').trim();
+  const baseUrl = (dbSettings?.aiBaseUrl || process.env.AI_BASE_URL || '').trim();
+
+  return { dailyLimit, provider, model, apiKey, baseUrl };
+}
+
 // ── GET: Check current user's daily prompt usage status ──
 export async function GET(request: Request) {
   try {
+    const { dailyLimit } = await getEffectiveAiConfig();
     const authUser = await getSessionUser(request);
 
     if (!authUser) {
@@ -856,20 +871,20 @@ export async function GET(request: Request) {
         authenticated: false,
         isAdmin: false,
         usedToday: 0,
-        maxDaily: DAILY_LIMIT,
+        maxDaily: dailyLimit,
         remainingToday: 0,
       });
     }
 
     const isAdmin = checkIsAdmin(authUser.email);
     const usedToday = await getUserUsageToday(authUser.uid);
-    const remainingToday = isAdmin ? null : Math.max(0, DAILY_LIMIT - usedToday);
+    const remainingToday = isAdmin ? null : Math.max(0, dailyLimit - usedToday);
 
     return NextResponse.json({
       authenticated: true,
       isAdmin,
       usedToday,
-      maxDaily: isAdmin ? null : DAILY_LIMIT,
+      maxDaily: isAdmin ? null : dailyLimit,
       remainingToday,
     });
   } catch (err: any) {
@@ -881,6 +896,7 @@ export async function GET(request: Request) {
 // ── Main Route Handler ──
 export async function POST(request: Request) {
   try {
+    const { dailyLimit, provider: dbProvider, model: dbModel, apiKey: dbApiKey, baseUrl: dbBaseUrl } = await getEffectiveAiConfig();
     const authUser = await getSessionUser(request);
 
     if (!authUser) {
@@ -893,19 +909,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Check Admin & Daily Prompt Limit (Max 3 prompts/day for non-admins)
+    // 2. Check Admin & Daily Prompt Limit
     const isAdmin = checkIsAdmin(authUser.email);
     let currentUsage = 0;
 
     if (!isAdmin) {
       currentUsage = await getUserUsageToday(authUser.uid);
-      if (currentUsage >= DAILY_LIMIT) {
+      if (currentUsage >= dailyLimit) {
         return NextResponse.json(
           {
-            error: `You have reached your daily limit of ${DAILY_LIMIT} AI frame prompts. Limit resets tomorrow!`,
+            error: `You have reached your daily limit of ${dailyLimit} AI frame prompts. Limit resets tomorrow!`,
             code: 'DAILY_LIMIT_EXCEEDED',
             usedToday: currentUsage,
-            maxDaily: DAILY_LIMIT,
+            maxDaily: dailyLimit,
             remainingToday: 0,
           },
           { status: 429 }
@@ -916,30 +932,27 @@ export async function POST(request: Request) {
     const body = await request.json();
     const prompt = (body.prompt || '').trim();
     const count = Math.max(1, Math.min(Number(body.count) || 3, 3));
-    // General Unified Environment Configuration
-    const envProvider = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
-    const envModel = (process.env.AI_MODEL || '').trim();
-    const envApiKey = (process.env.AI_API_KEY || '').trim();
-    const envBaseUrl = (process.env.AI_BASE_URL || '').trim();
 
-    // Request overrides (if explicitly selected by user in UI settings)
-    const provider = body.provider && body.provider !== 'auto' ? body.provider : envProvider;
+    // Request overrides -> DB StudioSettings -> Environment Variables
+    const clientProvider = body.provider && body.provider !== 'auto' ? body.provider : '';
+    const provider = (clientProvider || dbProvider || process.env.AI_PROVIDER || 'gemini').toLowerCase();
+
     const clientKey = (body.apiKey || '').trim();
     const customModel = (body.model || '').trim();
-    const customBaseUrl = (body.baseUrl || '').trim() || envBaseUrl;
+    const customBaseUrl = (body.baseUrl || '').trim() || dbBaseUrl || process.env.AI_BASE_URL || '';
 
-    // Resolve unified API key (client key -> general AI_API_KEY -> provider-specific fallback)
-    const generalKey = clientKey || envApiKey;
+    // Resolve unified API key (request -> DB -> .env)
+    const generalKey = clientKey || dbApiKey || process.env.AI_API_KEY || '';
     const geminiKey = generalKey || process.env.GEMINI_API_KEY || '';
     const groqKey = generalKey || process.env.GROQ_API_KEY || '';
     const openaiKey = generalKey || process.env.OPENAI_API_KEY || '';
 
     // Resolve unified model name
-    const activeModel = customModel || envModel;
+    const activeModel = customModel || dbModel || process.env.AI_MODEL || '';
     const geminiModel = activeModel || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
     const groqModel = activeModel || process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
     const openaiModel = activeModel || process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    const customModelName = activeModel || 'llama3';
+    const customModelName = activeModel || 'gpt-4o-mini';
 
     let generatedResult: { message: string; candidates: AiFrameCandidate[]; providerUsed: string } | null = null;
 
@@ -984,7 +997,9 @@ export async function POST(request: Request) {
     // Provider: OpenAI
     if (!generatedResult && (provider === 'openai' || (provider === 'auto' && openaiKey))) {
       if (openaiKey) {
-        const endpoint = customBaseUrl ? `${customBaseUrl.replace(/\/+$/, '')}/chat/completions` : 'https://api.openai.com/v1/chat/completions';
+        const endpoint = customBaseUrl
+          ? (customBaseUrl.endsWith('/chat/completions') ? customBaseUrl : `${customBaseUrl.replace(/\/+$/, '')}/chat/completions`)
+          : 'https://api.openai.com/v1/chat/completions';
         try {
           const res = await callOpenAICompatible(
             endpoint,
@@ -1004,10 +1019,20 @@ export async function POST(request: Request) {
       }
     }
 
-    // Provider: Custom OpenAI-compatible endpoint (Ollama, OpenRouter, Local, etc.)
-    if (!generatedResult && (provider === 'custom' || customBaseUrl)) {
-      const endpoint = customBaseUrl ? `${customBaseUrl.replace(/\/+$/, '')}/chat/completions` : 'http://localhost:11434/v1/chat/completions';
-      const key = generalKey || 'dummy';
+    // Provider: Custom / Cursor AI / OpenRouter / Ollama / OpenAI-compatible endpoint
+    if (!generatedResult && (provider === 'custom' || provider === 'cursor' || customBaseUrl)) {
+      let endpoint = customBaseUrl;
+      if (!endpoint && provider === 'cursor') {
+        endpoint = 'https://api.cursor.sh/v1/chat/completions';
+      }
+      if (endpoint && !endpoint.endsWith('/chat/completions')) {
+        endpoint = `${endpoint.replace(/\/+$/, '')}/chat/completions`;
+      }
+      if (!endpoint) {
+        endpoint = 'http://localhost:11434/v1/chat/completions';
+      }
+
+      const key = generalKey || process.env.CURSOR_API_KEY || 'dummy';
       try {
         const res = await callOpenAICompatible(
           endpoint,
@@ -1018,11 +1043,11 @@ export async function POST(request: Request) {
         );
         generatedResult = {
           ...res,
-          providerUsed: `Custom (${customModelName})`,
+          providerUsed: `${provider === 'cursor' ? 'Cursor AI' : 'Custom'} (${customModelName})`,
         };
       } catch (err: any) {
         console.warn('Custom endpoint call failed:', err?.message);
-        if (provider === 'custom') throw err;
+        if (provider === 'custom' || provider === 'cursor') throw err;
       }
     }
 
@@ -1042,14 +1067,14 @@ export async function POST(request: Request) {
       newUsage = await incrementUserUsageToday(authUser.uid, authUser.email || '', prompt, currentUsage);
     }
 
-    const remainingToday = isAdmin ? null : Math.max(0, DAILY_LIMIT - newUsage);
+    const remainingToday = isAdmin ? null : Math.max(0, dailyLimit - newUsage);
 
     return NextResponse.json({
       ...generatedResult,
       usage: {
         isAdmin,
         usedToday: newUsage,
-        maxDaily: isAdmin ? null : DAILY_LIMIT,
+        maxDaily: isAdmin ? null : dailyLimit,
         remainingToday,
       },
     });

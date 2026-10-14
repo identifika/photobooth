@@ -38,7 +38,7 @@ Chat accepts `{ provider, model, messages, temperature, stream, cache }`. `strea
 
 ## Auth
 
-- Firebase ID token: `Authorization: Bearer <idToken>` (`FIREBASE_API_KEY`)
+- Session token or cookie: `pika_session` cookie or `Authorization: Bearer <sessionToken>` (verified against Postgres `sessions` or upstream `/api/auth/me`)
 - Master key: `x-api-key` or `Authorization: Bearer <GATEWAY_API_KEY>`
 
 Master keys and emails in `ADMIN_EMAILS` skip the daily frame limit. Everyone else gets `AI_DAILY_LIMIT` successful generations per UTC day (default 3). Cached repeats are free.

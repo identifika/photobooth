@@ -98,3 +98,40 @@ export async function getSessionFromDb(
     return null;
   }
 }
+
+export async function getDbStudioSettings(databaseUrl: string): Promise<{
+  aiProvider?: string;
+  aiModel?: string;
+  aiApiKey?: string;
+  aiBaseUrl?: string;
+  aiDailyLimit?: number;
+} | null> {
+  const p = getDbPool(databaseUrl);
+  if (!p) return null;
+  try {
+    const res = await p.query<{
+      ai_provider: string;
+      ai_model: string;
+      ai_api_key: string | null;
+      ai_base_url: string | null;
+      ai_daily_limit: number;
+    }>(
+      `SELECT ai_provider, ai_model, ai_api_key, ai_base_url, ai_daily_limit
+       FROM studio_settings
+       WHERE id = 'studio'
+       LIMIT 1;`
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    return {
+      aiProvider: row.ai_provider,
+      aiModel: row.ai_model,
+      aiApiKey: row.ai_api_key || undefined,
+      aiBaseUrl: row.ai_base_url || undefined,
+      aiDailyLimit: row.ai_daily_limit,
+    };
+  } catch (err) {
+    console.warn('Gateway DB getDbStudioSettings error:', err);
+    return null;
+  }
+}
