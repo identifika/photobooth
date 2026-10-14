@@ -43,6 +43,8 @@ next-env.d.ts
 
 firebase.json
 firestore.rules
+*service-account*.json
+*-firebase-adminsdk-*.json
 
 # prisma client output
 /lib/generated/prisma

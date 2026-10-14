@@ -498,6 +498,40 @@ export async function runImport() {
     console.warn('Skipping ai_daily_usage:', err);
   }
 
+  // 13. Firebase Auth Users
+  console.log('Importing Firebase Auth users into Postgres User table...');
+  try {
+    let nextPageToken: string | undefined = undefined;
+    let userCount = 0;
+    do {
+      const listUsersResult: any = await admin.auth().listUsers(1000, nextPageToken);
+      for (const u of listUsersResult.users) {
+        if (!u.email) continue;
+        const googleProvider = u.providerData?.find((p: any) => p.providerId === 'google.com');
+        await prisma.user.upsert({
+          where: { id: u.uid },
+          create: {
+            id: u.uid,
+            email: u.email.toLowerCase().trim(),
+            name: u.displayName || u.email.split('@')[0],
+            googleSub: googleProvider?.uid || null,
+            createdAt: parseDate(u.metadata?.creationTime),
+          },
+          update: {
+            email: u.email.toLowerCase().trim(),
+            name: u.displayName || undefined,
+            googleSub: googleProvider?.uid || undefined,
+          },
+        });
+        userCount++;
+      }
+      nextPageToken = listUsersResult.pageToken;
+    } while (nextPageToken);
+    console.log(`✓ Imported ${userCount} users from Firebase Auth`);
+  } catch (err) {
+    console.warn('Skipping Auth users import (check permissions):', err);
+  }
+
   console.log('=== Firestore import complete ===');
 }
 
