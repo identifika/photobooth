@@ -1,22 +1,14 @@
-import { fsGetCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument } from './firestore';
+import { apiFetch } from './api-client';
 import type { FilterPreset } from '@/lib/edit-types';
+import type { UserFilter } from './filter-converters';
 
-export interface UserFilter extends FilterPreset {
-  uid: string;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-}
-
-const COLLECTION = 'user_filters';
+export type { UserFilter };
 
 /** List all filters for a user. */
 export async function listUserFilters(uid: string): Promise<UserFilter[]> {
   try {
-    const docs = await fsGetCollection(COLLECTION, uid);
-    return docs.map((d) => {
-      const data = d.data as Omit<UserFilter, 'id'>;
-      return { id: d.id, ...data } as UserFilter;
-    });
+    const res = await apiFetch<{ success: boolean; filters: UserFilter[] }>(`/api/filters?uid=${encodeURIComponent(uid)}`);
+    return res.filters || [];
   } catch (err) {
     console.error('Failed to list user filters', err);
     return [];
@@ -25,39 +17,42 @@ export async function listUserFilters(uid: string): Promise<UserFilter[]> {
 
 /** Create a new user filter. */
 export async function createUserFilter(
-  uid: string,
+  _uid: string,
   filter: FilterPreset,
 ): Promise<string> {
-  // Strip the temporary local ID if any, let Firestore generate one
   const { id, ...data } = filter;
-  return fsAddDocument(COLLECTION, {
-    ...data,
-    uid,
+  const res = await apiFetch<{ success: boolean; id: string; filter: UserFilter }>('/api/filters', {
+    method: 'POST',
+    json: data,
   });
+  return res.id;
 }
 
 /** Update an existing user filter. */
 export async function updateUserFilter(
-  uid: string,
+  _uid: string,
   filterId: string,
   data: Partial<Omit<UserFilter, 'id' | 'uid'>>,
 ): Promise<void> {
-  const existing = await loadUserFilter(filterId);
-  if (!existing || existing.uid !== uid) throw new Error('Unauthorized');
-  await fsUpdateDocument(`${COLLECTION}/${filterId}`, data);
+  await apiFetch(`/api/filters/${encodeURIComponent(filterId)}`, {
+    method: 'PATCH',
+    json: data,
+  });
 }
 
 /** Delete a user filter. */
-export async function deleteUserFilter(uid: string, filterId: string): Promise<void> {
-  const existing = await loadUserFilter(filterId);
-  if (!existing || existing.uid !== uid) throw new Error('Unauthorized');
-  await fsDeleteDocument(`${COLLECTION}/${filterId}`);
+export async function deleteUserFilter(_uid: string, filterId: string): Promise<void> {
+  await apiFetch(`/api/filters/${encodeURIComponent(filterId)}`, {
+    method: 'DELETE',
+  });
 }
 
 /** Load a single user filter by ID. */
 export async function loadUserFilter(filterId: string): Promise<UserFilter | null> {
-  const doc = await fsGetDocument(`${COLLECTION}/${filterId}`);
-  if (!doc) return null;
-  const data = doc.data as Omit<UserFilter, 'id'>;
-  return { id: doc.id, ...data } as UserFilter;
+  try {
+    const res = await apiFetch<{ success: boolean; filter: UserFilter }>(`/api/filters/${encodeURIComponent(filterId)}`);
+    return res.filter || null;
+  } catch (err) {
+    return null;
+  }
 }
