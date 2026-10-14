@@ -1,34 +1,12 @@
 import { NextResponse } from 'next/server';
-import { listAllUserFrames, listUserFrames, type UserFrame } from '@/lib/user-frames';
-import { loadPublicFrames, FRAMES, type Frame } from '@/lib/frames';
-import { verifyAuthOrApiKey } from '@/lib/auth-server';
-
-function userFrameToFrame(f: UserFrame): Frame & { rawId: string; categoryId?: string; uid?: string; isCustom: boolean } {
-  const photoCount = Math.max(1, f.config?.elements?.filter((e) => e.type === 'photo').length || 4);
-  return {
-    id: `user-${f.id}`,
-    rawId: f.id,
-    name: f.name || 'Custom Frame',
-    description: f.config?.description || 'Custom user frame',
-    photoCount,
-    layout: photoCount <= 2 ? 'strip-2' : photoCount === 3 ? 'strip-3' : 'grid-2x2',
-    aspectRatio: 4 / 3,
-    color: f.config?.color || '#f5f0e8',
-    borderColor: f.config?.borderColor || '#1a1410',
-    accentColor: f.config?.accentColor || '#c9a84c',
-    emoji: f.emoji || '✨',
-    config: f.config,
-    width: f.config?.width,
-    height: f.config?.height,
-    categoryId: f.categoryId,
-    uid: f.uid,
-    isCustom: true,
-  };
-}
+import { prisma } from '@/lib/db';
+import { verifyAuthOrApiKey, getSessionUser, jsonError } from '@/lib/auth-server';
+import { FRAMES } from '@/lib/frames';
+import { formatUserFrame, formatPublicFrame, userFrameToFrame } from '@/lib/frame-converters';
 
 /**
  * GET /api/frames
- * Returns existing custom frames from user_frames collection.
+ * Returns frames from Postgres (user_frames and optionally public_frames).
  * Query options:
  * - ?uid=... (filter frames by creator UID)
  * - ?photoCount=2|3|4 (filter by number of photos)
@@ -46,19 +24,31 @@ export async function GET(request: Request) {
     const authContext = await verifyAuthOrApiKey(request);
     const targetUid = uidParam || (authContext?.uid && authContext.uid !== 'api-host' && authContext.uid !== 'master-api-host' ? authContext.uid : null);
 
-    // 1. Fetch user frames from Firestore (user_frames collection)
-    let rawUserFrames: UserFrame[] = [];
-    if (targetUid) {
-      rawUserFrames = await listUserFrames(targetUid).catch(() => []);
-    } else {
-      rawUserFrames = await listAllUserFrames().catch(() => []);
-    }
+    // 1. Fetch user frames from Postgres
+    const userFrameRows = await prisma.userFrame.findMany({
+      where: targetUid ? { uid: targetUid } : undefined,
+      orderBy: { updatedAt: 'desc' },
+    });
 
-    let frames = rawUserFrames.map(userFrameToFrame);
+    let frames = userFrameRows.map(formatUserFrame).map(userFrameToFrame);
 
-    // 2. If includePublic=true or if no user frames exist, include public frames
+    // 2. If includePublic=true, include public frames
     if (includePublic) {
-      const publicFrames = await loadPublicFrames().catch(() => FRAMES);
+      let publicFrames: any[] = [];
+      try {
+        const publicFrameRows = await prisma.publicFrame.findMany({
+          where: { active: true },
+          orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
+        });
+        publicFrames = publicFrameRows.map(formatPublicFrame);
+      } catch (err) {
+        console.warn('Failed to query public frames from Postgres, using static fallback:', err);
+      }
+
+      if (publicFrames.length === 0) {
+        publicFrames = FRAMES;
+      }
+
       const formattedPublic = publicFrames.map((f) => ({
         ...f,
         rawId: f.id,
@@ -67,7 +57,7 @@ export async function GET(request: Request) {
       frames = [...frames, ...formattedPublic];
     }
 
-    // 3. Apply filters
+    // 3. Apply category & photoCount filters
     if (categoryParam) {
       frames = frames.filter((f) => f.categoryId === categoryParam);
     }
@@ -85,9 +75,54 @@ export async function GET(request: Request) {
       frames,
     });
   } catch (error: any) {
-    console.error('Failed to list user frames via API:', error);
+    console.error('Failed to list frames via API:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to list frames' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/frames
+ * Create a new user frame for the signed-in user.
+ * Body: { name, emoji?, categoryId, config }
+ */
+export async function POST(request: Request) {
+  const user = await getSessionUser(request);
+  if (!user) return jsonError('Unauthorized', 401);
+
+  try {
+    const body = await request.json().catch(() => ({}));
+    const { name, emoji, categoryId = '', config } = body;
+
+    if (!name || typeof name !== 'string') {
+      return jsonError('Frame name is required', 400);
+    }
+    if (!config || typeof config !== 'object') {
+      return jsonError('Frame config is required', 400);
+    }
+
+    const newRow = await prisma.userFrame.create({
+      data: {
+        uid: user.uid,
+        name: name.trim(),
+        emoji: typeof emoji === 'string' ? emoji : null,
+        categoryId: typeof categoryId === 'string' ? categoryId : '',
+        config: config as any,
+      },
+    });
+
+    const formatted = formatUserFrame(newRow);
+    return NextResponse.json({
+      success: true,
+      id: newRow.id,
+      frame: formatted,
+    }, { status: 201 });
+  } catch (error: any) {
+    console.error('Failed to create user frame:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to create frame' },
       { status: 500 }
     );
   }

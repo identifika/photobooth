@@ -1,33 +1,12 @@
 import { NextResponse } from 'next/server';
-import { loadUserFrameById, type UserFrame } from '@/lib/user-frames';
-import { loadPublicFrames, FRAMES, type Frame } from '@/lib/frames';
-
-function userFrameToFrame(f: UserFrame): Frame & { rawId: string; categoryId?: string; uid?: string; isCustom: boolean } {
-  const photoCount = Math.max(1, f.config?.elements?.filter((e) => e.type === 'photo').length || 4);
-  return {
-    id: `user-${f.id}`,
-    rawId: f.id,
-    name: f.name || 'Custom Frame',
-    description: f.config?.description || 'Custom user frame',
-    photoCount,
-    layout: photoCount <= 2 ? 'strip-2' : photoCount === 3 ? 'strip-3' : 'grid-2x2',
-    aspectRatio: 4 / 3,
-    color: f.config?.color || '#f5f0e8',
-    borderColor: f.config?.borderColor || '#1a1410',
-    accentColor: f.config?.accentColor || '#c9a84c',
-    emoji: f.emoji || '✨',
-    config: f.config,
-    width: f.config?.width,
-    height: f.config?.height,
-    categoryId: f.categoryId,
-    uid: f.uid,
-    isCustom: true,
-  };
-}
+import { prisma } from '@/lib/db';
+import { getSessionUser, jsonError } from '@/lib/auth-server';
+import { FRAMES } from '@/lib/frames';
+import { formatUserFrame, formatPublicFrame, userFrameToFrame } from '@/lib/frame-converters';
 
 /**
  * GET /api/frames/[id]
- * Retrieves a single frame from user_frames (or fallback preset).
+ * Retrieves a single frame from user_frames or public_frames.
  */
 export async function GET(
   request: Request,
@@ -36,40 +15,121 @@ export async function GET(
   try {
     const { id } = await params;
     if (!id) {
-      return NextResponse.json({ error: 'Frame ID is required' }, { status: 400 });
+      return jsonError('Frame ID is required', 400);
     }
 
     const rawId = id.startsWith('user-') ? id.replace('user-', '') : id;
 
-    // 1. Try loading from user_frames first
-    const userFrame = await loadUserFrameById(rawId);
-    if (userFrame) {
+    // 1. Try loading from user_frames
+    const userRow = await prisma.userFrame.findUnique({ where: { id: rawId } });
+    if (userRow) {
       return NextResponse.json({
         success: true,
-        frame: userFrameToFrame(userFrame),
+        frame: userFrameToFrame(formatUserFrame(userRow)),
       });
     }
 
-    // 2. Fallback: check public frames if not found in user_frames
-    const publicFrames = await loadPublicFrames().catch(() => FRAMES);
-    let match = publicFrames.find((f) => f.id === id || f.id === rawId);
-    if (!match) {
-      match = FRAMES.find((f) => f.id === id || f.id === rawId);
+    // 2. Try loading from public_frames
+    const publicRow = await prisma.publicFrame.findUnique({ where: { id: rawId } });
+    if (publicRow) {
+      const formatted = formatPublicFrame(publicRow);
+      return NextResponse.json({
+        success: true,
+        frame: { ...formatted, rawId: formatted.id, isCustom: false },
+      });
     }
 
-    if (!match) {
-      return NextResponse.json({ error: 'Frame not found in user frames' }, { status: 404 });
+    // 3. Fallback: static preset frames
+    const staticMatch = FRAMES.find((f) => f.id === id || f.id === rawId);
+    if (staticMatch) {
+      return NextResponse.json({
+        success: true,
+        frame: { ...staticMatch, rawId: staticMatch.id, isCustom: false },
+      });
     }
+
+    return jsonError('Frame not found', 404);
+  } catch (error: any) {
+    console.error('Failed to get frame by ID:', error);
+    return jsonError(error.message || 'Internal error', 500);
+  }
+}
+
+/**
+ * PATCH /api/frames/[id]
+ * Updates an existing user frame. Owner or admin only.
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getSessionUser(request);
+  if (!user) return jsonError('Unauthorized', 401);
+
+  try {
+    const { id } = await params;
+    const rawId = id.startsWith('user-') ? id.replace('user-', '') : id;
+
+    const existing = await prisma.userFrame.findUnique({ where: { id: rawId } });
+    if (!existing) {
+      return jsonError('Frame not found', 404);
+    }
+
+    if (!user.isAdmin && existing.uid !== user.uid) {
+      return jsonError('Forbidden: you do not own this frame', 403);
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const updateData: any = {};
+    if (typeof body.name === 'string') updateData.name = body.name.trim();
+    if (body.emoji !== undefined) updateData.emoji = body.emoji;
+    if (typeof body.categoryId === 'string') updateData.categoryId = body.categoryId;
+    if (body.config && typeof body.config === 'object') updateData.config = body.config;
+
+    const updated = await prisma.userFrame.update({
+      where: { id: rawId },
+      data: updateData,
+    });
 
     return NextResponse.json({
       success: true,
-      frame: { ...match, rawId: match.id, isCustom: false },
+      frame: formatUserFrame(updated),
     });
   } catch (error: any) {
-    console.error('Failed to get frame by ID:', error);
-    return NextResponse.json(
-      { error: error.message || 'Internal error' },
-      { status: 500 }
-    );
+    console.error('Failed to update user frame:', error);
+    return jsonError(error.message || 'Failed to update frame', 500);
+  }
+}
+
+/**
+ * DELETE /api/frames/[id]
+ * Deletes a user frame. Owner or admin only.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const user = await getSessionUser(request);
+  if (!user) return jsonError('Unauthorized', 401);
+
+  try {
+    const { id } = await params;
+    const rawId = id.startsWith('user-') ? id.replace('user-', '') : id;
+
+    const existing = await prisma.userFrame.findUnique({ where: { id: rawId } });
+    if (!existing) {
+      return jsonError('Frame not found', 404);
+    }
+
+    if (!user.isAdmin && existing.uid !== user.uid) {
+      return jsonError('Forbidden: you do not own this frame', 403);
+    }
+
+    await prisma.userFrame.delete({ where: { id: rawId } });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Failed to delete user frame:', error);
+    return jsonError(error.message || 'Failed to delete frame', 500);
   }
 }

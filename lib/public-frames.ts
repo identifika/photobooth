@@ -1,118 +1,127 @@
-import { fsGetAllCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument } from './firestore';
+import { apiFetch } from './api-client';
 import type { Frame } from '@/lib/frames';
 import type { FrameConfig } from '@/lib/frame-types';
-import { applyCdnToFrameConfig } from '@/lib/cdn';
-import { isAdmin } from '@/hooks/useAdmin';
+import type { PublicFrame } from '@/lib/frame-converters';
 
-export interface PublicFrame extends Frame {
-  ownerUid?: string;
-  ownerName?: string;
-  config?: FrameConfig;
-  sortOrder: number;
-  active: boolean;
-  createdAt: unknown;
-  updatedAt: unknown;
-}
-
-const COLLECTION = 'public_frames';
+export type { PublicFrame };
 
 /** List all public frames. */
 export async function listPublicFrames(): Promise<PublicFrame[]> {
-  const docs = await fsGetAllCollection(COLLECTION);
-  return docs.map((d) => {
-    const data = d.data as Omit<PublicFrame, 'id'>;
-    if (data.config) data.config = applyCdnToFrameConfig(data.config);
-    return { id: d.id, ...data } as PublicFrame;
-  });
+  try {
+    const res = await apiFetch<{ success: boolean; frames: PublicFrame[] }>('/api/frames/public?all=true');
+    return res.frames || [];
+  } catch (err) {
+    console.error('Failed to list public frames:', err);
+    return [];
+  }
 }
 
 /** Create a new public frame. Returns new doc ID. */
 export async function createPublicFrame(
-  adminEmail: string,
+  _adminEmail: string,
   data: Omit<Frame, 'id'> & { sortOrder?: number; active?: boolean },
 ): Promise<string> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  return fsAddDocument(COLLECTION, {
-    ...data,
-    sortOrder: data.sortOrder ?? 0,
-    active: data.active ?? true,
+  const res = await apiFetch<{ success: boolean; id: string; frame: PublicFrame }>('/api/frames/public', {
+    method: 'POST',
+    json: {
+      ...data,
+      sortOrder: data.sortOrder ?? 0,
+      active: data.active ?? true,
+    },
   });
+  return res.id;
 }
 
 /** Update a public frame. */
 export async function updatePublicFrame(
-  adminEmail: string,
+  _adminEmail: string,
   frameId: string,
   data: Partial<Omit<Frame, 'id'>> & { sortOrder?: number; active?: boolean },
 ): Promise<void> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
+  await apiFetch(`/api/frames/public/${encodeURIComponent(frameId)}`, {
+    method: 'PATCH',
+    json: data,
+  });
 }
 
 /** Delete a public frame. */
-export async function deletePublicFrame(adminEmail: string, frameId: string): Promise<void> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  await fsDeleteDocument(`${COLLECTION}/${frameId}`);
+export async function deletePublicFrame(_adminEmail: string, frameId: string): Promise<void> {
+  await apiFetch(`/api/frames/public/${encodeURIComponent(frameId)}`, {
+    method: 'DELETE',
+  });
 }
 
 /** Update any public frame (admin only). */
 export async function updateAnyPublicFrame(
-  adminEmail: string,
+  _adminEmail: string,
   frameId: string,
   data: Partial<Omit<PublicFrame, 'id'>>,
 ): Promise<void> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
+  await apiFetch(`/api/frames/public/${encodeURIComponent(frameId)}`, {
+    method: 'PATCH',
+    json: data,
+  });
 }
 
 /** List public frames by owner. */
 export async function listPublicFramesByOwner(ownerUid: string): Promise<PublicFrame[]> {
-  // Get all and filter client-side (REST API filter is limited)
-  const all = await listPublicFrames();
-  return all.filter(f => f.ownerUid === ownerUid);
+  try {
+    const res = await apiFetch<{ success: boolean; frames: PublicFrame[] }>(`/api/frames/public?ownerUid=${encodeURIComponent(ownerUid)}`);
+    return res.frames || [];
+  } catch (err) {
+    console.error('Failed to list public frames by owner:', err);
+    return [];
+  }
 }
 
 /** Load a single public frame by ID. */
 export async function loadPublicFrame(frameId: string): Promise<PublicFrame | null> {
-  const doc = await fsGetDocument(`${COLLECTION}/${frameId}`);
-  if (!doc) return null;
-  const data = doc.data as Omit<PublicFrame, 'id'>;
-  if (data.config) data.config = applyCdnToFrameConfig(data.config);
-  return { id: doc.id, ...data } as PublicFrame;
+  try {
+    const res = await apiFetch<{ success: boolean; frame: PublicFrame }>(`/api/frames/public/${encodeURIComponent(frameId)}`);
+    return res.frame || null;
+  } catch (err) {
+    return null;
+  }
 }
 
 /** Update a public frame (only if owner matches). Returns true if updated. */
 export async function updatePublicFrameAsOwner(
   frameId: string,
-  ownerUid: string,
+  _ownerUid: string,
   data: Partial<Omit<PublicFrame, 'id'>>,
 ): Promise<boolean> {
-  const frame = await loadPublicFrame(frameId);
-  if (!frame) return false;
-  if (frame.ownerUid !== ownerUid) return false;
-  await fsUpdateDocument(`${COLLECTION}/${frameId}`, data);
-  return true;
+  try {
+    await apiFetch(`/api/frames/public/${encodeURIComponent(frameId)}`, {
+      method: 'PATCH',
+      json: data,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Delete a public frame (only if owner matches). Returns true if deleted. */
 export async function deletePublicFrameAsOwner(
   frameId: string,
-  ownerUid: string,
+  _ownerUid: string,
 ): Promise<boolean> {
-  const frame = await loadPublicFrame(frameId);
-  if (!frame) return false;
-  if (frame.ownerUid !== ownerUid) return false;
-  await fsDeleteDocument(`${COLLECTION}/${frameId}`);
-  return true;
+  try {
+    await apiFetch(`/api/frames/public/${encodeURIComponent(frameId)}`, {
+      method: 'DELETE',
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Publish a user frame to the community (public_frames collection). */
 export async function publishUserFrame(
-  adminEmail: string,
+  _adminEmail: string,
   user: { uid: string; displayName: string | null },
   frame: { config: FrameConfig; name: string },
 ): Promise<string> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
   let layout: Frame['layout'] = 'strip-4';
   let photoCount = 4;
   let aspectRatio = 4 / 3;
@@ -120,10 +129,7 @@ export async function publishUserFrame(
   if (frame.config.elements) {
     const photos = frame.config.elements.filter((e) => e.type === 'photo');
     photoCount = photos.length;
-    if (photoCount === 1) {
-      layout = 'strip-2';
-      aspectRatio = 4 / 3;
-    } else if (photoCount === 2) {
+    if (photoCount === 1 || photoCount === 2) {
       layout = 'strip-2';
       aspectRatio = 4 / 3;
     } else if (photoCount === 3) {
@@ -159,5 +165,9 @@ export async function publishUserFrame(
     active: true,
   };
 
-  return fsAddDocument(COLLECTION, data as unknown as Record<string, unknown>);
+  const res = await apiFetch<{ success: boolean; id: string }>('/api/frames/public', {
+    method: 'POST',
+    json: data,
+  });
+  return res.id;
 }
