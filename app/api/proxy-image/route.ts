@@ -86,7 +86,6 @@ function isAllowedUrl(urlString: string): boolean {
       appUrl,
       'https://app.pikabooth.web.id',
       'https://pikabooth.web.id',
-      'https://firebasestorage.googleapis.com',
       'https://storage.googleapis.com',
       'https://lh3.googleusercontent.com',
       'https://images.unsplash.com',
@@ -94,11 +93,6 @@ function isAllowedUrl(urlString: string): boolean {
 
     const isExplicitlyAllowed = allowedPrefixes.some(prefix => urlString.startsWith(prefix));
     if (isExplicitlyAllowed) {
-      return true;
-    }
-
-    // Allow firebase storage app domains (*.firebasestorage.app)
-    if (parsed.hostname.endsWith('.firebasestorage.app')) {
       return true;
     }
 

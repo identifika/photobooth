@@ -21,6 +21,7 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit & { 
 
   const res = await fetch(getApiUrl(path), {
     ...rest,
+    credentials: rest.credentials ?? 'include',
     headers,
     body: json !== undefined ? JSON.stringify(json) : rest.body,
     cache: 'no-store',

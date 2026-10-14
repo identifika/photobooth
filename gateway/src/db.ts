@@ -75,3 +75,26 @@ export async function decrementDbDailyUsage(
     console.warn('Gateway DB decrementDailyUsage error:', err);
   }
 }
+
+export async function getSessionFromDb(
+  databaseUrl: string,
+  token: string
+): Promise<{ uid: string; email?: string } | null> {
+  const p = getDbPool(databaseUrl);
+  if (!p) return null;
+  try {
+    const res = await p.query<{ user_id: string; email: string }>(
+      `SELECT s.user_id, u.email
+       FROM sessions s
+       JOIN users u ON s.user_id = u.id
+       WHERE s.token = $1 AND s.expires_at > NOW()
+       LIMIT 1;`,
+      [token]
+    );
+    if (!res.rows[0]) return null;
+    return { uid: res.rows[0].user_id, email: res.rows[0].email };
+  } catch (err) {
+    console.warn('Gateway DB getSessionFromDb error:', err);
+    return null;
+  }
+}

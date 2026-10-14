@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { verifyIdToken } from '@/lib/auth-server';
+import { getSessionUser } from '@/lib/auth-server';
 
 const s3 = new S3Client({
   endpoint: process.env.S3_ENDPOINT,
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing filename or content type' }, { status: 400, headers: corsHeaders });
     }
 
-    const user = await verifyIdToken(request.headers.get('Authorization'));
+    const user = await getSessionUser(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
     }

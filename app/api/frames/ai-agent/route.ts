@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, FrameStickerElement, FrameDateElement } from '@/lib/frame-types';
 import type { AiFrameCandidate } from '@/lib/ai-agent';
-import { verifyIdToken, checkIsAdmin } from '@/lib/auth-server';
+import { getSessionUser, checkIsAdmin } from '@/lib/auth-server';
 
 import { prisma } from '@/lib/db';
 
@@ -849,9 +849,7 @@ async function callOpenAICompatible(
 // ── GET: Check current user's daily prompt usage status ──
 export async function GET(request: Request) {
   try {
-    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
-    const authUser = await verifyIdToken(authHeader);
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split('Bearer ')[1]?.trim() : null;
+    const authUser = await getSessionUser(request);
 
     if (!authUser) {
       return NextResponse.json({
@@ -883,9 +881,7 @@ export async function GET(request: Request) {
 // ── Main Route Handler ──
 export async function POST(request: Request) {
   try {
-    // 1. Require Authenticated User
-    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
-    const authUser = await verifyIdToken(authHeader);
+    const authUser = await getSessionUser(request);
 
     if (!authUser) {
       return NextResponse.json(

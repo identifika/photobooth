@@ -12,7 +12,7 @@ import { listUserApiKeys, createApiKey, deleteApiKey, type ApiKey } from '@/lib/
 import { Globe, Pencil, Trash2, FolderOpen, Sun, Moon, Monitor, Key, Copy, Check, Code, Plus } from 'lucide-react';
 import { useDialog } from '@/components/ui/dialog-provider';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import { EmailAuthProvider, linkWithCredential } from 'firebase/auth';
+import { apiFetch } from '@/lib/api-client';
 import { useOwnerPublicFrames, useUserFrames, usePendingPublishRequests } from '@/hooks/useFrames';
 import { useOwnerPublicFilters, useUserFilters } from '@/hooks/useFilters';
 import { deleteUserFilter, type UserFilter } from '@/lib/user-filters';
@@ -54,9 +54,11 @@ export default function SettingsPage() {
     setPasswordError('');
     setPasswordMsg('');
     try {
-      const credential = EmailAuthProvider.credential(user.email!, newPassword);
-      await linkWithCredential(user, credential);
-      setPasswordMsg('Password set successfully! You can now sign in with email and password on the desktop app.');
+      await apiFetch('/api/auth/set-password', {
+        method: 'POST',
+        json: { password: newPassword },
+      });
+      setPasswordMsg('Password set successfully! You can now sign in with email and password.');
       setNewPassword('');
     } catch (err: unknown) {
       setPasswordError(err instanceof Error ? err.message.replace('Firebase: ', '') : 'Failed to set password');

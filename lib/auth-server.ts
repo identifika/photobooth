@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'node:crypto';
 import { prisma } from './db';
 
 export interface AuthContext {
@@ -7,6 +8,13 @@ export interface AuthContext {
   isApiKey?: boolean;
   keyName?: string;
   role?: string;
+}
+
+export interface SessionUser {
+  uid: string;
+  email?: string;
+  name?: string;
+  isAdmin: boolean;
 }
 
 export function checkIsAdmin(email?: string | null): boolean {
@@ -19,42 +27,128 @@ export function checkIsAdmin(email?: string | null): boolean {
   return adminEmails.includes(email.toLowerCase());
 }
 
-/**
- * Verifies standard Firebase ID tokens (Bearer JWT)
- */
-export async function verifyIdToken(authHeader: string | null): Promise<{ uid: string; email?: string } | null> {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.split('Bearer ')[1];
-  if (!token) return null;
+/** Password hashing using Node.js scrypt with a unique random salt */
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return `${salt}:${derivedKey.toString('hex')}`;
+}
 
+/** Constant-time password verification */
+export function verifyPassword(password: string, combinedHash: string): boolean {
   try {
-    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-    if (!apiKey) {
-      console.warn('Missing NEXT_PUBLIC_FIREBASE_API_KEY for server auth verification');
-      return null;
-    }
-    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken: token }),
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const user = data.users?.[0];
-    const uid = user?.localId;
-    const email = user?.email;
-    return uid ? { uid, email } : null;
-  } catch (error) {
-    console.error('Token verification failed:', error);
-    return null;
+    const [salt, key] = combinedHash.split(':');
+    if (!salt || !key) return false;
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+  } catch {
+    return false;
   }
 }
 
+/** Generate a 256-bit random session token */
+export function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/** Create a session in the database valid for 30 days */
+export async function createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
+  const token = generateSessionToken();
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  await prisma.session.create({
+    data: {
+      userId,
+      token,
+      expiresAt,
+    },
+  });
+  return { token, expiresAt };
+}
+
+/** Delete a session by token */
+export async function deleteSession(token: string): Promise<void> {
+  try {
+    await prisma.session.delete({ where: { token } });
+  } catch {
+    // ignore if already deleted
+  }
+}
+
+/** Extract session token from pika_session cookie or Authorization: Bearer <token> */
+export function extractSessionToken(request: Request): string | null {
+  // 1. Check Cookie header for pika_session
+  const cookieHeader = request.headers.get('cookie');
+  if (cookieHeader) {
+    const match = cookieHeader.match(/(?:^|;\s*)pika_session=([^;]+)/);
+    if (match?.[1]) {
+      return decodeURIComponent(match[1].trim());
+    }
+  }
+
+  // 2. Check Authorization header
+  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const candidate = authHeader.slice(7).trim();
+    if (candidate && !candidate.startsWith('pk_')) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+/** Set the HTTP-only session cookie */
+export function setSessionCookie(response: NextResponse, token: string): void {
+  response.cookies.set('pika_session', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  });
+}
+
+/** Clear the session cookie */
+export function clearSessionCookie(response: NextResponse): void {
+  response.cookies.set('pika_session', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+}
+
 /**
- * Universal Auth verifier: Supports API Keys (header or query param) AND Firebase ID tokens.
- * Works seamlessly from outside the app (cURL, Postman, Python, Node, Zapier, Webhooks).
+ * Returns the currently signed-in user for this request from our Postgres `sessions` table.
+ */
+export async function getSessionUser(request: Request): Promise<SessionUser | null> {
+  const token = extractSessionToken(request);
+  if (token) {
+    try {
+      const session = await prisma.session.findUnique({
+        where: { token },
+        include: { user: true },
+      });
+      if (session && session.expiresAt > new Date()) {
+        return {
+          uid: session.user.id,
+          email: session.user.email,
+          name: session.user.name || undefined,
+          isAdmin: checkIsAdmin(session.user.email),
+        };
+      }
+    } catch (e) {
+      console.warn('Error reading session from database:', e);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Universal Auth verifier: Supports API Keys (header or query param) AND Session Tokens.
  */
 export async function verifyAuthOrApiKey(request: Request): Promise<AuthContext | null> {
   const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
@@ -72,14 +166,14 @@ export async function verifyAuthOrApiKey(request: Request): Promise<AuthContext 
   let bearerApiKey: string | null = null;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const candidate = authHeader.split('Bearer ')[1]?.trim();
-    if (candidate && (candidate.startsWith('pk_') || candidate.length > 20 && !candidate.includes('.'))) {
+    if (candidate && (candidate.startsWith('pk_') || (candidate.length > 20 && !candidate.includes('.')))) {
       bearerApiKey = candidate;
     }
   }
 
   const candidateKey = apiKeyHeader || queryApiKey || bearerApiKey;
 
-  // 1. Check Master / Environment API Key (e.g. in .env PIKABOOTH_API_KEY or API_SECRET_KEY)
+  // 1. Check Master / Environment API Key
   const masterKey = process.env.PIKABOOTH_API_KEY || process.env.API_SECRET_KEY || process.env.ADMIN_API_KEY;
   if (candidateKey && masterKey && candidateKey === masterKey) {
     return {
@@ -108,28 +202,18 @@ export async function verifyAuthOrApiKey(request: Request): Promise<AuthContext 
     }
   }
 
-  // 3. Fallback: Verify Firebase ID Token
-  if (authHeader) {
-    const idAuth = await verifyIdToken(authHeader);
-    if (idAuth) {
-      return { uid: idAuth.uid, email: idAuth.email, isApiKey: false, role: checkIsAdmin(idAuth.email) ? 'admin' : 'user' };
-    }
+  // 3. Check Session / User Auth
+  const sessionUser = await getSessionUser(request);
+  if (sessionUser) {
+    return {
+      uid: sessionUser.uid,
+      email: sessionUser.email,
+      isApiKey: false,
+      role: sessionUser.isAdmin ? 'admin' : 'user',
+    };
   }
 
   return null;
-}
-
-export interface SessionUser {
-  uid: string;
-  email?: string;
-  isAdmin: boolean;
-}
-
-/** Signed-in Firebase user for this request, or null. */
-export async function getSessionUser(request: Request): Promise<SessionUser | null> {
-  const authUser = await verifyIdToken(request.headers.get('Authorization') || request.headers.get('authorization'));
-  if (!authUser) return null;
-  return { uid: authUser.uid, email: authUser.email, isAdmin: checkIsAdmin(authUser.email) };
 }
 
 export function jsonError(message: string, status: number) {

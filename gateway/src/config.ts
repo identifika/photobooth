@@ -18,7 +18,6 @@ export interface GatewayConfig {
   rateLimitMax: number;
   aiRateLimitMax: number;
   masterKeys: string[];
-  firebaseApiKey: string;
   adminEmails: string[];
   aiProvider: string;
   aiApiKey: string;
@@ -88,7 +87,6 @@ export function loadConfig(): GatewayConfig {
     rateLimitMax: intEnv('RATE_LIMIT_MAX', 120),
     aiRateLimitMax: intEnv('AI_RATE_LIMIT_MAX', 20),
     masterKeys,
-    firebaseApiKey: (process.env.FIREBASE_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '').trim(),
     adminEmails: listEnv('ADMIN_EMAILS').map((email) => email.toLowerCase()),
     aiProvider: (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase(),
     aiApiKey: (process.env.AI_API_KEY || '').trim(),
