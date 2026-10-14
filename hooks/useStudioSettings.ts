@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { fsGetDocument } from '@/lib/firestore';
+import { apiFetch } from '@/lib/api-client';
 
 export interface StudioSettings {
   studioName: string;
@@ -14,8 +14,6 @@ const DEFAULT_SETTINGS: StudioSettings = {
   tagline: 'Capture the moment',
 };
 
-const DOC_PATH = 'public_settings/studio';
-
 export function useStudioSettings() {
   const [settings, setSettings] = useState<StudioSettings>(DEFAULT_SETTINGS);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -24,10 +22,10 @@ export function useStudioSettings() {
   useEffect(() => {
     let cancelled = false;
 
-    fsGetDocument(DOC_PATH)
-      .then((doc) => {
-        if (cancelled || !doc) return;
-        setSettings({ ...DEFAULT_SETTINGS, ...doc.data as Partial<StudioSettings> });
+    apiFetch<StudioSettings>('/api/settings')
+      .then((data) => {
+        if (cancelled || !data) return;
+        setSettings({ ...DEFAULT_SETTINGS, ...data });
       })
       .catch((err) => {
         console.error('Failed to load studio settings:', err);
@@ -43,8 +41,7 @@ export function useStudioSettings() {
     const updated = { ...settings, ...newSettings };
     setSettings(updated);
     try {
-      const { fsUpdateDocument } = await import('@/lib/firestore');
-      await fsUpdateDocument(DOC_PATH, updated as unknown as Record<string, unknown>);
+      await apiFetch('/api/settings', { method: 'PUT', json: updated });
     } catch (e) {
       console.error('Failed to update studio settings:', e);
     }
@@ -53,8 +50,7 @@ export function useStudioSettings() {
   const resetSettings = async () => {
     setSettings(DEFAULT_SETTINGS);
     try {
-      const { fsUpdateDocument } = await import('@/lib/firestore');
-      await fsUpdateDocument(DOC_PATH, DEFAULT_SETTINGS as unknown as Record<string, unknown>);
+      await apiFetch('/api/settings', { method: 'PUT', json: DEFAULT_SETTINGS });
     } catch (e) {
       console.error('Failed to reset studio settings:', e);
     }

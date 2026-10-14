@@ -1,7 +1,9 @@
-import { fsGetCollection } from './firestore';
+import { NextResponse } from 'next/server';
+import { prisma } from './db';
 
 export interface AuthContext {
   uid: string;
+  email?: string;
   isApiKey?: boolean;
   keyName?: string;
   role?: string;
@@ -88,23 +90,18 @@ export async function verifyAuthOrApiKey(request: Request): Promise<AuthContext 
     };
   }
 
-  // 2. Check Database API Keys collection (for Studio-generated API keys)
+  // 2. Studio-generated API keys (Postgres)
   if (candidateKey) {
     try {
-      let keys = await fsGetCollection('user_api_keys', candidateKey, 'key').catch(() => []);
-      if (!keys || keys.length === 0) {
-        keys = await fsGetCollection('api_keys', candidateKey, 'key').catch(() => []);
-      }
-      if (keys && keys.length > 0) {
-        const keyDoc = keys[0].data as any;
-        if (keyDoc.active !== false) {
-          return {
-            uid: keyDoc.uid || 'studio-api-user',
-            isApiKey: true,
-            role: 'user',
-            keyName: keyDoc.name || 'Studio API Key',
-          };
-        }
+      const keyRow = await prisma.apiKey.findFirst({ where: { key: candidateKey, active: true } });
+      if (keyRow) {
+        await prisma.apiKey.update({ where: { id: keyRow.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+        return {
+          uid: keyRow.uid,
+          isApiKey: true,
+          role: 'user',
+          keyName: keyRow.name,
+        };
       }
     } catch (e) {
       console.warn('Error checking database API key:', e);
@@ -115,9 +112,26 @@ export async function verifyAuthOrApiKey(request: Request): Promise<AuthContext 
   if (authHeader) {
     const idAuth = await verifyIdToken(authHeader);
     if (idAuth) {
-      return { uid: idAuth.uid, isApiKey: false };
+      return { uid: idAuth.uid, email: idAuth.email, isApiKey: false, role: checkIsAdmin(idAuth.email) ? 'admin' : 'user' };
     }
   }
 
   return null;
+}
+
+export interface SessionUser {
+  uid: string;
+  email?: string;
+  isAdmin: boolean;
+}
+
+/** Signed-in Firebase user for this request, or null. */
+export async function getSessionUser(request: Request): Promise<SessionUser | null> {
+  const authUser = await verifyIdToken(request.headers.get('Authorization') || request.headers.get('authorization'));
+  if (!authUser) return null;
+  return { uid: authUser.uid, email: authUser.email, isAdmin: checkIsAdmin(authUser.email) };
+}
+
+export function jsonError(message: string, status: number) {
+  return NextResponse.json({ error: message }, { status });
 }
