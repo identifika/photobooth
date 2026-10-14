@@ -1,4 +1,4 @@
-import { fsGetCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument, fsGetAllCollection } from './firestore';
+import { apiFetch } from './api-client';
 
 export interface BoothEvent {
   id: string;
@@ -28,6 +28,18 @@ export interface BoothEvent {
   updatedAt: unknown;
 }
 
+export interface EventCapture {
+  id: string;
+  eventId: string;
+  eventSlug: string;
+  sessionId: string;
+  stripUrl: string;
+  gifUrl?: string;
+  photoUrls?: string[];
+  liveClipUrls?: string[];
+  createdAt: unknown;
+}
+
 /** Generate a clean URL-friendly slug */
 export function slugify(text: string): string {
   return text
@@ -42,182 +54,114 @@ export function slugify(text: string): string {
 }
 
 /** List all events created by a host */
-export async function listUserEvents(uid: string): Promise<BoothEvent[]> {
-  const docs = await fsGetCollection('events', uid, 'hostUid');
-  const events = docs.map((d) => ({ id: d.id, ...d.data } as BoothEvent));
-
-  events.sort((a, b) => {
-    const aTime = (a.updatedAt as any)?.toMillis?.() || (a.updatedAt instanceof Date ? a.updatedAt.getTime() : 0);
-    const bTime = (b.updatedAt as any)?.toMillis?.() || (b.updatedAt instanceof Date ? b.updatedAt.getTime() : 0);
-    return bTime - aTime;
-  });
-
-  return events;
-}
-
-/** Load a single event by Document ID */
-export async function getEventById(id: string): Promise<BoothEvent | null> {
-  const doc = await fsGetDocument(`events/${id}`);
-  if (!doc) return null;
-  return { id: doc.id, ...doc.data } as BoothEvent;
-}
-
-/** Load an event by its unique public slug */
-export async function getEventBySlug(slug: string): Promise<BoothEvent | null> {
-  const normalizedSlug = slug.toLowerCase().trim();
-  const docs = await fsGetCollection('events', normalizedSlug, 'slug');
-  if (docs.length > 0) {
-    return { id: docs[0].id, ...docs[0].data } as BoothEvent;
-  }
-  // Fallback: check all if query was not indexed
-  const all = await fsGetAllCollection('events');
-  const match = all.find((d) => (d.data.slug as string)?.toLowerCase() === normalizedSlug);
-  if (!match) return null;
-  return { id: match.id, ...match.data } as BoothEvent;
-}
-
-/** Create or update an event by slug (upsert) */
-export async function createEvent(
-  uid: string,
-  hostEmail: string,
-  data: Omit<BoothEvent, 'id' | 'hostUid' | 'hostEmail' | 'createdAt' | 'updatedAt'>
-): Promise<string> {
-  const targetSlug = data.slug ? slugify(data.slug) : slugify(data.name || 'event');
-  
-  // Check if an event with this slug already exists
-  const existing = await getEventBySlug(targetSlug);
-  if (existing) {
-    // Upsert: update existing event in place instead of creating duplicate with random number
-    const updatePayload: Record<string, unknown> = {
-      ...data,
-      slug: targetSlug,
-      updatedAt: new Date().toISOString(),
-    };
-    await fsUpdateDocument(`events/${existing.id}`, updatePayload);
-    return existing.id;
-  }
-
-  const payload: Record<string, unknown> = {
-    ...data,
-    slug: targetSlug,
-    hostUid: uid,
-    hostEmail,
-    active: data.active ?? true,
-    allowFrameSelection: data.allowFrameSelection ?? true,
-    enableLiveGallery: data.enableLiveGallery ?? true,
-    mode: data.mode || 'hybrid',
-    primaryFrameId: data.primaryFrameId || '',
-    frameIds: data.frameIds || [],
-    themeColor: data.themeColor || '#e11d48',
-  };
-
-  return fsAddDocument('events', payload);
-}
-
-/** Update an existing event */
-export async function updateEvent(
-  uid: string,
-  eventId: string,
-  data: Partial<BoothEvent>
-): Promise<void> {
-  const existing = await getEventById(eventId);
-  if (!existing || existing.hostUid !== uid) {
-    throw new Error('Unauthorized or event not found');
-  }
-
-  if (data.slug && data.slug !== existing.slug) {
-    const slugCheck = await getEventBySlug(data.slug);
-    if (slugCheck && slugCheck.id !== eventId) {
-      throw new Error('This event URL slug is already taken. Please choose another.');
-    }
-  }
-
-  await fsUpdateDocument(`events/${eventId}`, data as Record<string, unknown>);
-}
-
-/** Delete an event */
-export async function deleteEvent(uid: string, eventId: string): Promise<void> {
-  const existing = await getEventById(eventId);
-  if (!existing || existing.hostUid !== uid) {
-    throw new Error('Unauthorized or event not found');
-  }
-
-  await fsDeleteDocument(`events/${eventId}`);
-}
-
-// ── Event Captures Subcollection (Live Gallery & Wall) ─────────────────────
-
-export interface EventCapture {
-  id: string;
-  eventId: string;
-  eventSlug: string;
-  sessionId: string;
-  stripUrl: string;
-  gifUrl?: string;
-  photoUrls?: string[];
-  liveClipUrls?: string[];
-  createdAt: unknown;
-}
-
-/** Record a new photobooth capture for an event */
-export async function createEventCapture(
-  eventId: string,
-  capture: Omit<EventCapture, 'id' | 'createdAt'>
-): Promise<string> {
-  return fsAddDocument(`events/${eventId}/captures`, capture as Record<string, unknown>);
-}
-
-/** Get all captures for an event */
-export async function getEventCaptures(eventId: string): Promise<EventCapture[]> {
+export async function listUserEvents(_uid: string): Promise<BoothEvent[]> {
   try {
-    const { collection, getDocs, query } = await import('firebase/firestore');
-    const { db } = await import('./firebase');
-    const q = query(collection(db, `events/${eventId}/captures`));
-    const snap = await getDocs(q);
-    const captures = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventCapture));
-    captures.sort((a, b) => {
-      const timeA = (a.createdAt as any)?.toMillis?.() || (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
-      const timeB = (b.createdAt as any)?.toMillis?.() || (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
-      return timeB - timeA;
-    });
-    return captures;
+    const res = await apiFetch<{ success: boolean; events: BoothEvent[] }>('/api/events');
+    return res.events || [];
   } catch (err) {
-    console.warn('Failed to load event captures from Firestore:', err);
+    console.error('Failed to list user events:', err);
     return [];
   }
 }
 
-/** Subscribe to realtime updates for an event's live gallery */
-export function subscribeToEventCaptures(
+/** Load a single event by Document ID */
+export async function getEventById(id: string): Promise<BoothEvent | null> {
+  try {
+    const res = await apiFetch<{ success: boolean; event: BoothEvent }>(`/api/events?id=${encodeURIComponent(id)}`);
+    return res.event || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Load an event by its unique public slug */
+export async function getEventBySlug(slug: string): Promise<BoothEvent | null> {
+  try {
+    const res = await apiFetch<{ success: boolean; event: BoothEvent }>(`/api/events/${encodeURIComponent(slug)}`);
+    return res.event || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** Create or update an event by slug (upsert) */
+export async function createEvent(
+  _uid: string,
+  _hostEmail: string,
+  data: Omit<BoothEvent, 'id' | 'hostUid' | 'hostEmail' | 'createdAt' | 'updatedAt'>
+): Promise<string> {
+  const res = await apiFetch<{ success: boolean; event: BoothEvent }>('/api/events', {
+    method: 'POST',
+    json: data,
+  });
+  return res.event.id;
+}
+
+/** Update an existing event */
+export async function updateEvent(
+  _uid: string,
   eventId: string,
+  data: Partial<BoothEvent>
+): Promise<void> {
+  await apiFetch(`/api/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    json: data,
+  });
+}
+
+/** Delete an event */
+export async function deleteEvent(_uid: string, eventId: string): Promise<void> {
+  await apiFetch(`/api/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Record a new photobooth capture for an event */
+export async function createEventCapture(
+  eventIdOrSlug: string,
+  capture: Omit<EventCapture, 'id' | 'createdAt'>
+): Promise<string> {
+  const res = await apiFetch<{ success: boolean; id: string }>(`/api/events/${encodeURIComponent(eventIdOrSlug)}/captures`, {
+    method: 'POST',
+    json: capture,
+  });
+  return res.id;
+}
+
+/** Get all captures for an event */
+export async function getEventCaptures(eventIdOrSlug: string): Promise<EventCapture[]> {
+  try {
+    const res = await apiFetch<{ success: boolean; captures: EventCapture[] }>(`/api/events/${encodeURIComponent(eventIdOrSlug)}/captures`);
+    return res.captures || [];
+  } catch (err) {
+    console.warn('Failed to load event captures from API:', err);
+    return [];
+  }
+}
+
+/** Subscribe to realtime updates for an event's live gallery via lightweight polling */
+export function subscribeToEventCaptures(
+  eventIdOrSlug: string,
   onUpdate: (captures: EventCapture[]) => void,
   onError?: (err: unknown) => void
 ): () => void {
-  let unsubscribe = () => {};
-  import('firebase/firestore').then(({ collection, onSnapshot, query }) => {
-    import('./firebase').then(({ db }) => {
-      try {
-        const q = query(collection(db, `events/${eventId}/captures`));
-        unsubscribe = onSnapshot(
-          q,
-          (snap) => {
-            const captures = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventCapture));
-            captures.sort((a, b) => {
-              const timeA = (a.createdAt as any)?.toMillis?.() || (a.createdAt instanceof Date ? a.createdAt.getTime() : 0);
-              const timeB = (b.createdAt as any)?.toMillis?.() || (b.createdAt instanceof Date ? b.createdAt.getTime() : 0);
-              return timeB - timeA;
-            });
-            onUpdate(captures);
-          },
-          (err) => {
-            console.warn('Realtime event captures error:', err);
-            onError?.(err);
-          }
-        );
-      } catch (err) {
-        onError?.(err);
-      }
-    });
-  });
-  return () => unsubscribe();
+  let active = true;
+  let timer: any;
+
+  const poll = async () => {
+    try {
+      const captures = await getEventCaptures(eventIdOrSlug);
+      if (active) onUpdate(captures);
+    } catch (err) {
+      if (active) onError?.(err);
+    }
+  };
+
+  poll();
+  timer = setInterval(poll, 3500);
+
+  return () => {
+    active = false;
+    if (timer) clearInterval(timer);
+  };
 }
