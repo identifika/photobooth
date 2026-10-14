@@ -16,7 +16,9 @@
     "version:sync": "node scripts/sync-version.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "gateway": "npm --prefix gateway run dev",
+    "gateway:start": "npm --prefix gateway run start"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1076.0",

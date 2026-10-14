@@ -260,6 +260,13 @@ async function webUpdateDocument(path: string, data: Record<string, unknown>): P
   await updateDoc(doc(db, path), { ...cleaned, updatedAt: serverTimestamp() });
 }
 
+async function webSetDocument(path: string, data: Record<string, unknown>, merge = true): Promise<void> {
+  const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+  const { db } = await import('./firebase');
+  const cleaned = sanitizeFirestoreData(data);
+  await setDoc(doc(db, path), { ...cleaned, updatedAt: serverTimestamp() }, { merge });
+}
+
 async function webDeleteDocument(path: string): Promise<void> {
   const { doc, deleteDoc } = await import('firebase/firestore');
   const { db } = await import('./firebase');
@@ -286,6 +293,10 @@ export async function fsAddDocument(collectionPath: string, data: Record<string,
 
 export async function fsUpdateDocument(path: string, data: Record<string, unknown>) {
   return IS_NATIVE ? restUpdateDocument(path, data) : webUpdateDocument(path, data);
+}
+
+export async function fsSetDocument(path: string, data: Record<string, unknown>, merge = true) {
+  return IS_NATIVE ? restUpdateDocument(path, data) : webSetDocument(path, data, merge);
 }
 
 export async function fsDeleteDocument(path: string) {

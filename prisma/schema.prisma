@@ -225,6 +225,23 @@ model ApiKey {
   @@map("api_keys")
 }
 
+/// Replaces Firestore `ai_daily_usage/{uid}_{YYYY-MM-DD}`.
+/// `usageDate` is the UTC day (`YYYY-MM-DD`). One row per user per day.
+model AiDailyUsage {
+  id         String   @id @default(cuid())
+  uid        String
+  email      String   @default("")
+  usageDate  String   @map("usage_date")
+  count      Int      @default(0)
+  lastPrompt String   @default("") @map("last_prompt")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([uid, usageDate])
+  @@index([usageDate])
+  @@map("ai_daily_usage")
+}
+
 /// Replaces the single Firestore document `public_settings/studio`.
 model StudioSettings {
   id         String   @id @default("studio")

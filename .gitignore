@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!gateway/.env.example
 
 # vercel
 .vercel
@@ -47,5 +48,9 @@ firestore.rules
 /lib/generated/prisma
 
 signal-relay/
+
+# standalone API gateway
+gateway/node_modules/
+gateway/dist/
 ios/App/App/GoogleService-Info.plist
 .code-grapher/

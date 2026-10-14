@@ -7,10 +7,20 @@ export interface AuthContext {
   role?: string;
 }
 
+export function checkIsAdmin(email?: string | null): boolean {
+  if (!email) return false;
+  const rawList = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+  const adminEmails = rawList
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(email.toLowerCase());
+}
+
 /**
  * Verifies standard Firebase ID tokens (Bearer JWT)
  */
-export async function verifyIdToken(authHeader: string | null): Promise<{ uid: string } | null> {
+export async function verifyIdToken(authHeader: string | null): Promise<{ uid: string; email?: string } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
   const token = authHeader.split('Bearer ')[1];
   if (!token) return null;
@@ -30,8 +40,10 @@ export async function verifyIdToken(authHeader: string | null): Promise<{ uid: s
     if (!res.ok) return null;
 
     const data = await res.json();
-    const uid = data.users?.[0]?.localId;
-    return uid ? { uid } : null;
+    const user = data.users?.[0];
+    const uid = user?.localId;
+    const email = user?.email;
+    return uid ? { uid, email } : null;
   } catch (error) {
     console.error('Token verification failed:', error);
     return null;
