@@ -849,6 +849,7 @@ async function callOpenAICompatible(
 async function getEffectiveAiConfig() {
   const dbSettings = await prisma.studioSettings.findUnique({ where: { id: 'studio' } }).catch(() => null);
 
+  const aiEnabled = dbSettings?.aiEnabled ?? true;
   const dailyLimit = typeof dbSettings?.aiDailyLimit === 'number' && Number.isFinite(dbSettings.aiDailyLimit)
     ? dbSettings.aiDailyLimit
     : 3;
@@ -857,17 +858,30 @@ async function getEffectiveAiConfig() {
   const apiKey = (dbSettings?.aiApiKey || process.env.AI_API_KEY || '').trim();
   const baseUrl = (dbSettings?.aiBaseUrl || process.env.AI_BASE_URL || '').trim();
 
-  return { dailyLimit, provider, model, apiKey, baseUrl };
+  return { aiEnabled, dailyLimit, provider, model, apiKey, baseUrl };
 }
 
 // ── GET: Check current user's daily prompt usage status ──
 export async function GET(request: Request) {
   try {
-    const { dailyLimit } = await getEffectiveAiConfig();
+    const { aiEnabled, dailyLimit } = await getEffectiveAiConfig();
     const authUser = await getSessionUser(request);
+    const isAdmin = authUser ? checkIsAdmin(authUser.email) : false;
+
+    if (!aiEnabled && !isAdmin) {
+      return NextResponse.json({
+        enabled: false,
+        authenticated: !!authUser,
+        isAdmin: false,
+        usedToday: 0,
+        maxDaily: 0,
+        remainingToday: 0,
+      });
+    }
 
     if (!authUser) {
       return NextResponse.json({
+        enabled: true,
         authenticated: false,
         isAdmin: false,
         usedToday: 0,
@@ -876,11 +890,11 @@ export async function GET(request: Request) {
       });
     }
 
-    const isAdmin = checkIsAdmin(authUser.email);
     const usedToday = await getUserUsageToday(authUser.uid);
     const remainingToday = isAdmin ? null : Math.max(0, dailyLimit - usedToday);
 
     return NextResponse.json({
+      enabled: true,
       authenticated: true,
       isAdmin,
       usedToday,
@@ -896,7 +910,7 @@ export async function GET(request: Request) {
 // ── Main Route Handler ──
 export async function POST(request: Request) {
   try {
-    const { dailyLimit, provider: dbProvider, model: dbModel, apiKey: dbApiKey, baseUrl: dbBaseUrl } = await getEffectiveAiConfig();
+    const { aiEnabled, dailyLimit, provider: dbProvider, model: dbModel, apiKey: dbApiKey, baseUrl: dbBaseUrl } = await getEffectiveAiConfig();
     const authUser = await getSessionUser(request);
 
     if (!authUser) {
@@ -909,8 +923,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Check Admin & Daily Prompt Limit
     const isAdmin = checkIsAdmin(authUser.email);
+
+    if (!aiEnabled && !isAdmin) {
+      return NextResponse.json(
+        {
+          error: 'AI frame generation is currently disabled by the studio administrator.',
+          code: 'AI_DISABLED',
+        },
+        { status: 403 }
+      );
+    }
+
+    // 2. Check Admin & Daily Prompt Limit
     let currentUsage = 0;
 
     if (!isAdmin) {

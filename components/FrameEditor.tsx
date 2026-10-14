@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
+import { useStudioSettings } from '@/hooks/useStudioSettings';
+import { isAdmin } from '@/hooks/useAdmin';
 import { uploadFrameImage } from '@/lib/uploadFrameImage';
 import type {
     FrameConfig,
@@ -666,6 +668,9 @@ export default function FrameEditor({
     const [svgPreviewUrl, setSvgPreviewUrl] = useState('');
 
     // ── AI Frame Studio Agent state ──
+    const { settings: studioSettings } = useStudioSettings();
+    const isUserAdmin = !!user && isAdmin(user.email);
+    const isAiVisible = studioSettings.aiEnabled !== false || isUserAdmin;
     const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
 
     const handleApplyAiFrame = (newConfig: FrameConfig, newName: string, newEmoji: string) => {
@@ -1482,18 +1487,20 @@ export default function FrameEditor({
                     </div>
                 </div>
 
-                <div className={`border-t pt-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
-                    <PanelLabel isDark={isDark}>AI Agent</PanelLabel>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setAiDrawerOpen(true)}
-                        className="w-full justify-start text-xs flex items-center gap-1.5 font-medium border-indigo-500/40 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
-                    >
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>✨ AI Frame Studio</span>
-                    </Button>
-                </div>
+                {isAiVisible && (
+                    <div className={`border-t pt-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
+                        <PanelLabel isDark={isDark}>AI Agent</PanelLabel>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setAiDrawerOpen(true)}
+                            className="w-full justify-start text-xs flex items-center gap-1.5 font-medium border-indigo-500/40 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>✨ AI Frame Studio</span>
+                        </Button>
+                    </div>
+                )}
 
                 <div className={`border-t pt-3 ${isDark ? 'border-slate-700' : 'border-gray-200'}`}>
                     <PanelLabel isDark={isDark}>Add Elements</PanelLabel>
@@ -1665,15 +1672,17 @@ export default function FrameEditor({
                             <Download className="w-3.5 h-3.5 text-brand" />
                             <span>Export SVG</span>
                         </Button>
-                        <Button
-                            size="sm"
-                            onClick={() => setAiDrawerOpen((prev) => !prev)}
-                            title="Open AI Frame Studio Agent"
-                            className="h-7 px-2.5 text-xs flex items-center gap-1.5 font-medium shadow-xs bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0 transition-all cursor-pointer"
-                        >
-                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                            <span>AI Agent</span>
-                        </Button>
+                        {isAiVisible && (
+                            <Button
+                                size="sm"
+                                onClick={() => setAiDrawerOpen((prev) => !prev)}
+                                title="Open AI Frame Studio Agent"
+                                className="h-7 px-2.5 text-xs flex items-center gap-1.5 font-medium shadow-xs bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white border-0 transition-all cursor-pointer"
+                            >
+                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                <span>AI Agent</span>
+                            </Button>
+                        )}
                     </div>
                 </div>
 
@@ -2574,13 +2583,15 @@ export default function FrameEditor({
             
             <ContextMenu menu={contextMenu} onClose={closeContextMenu} isDark={isDark} />
 
-            <AiFrameDrawer
-                isOpen={aiDrawerOpen}
-                onClose={() => setAiDrawerOpen(false)}
-                onApplyFrame={handleApplyAiFrame}
-                isDark={isDark}
-                currentConfig={config}
-            />
+            {isAiVisible && (
+                <AiFrameDrawer
+                    isOpen={aiDrawerOpen}
+                    onClose={() => setAiDrawerOpen(false)}
+                    onApplyFrame={handleApplyAiFrame}
+                    isDark={isDark}
+                    currentConfig={config}
+                />
+            )}
         </div>
     );
 }

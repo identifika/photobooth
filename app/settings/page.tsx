@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
 
   // AI Agent Configuration (Admin Only)
+  const [aiEnabled, setAiEnabled] = useState(true);
   const [aiProvider, setAiProvider] = useState('gemini');
   const [aiModel, setAiModel] = useState('');
   const [aiApiKey, setAiApiKey] = useState('');
@@ -183,6 +184,7 @@ export default function SettingsPage() {
       setStudioName(settings.studioName);
       setStudioLogo(settings.studioLogo);
       setTagline(settings.tagline);
+      setAiEnabled(settings.aiEnabled !== false);
       setAiProvider(settings.aiProvider || 'gemini');
       setAiModel(settings.aiModel || '');
       setAiApiKey(settings.aiApiKey || '');
@@ -209,6 +211,7 @@ export default function SettingsPage() {
 
   const handleSaveAi = async () => {
     await updateSettings({
+      aiEnabled,
       aiProvider,
       aiModel: aiModel.trim(),
       aiApiKey: aiApiKey.trim(),
@@ -762,6 +765,43 @@ export default function SettingsPage() {
                 </span>
               </div>
               <div style={{ background: 'var(--surface-2)', border: '0.5px solid var(--border)', borderRadius: 12, padding: 20, display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {/* AI Enable / Disable Switch */}
+                <div
+                  className="flex items-center justify-between p-3.5 rounded-xl transition-all"
+                  style={{
+                    background: aiEnabled ? 'var(--surface-1)' : 'rgba(239, 68, 68, 0.06)',
+                    border: aiEnabled ? '0.5px solid var(--border-strong)' : '0.5px solid rgba(239, 68, 68, 0.3)',
+                  }}
+                >
+                  <div className="space-y-0.5 pr-4">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Enable AI Frame Generator for Users
+                      </span>
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider"
+                        style={{
+                          background: aiEnabled ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                          color: aiEnabled ? '#16a34a' : '#ef4444',
+                        }}
+                      >
+                        {aiEnabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {aiEnabled
+                        ? 'Active — Users can access the AI Frame Studio button in the editor and generate frames.'
+                        : 'Disabled — AI generator buttons and options will be completely hidden from regular users.'}
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={aiEnabled}
+                    onChange={(e) => setAiEnabled(e.target.checked)}
+                    className="w-5 h-5 accent-primary cursor-pointer shrink-0"
+                  />
+                </div>
+
                 {/* Provider Selector */}
                 <div>
                   <label className="text-xs uppercase tracking-wider mb-1.5 block font-medium" style={{ color: 'var(--text-muted)' }}>

@@ -6,6 +6,7 @@ const DEFAULTS = {
   studioName: 'Pika',
   studioLogo: '📷',
   tagline: 'Capture the moment',
+  aiEnabled: true,
   aiProvider: 'gemini',
   aiModel: 'gemini-2.5-flash',
   aiApiKey: '',
@@ -17,6 +18,7 @@ type StudioRow = {
   studioName: string;
   studioLogo: string;
   tagline: string;
+  aiEnabled?: boolean;
   aiProvider?: string;
   aiModel?: string;
   aiApiKey?: string | null;
@@ -29,6 +31,7 @@ function toJson(row: StudioRow, isAdmin: boolean) {
     studioName: row?.studioName || DEFAULTS.studioName,
     studioLogo: row?.studioLogo || DEFAULTS.studioLogo,
     tagline: row?.tagline || DEFAULTS.tagline,
+    aiEnabled: row ? (row.aiEnabled ?? DEFAULTS.aiEnabled) : DEFAULTS.aiEnabled,
   };
   if (!isAdmin) return base;
 
@@ -54,6 +57,7 @@ export async function GET(request: Request) {
       studioName: DEFAULTS.studioName,
       studioLogo: DEFAULTS.studioLogo,
       tagline: DEFAULTS.tagline,
+      aiEnabled: DEFAULTS.aiEnabled,
     });
   }
 }
@@ -69,6 +73,9 @@ export async function PUT(request: Request) {
 
   for (const field of ['studioName', 'studioLogo', 'tagline', 'aiProvider', 'aiModel', 'aiApiKey', 'aiBaseUrl'] as const) {
     if (typeof body[field] === 'string') data[field] = body[field].trim();
+  }
+  if (typeof body.aiEnabled === 'boolean') {
+    data.aiEnabled = body.aiEnabled;
   }
   if (typeof body.aiDailyLimit === 'number' && Number.isFinite(body.aiDailyLimit)) {
     data.aiDailyLimit = Math.max(0, Math.floor(body.aiDailyLimit));

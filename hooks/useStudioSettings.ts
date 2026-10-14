@@ -6,6 +6,7 @@ export interface StudioSettings {
   studioName: string;
   studioLogo: string; // emoji or image URL
   tagline: string;
+  aiEnabled?: boolean;
   aiProvider?: string;
   aiModel?: string;
   aiApiKey?: string;
@@ -17,6 +18,7 @@ const DEFAULT_SETTINGS: StudioSettings = {
   studioName: 'Pika',
   studioLogo: '📷',
   tagline: 'Capture the moment',
+  aiEnabled: true,
   aiProvider: 'gemini',
   aiModel: 'gemini-2.5-flash',
   aiApiKey: '',

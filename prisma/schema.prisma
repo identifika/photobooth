@@ -248,6 +248,7 @@ model StudioSettings {
   studioName   String   @default("Pika") @map("studio_name")
   studioLogo   String   @default("📷") @map("studio_logo")
   tagline      String   @default("Capture the moment")
+  aiEnabled    Boolean  @default(true) @map("ai_enabled")
   aiProvider   String   @default("gemini") @map("ai_provider")
   aiModel      String   @default("gemini-2.5-flash") @map("ai_model")
   aiApiKey     String?  @map("ai_api_key")
