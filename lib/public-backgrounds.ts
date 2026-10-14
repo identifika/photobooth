@@ -1,48 +1,54 @@
-import { fsGetAllCollection, fsGetDocument, fsAddDocument, fsUpdateDocument, fsDeleteDocument } from '@/lib/firestore';
-import { isAdmin } from '@/hooks/useAdmin';
+import { apiFetch } from './api-client';
 import type { BackgroundOption } from '@/lib/edit-types';
-
-const COLLECTION = 'public_backgrounds';
 
 /** List all public backgrounds. */
 export async function listPublicBackgrounds(): Promise<BackgroundOption[]> {
-  const docs = await fsGetAllCollection(COLLECTION);
-  return docs.map((d) => {
-    const data = d.data as Omit<BackgroundOption, 'id'>;
-    return { id: d.id, ...data } as BackgroundOption;
-  });
+  try {
+    const res = await apiFetch<{ success: boolean; backgrounds: BackgroundOption[] }>('/api/backgrounds/public');
+    return res.backgrounds || [];
+  } catch (err) {
+    console.error('Failed to load public backgrounds', err);
+    return [];
+  }
 }
 
 /** List all public backgrounds by a specific owner. */
 export async function listPublicBackgroundsByOwner(uid: string): Promise<BackgroundOption[]> {
-  const all = await listPublicBackgrounds();
-  return all.filter((b) => b.ownerUid === uid);
+  try {
+    const res = await apiFetch<{ success: boolean; backgrounds: BackgroundOption[] }>(`/api/backgrounds/public?ownerUid=${encodeURIComponent(uid)}`);
+    return res.backgrounds || [];
+  } catch (err) {
+    return [];
+  }
 }
 
 /** Create a new public background. Returns new doc ID. */
 export async function createPublicBackground(
-  adminEmail: string,
+  _adminEmail: string,
   data: Omit<BackgroundOption, 'id'>
 ): Promise<string> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  return fsAddDocument(COLLECTION, {
-    ...data,
+  const res = await apiFetch<{ success: boolean; id: string; background: BackgroundOption }>('/api/backgrounds/public', {
+    method: 'POST',
+    json: data,
   });
+  return res.id;
 }
 
 /** Delete a public background. */
-export async function deletePublicBackground(adminEmail: string, bgId: string): Promise<void> {
-  if (!isAdmin(adminEmail)) throw new Error('Unauthorized');
-  await fsDeleteDocument(`${COLLECTION}/${bgId}`);
+export async function deletePublicBackground(_adminEmail: string, bgId: string): Promise<void> {
+  await apiFetch(`/api/backgrounds/public/${encodeURIComponent(bgId)}`, {
+    method: 'DELETE',
+  });
 }
 
 /** Delete a public background if owned by user. */
-export async function deletePublicBackgroundAsOwner(bgId: string, uid: string): Promise<boolean> {
-  const doc = await fsGetDocument(`${COLLECTION}/${bgId}`);
-  if (!doc) return false;
-  if ((doc.data as unknown as BackgroundOption).ownerUid === uid) {
-    await fsDeleteDocument(`${COLLECTION}/${bgId}`);
+export async function deletePublicBackgroundAsOwner(bgId: string, _uid: string): Promise<boolean> {
+  try {
+    await apiFetch(`/api/backgrounds/public/${encodeURIComponent(bgId)}`, {
+      method: 'DELETE',
+    });
     return true;
+  } catch {
+    return false;
   }
-  return false;
 }

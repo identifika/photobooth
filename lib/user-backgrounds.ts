@@ -1,29 +1,33 @@
-import { fsGetCollection, fsAddDocument, fsDeleteDocument, fsGetDocument } from './firestore';
+import { apiFetch } from './api-client';
 import type { BackgroundOption } from '@/lib/edit-types';
+import type { UserBackground } from './background-converters';
 
-const COLLECTION = 'user_backgrounds';
-
-export interface UserBackground extends BackgroundOption {
-  ownerUid: string;
-  ownerName?: string | null;
-  createdAt?: unknown;
-}
+export type { UserBackground };
 
 export async function listUserBackgrounds(uid: string): Promise<UserBackground[]> {
-  const docs = await fsGetCollection(COLLECTION, uid, 'ownerUid');
-  return docs.map((d) => ({ id: d.id, ...(d.data as Omit<UserBackground, 'id'>) }));
+  try {
+    const res = await apiFetch<{ success: boolean; backgrounds: UserBackground[] }>(`/api/backgrounds?uid=${encodeURIComponent(uid)}`);
+    return res.backgrounds || [];
+  } catch (err) {
+    console.error('Failed to list user backgrounds', err);
+    return [];
+  }
 }
 
 /** Save an uploaded background for a user. Returns new doc ID. */
 export async function createUserBackground(
   data: Omit<UserBackground, 'id'>
 ): Promise<string> {
-  return fsAddDocument(COLLECTION, data as unknown as Record<string, unknown>);
+  const res = await apiFetch<{ success: boolean; id: string; background: UserBackground }>('/api/backgrounds', {
+    method: 'POST',
+    json: data,
+  });
+  return res.id;
 }
 
 /** Delete a user background. */
-export async function deleteUserBackground(uid: string, bgId: string): Promise<void> {
-  const doc = await fsGetDocument(`${COLLECTION}/${bgId}`);
-  if (!doc || (doc.data as any).ownerUid !== uid) throw new Error('Unauthorized');
-  await fsDeleteDocument(`${COLLECTION}/${bgId}`);
+export async function deleteUserBackground(_uid: string, bgId: string): Promise<void> {
+  await apiFetch(`/api/backgrounds/${encodeURIComponent(bgId)}`, {
+    method: 'DELETE',
+  });
 }
