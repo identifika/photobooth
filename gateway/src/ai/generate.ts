@@ -2,6 +2,7 @@ import type { GatewayConfig } from '../config.js';
 import { metrics, SingleFlight, TtlCache } from '../cache.js';
 import { sha256, type AuthUser } from '../auth.js';
 import { pooledFetch } from '../http.js';
+import { getDbDailyUsage, incrementDbDailyUsage, decrementDbDailyUsage } from '../db.js';
 import {
   buildUserInstruction,
   generateAlgorithmicFrames,
@@ -43,7 +44,7 @@ function todayKey(uid: string): string {
   return `${uid}:${new Date().toISOString().slice(0, 10)}`;
 }
 
-export function readUsage(config: GatewayConfig, user: AuthUser | null): UsageStatus {
+export async function readUsage(config: GatewayConfig, user: AuthUser | null): Promise<UsageStatus> {
   if (!user) {
     return {
       authenticated: false,
@@ -53,7 +54,17 @@ export function readUsage(config: GatewayConfig, user: AuthUser | null): UsageSt
       remainingToday: 0,
     };
   }
-  const usedToday = usage.get(todayKey(user.uid)) || 0;
+
+  const today = new Date().toISOString().slice(0, 10);
+  let usedToday = usage.get(todayKey(user.uid)) || 0;
+
+  if (config.databaseUrl) {
+    const dbCount = await getDbDailyUsage(config.databaseUrl, user.uid, today);
+    if (dbCount !== null) {
+      usedToday = dbCount;
+    }
+  }
+
   if (user.isAdmin) {
     return { authenticated: true, isAdmin: true, usedToday, maxDaily: null, remainingToday: null };
   }
@@ -377,10 +388,10 @@ export async function generateFrames(
   const cached = aiCache.get(key);
   if (cached?.state === 'fresh') {
     metrics.aiCacheHits += 1;
-    return { result: cached.value, usage: readUsage(config, user), cache: 'HIT' };
+    return { result: cached.value, usage: await readUsage(config, user), cache: 'HIT' };
   }
 
-  const limit = readUsage(config, user);
+  const limit = await readUsage(config, user);
   if (!user.isAdmin && (limit.remainingToday ?? 0) <= 0) {
     const error = new Error(`You have reached your daily limit of ${config.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
       status: number;
@@ -393,11 +404,12 @@ export async function generateFrames(
     throw error;
   }
 
+  const today = new Date().toISOString().slice(0, 10);
   let produced = false;
   const result = await aiFlight.do(key, async () => {
     if (!user.isAdmin) {
-      const used = usage.get(todayKey(user.uid)) || 0;
-      if (used >= config.aiDailyLimit) {
+      const current = await readUsage(config, user);
+      if ((current.usedToday ?? 0) >= config.aiDailyLimit) {
         const error = new Error(`You have reached your daily limit of ${config.aiDailyLimit} AI frame prompts. Limit resets tomorrow.`) as Error & {
           status: number;
           code: string;
@@ -405,8 +417,12 @@ export async function generateFrames(
         };
         error.status = 429;
         error.code = 'DAILY_LIMIT_EXCEEDED';
-        error.usage = readUsage(config, user);
+        error.usage = current;
         throw error;
+      }
+
+      if (config.databaseUrl) {
+        await incrementDbDailyUsage(config.databaseUrl, user.uid, user.email || '', today, input.prompt);
       }
       bumpUsage(user.uid);
     }
@@ -417,6 +433,9 @@ export async function generateFrames(
       return generated;
     } catch (error) {
       if (!user.isAdmin) {
+        if (config.databaseUrl) {
+          await decrementDbDailyUsage(config.databaseUrl, user.uid, today);
+        }
         const slot = todayKey(user.uid);
         usage.set(slot, Math.max(0, (usage.get(slot) || 1) - 1));
       }
@@ -426,7 +445,7 @@ export async function generateFrames(
     metrics.coalesced += 1;
   });
 
-  return { result, usage: readUsage(config, user), cache: produced ? 'MISS' : 'HIT' };
+  return { result, usage: await readUsage(config, user), cache: produced ? 'MISS' : 'HIT' };
 }
 
 export interface ChatInput {

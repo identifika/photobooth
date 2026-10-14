@@ -132,7 +132,7 @@ export function createApp(config: GatewayConfig) {
   const generate = async (c: Context) => {
     if (c.req.method === 'GET') {
       const user = await authenticate(c, config);
-      return c.json(readUsage(config, user));
+      return c.json(await readUsage(config, user));
     }
 
     const user = await authenticate(c, config);

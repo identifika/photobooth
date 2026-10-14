@@ -3,33 +3,27 @@ import type { FrameConfig, FrameElement, FramePhotoElement, FrameTitleElement, F
 import type { AiFrameCandidate } from '@/lib/ai-agent';
 import { verifyIdToken, checkIsAdmin } from '@/lib/auth-server';
 
+import { prisma } from '@/lib/db';
+
 const DAILY_LIMIT = 3;
-const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'photobooth-ad7ab';
-const FIRESTORE_REST_BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
 function getTodayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// In-memory fallback tracking in case Firestore rules aren't deployed
+// In-memory fallback tracking in case DB is temporarily unreachable
 const memoryUsageMap = new Map<string, number>();
 
-async function getUserUsageToday(uid: string, authToken?: string | null): Promise<number> {
+async function getUserUsageToday(uid: string): Promise<number> {
   const today = getTodayKey();
-  const memKey = `${uid}_${today}`;
-  if (!authToken) return memoryUsageMap.get(memKey) || 0;
-
   try {
-    const res = await fetch(`${FIRESTORE_REST_BASE}/ai_daily_usage/${memKey}`, {
-      headers: { Authorization: `Bearer ${authToken}` },
+    const row = await prisma.aiDailyUsage.findUnique({
+      where: { uid_usageDate: { uid, usageDate: today } },
     });
-    if (res.status === 404) return memoryUsageMap.get(memKey) || 0;
-    if (!res.ok) return memoryUsageMap.get(memKey) || 0;
-    const data = await res.json();
-    const count = Number(data?.fields?.count?.integerValue) || memoryUsageMap.get(memKey) || 0;
-    return count;
-  } catch {
-    return memoryUsageMap.get(memKey) || 0;
+    return row?.count || 0;
+  } catch (err) {
+    console.warn('Failed to read ai_daily_usage from Postgres, using memory fallback:', err);
+    return memoryUsageMap.get(`${uid}_${today}`) || 0;
   }
 }
 
@@ -37,40 +31,34 @@ async function incrementUserUsageToday(
   uid: string,
   email: string,
   prompt: string,
-  currentCount: number,
-  authToken?: string | null
+  currentCount: number
 ): Promise<number> {
   const today = getTodayKey();
   const memKey = `${uid}_${today}`;
   const newCount = currentCount + 1;
   memoryUsageMap.set(memKey, newCount);
 
-  if (!authToken) return newCount;
-
   try {
-    const body = {
-      fields: {
-        uid: { stringValue: uid },
-        email: { stringValue: email || '' },
-        date: { stringValue: today },
-        count: { integerValue: String(newCount) },
-        lastPrompt: { stringValue: prompt.slice(0, 200) },
-        updatedAt: { timestampValue: new Date().toISOString() },
+    const row = await prisma.aiDailyUsage.upsert({
+      where: { uid_usageDate: { uid, usageDate: today } },
+      create: {
+        uid,
+        email: email || '',
+        usageDate: today,
+        count: 1,
+        lastPrompt: prompt.slice(0, 200),
       },
-    };
-
-    await fetch(`${FIRESTORE_REST_BASE}/ai_daily_usage/${memKey}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
+      update: {
+        count: { increment: 1 },
+        email: email || undefined,
+        lastPrompt: prompt.slice(0, 200),
       },
-      body: JSON.stringify(body),
     });
-  } catch {
-    // Memory fallback is active
+    return row.count;
+  } catch (err) {
+    console.warn('Failed to persist ai_daily_usage in Postgres:', err);
+    return newCount;
   }
-  return newCount;
 }
 
 // Helper to generate unique IDs
@@ -876,7 +864,7 @@ export async function GET(request: Request) {
     }
 
     const isAdmin = checkIsAdmin(authUser.email);
-    const usedToday = await getUserUsageToday(authUser.uid, token);
+    const usedToday = await getUserUsageToday(authUser.uid);
     const remainingToday = isAdmin ? null : Math.max(0, DAILY_LIMIT - usedToday);
 
     return NextResponse.json({
@@ -898,7 +886,6 @@ export async function POST(request: Request) {
     // 1. Require Authenticated User
     const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
     const authUser = await verifyIdToken(authHeader);
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.split('Bearer ')[1]?.trim() : null;
 
     if (!authUser) {
       return NextResponse.json(
@@ -915,7 +902,7 @@ export async function POST(request: Request) {
     let currentUsage = 0;
 
     if (!isAdmin) {
-      currentUsage = await getUserUsageToday(authUser.uid, token);
+      currentUsage = await getUserUsageToday(authUser.uid);
       if (currentUsage >= DAILY_LIMIT) {
         return NextResponse.json(
           {
@@ -1056,7 +1043,7 @@ export async function POST(request: Request) {
     // 3. Increment daily usage for non-admin users
     let newUsage = currentUsage;
     if (!isAdmin) {
-      newUsage = await incrementUserUsageToday(authUser.uid, authUser.email || '', prompt, currentUsage, token);
+      newUsage = await incrementUserUsageToday(authUser.uid, authUser.email || '', prompt, currentUsage);
     }
 
     const remainingToday = isAdmin ? null : Math.max(0, DAILY_LIMIT - newUsage);

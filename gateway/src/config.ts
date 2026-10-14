@@ -34,6 +34,7 @@ export interface GatewayConfig {
   aiTimeoutMs: number;
   allowClientAiKeys: boolean;
   allowLocalAi: boolean;
+  databaseUrl: string;
 }
 
 function intEnv(name: string, fallback: number): number {
@@ -103,5 +104,6 @@ export function loadConfig(): GatewayConfig {
     aiTimeoutMs: intEnv('AI_TIMEOUT_MS', 45_000),
     allowClientAiKeys: boolEnv('ALLOW_CLIENT_AI_KEYS', true),
     allowLocalAi: boolEnv('ALLOW_LOCAL_AI', true),
+    databaseUrl: (process.env.DATABASE_URL || '').trim(),
   };
 }
