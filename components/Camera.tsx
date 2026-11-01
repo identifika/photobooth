@@ -2,8 +2,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import GhostOverlay from '@/components/GhostOverlay';
-import PoseRecommender from '@/components/PoseRecommender';
+import PoseGuidePiP from '@/components/PoseGuidePiP';
 import { PoseReference } from '@/lib/pose/types';
 import { DEFAULT_POSES } from '@/lib/pose/defaultPoses';
 import { getPoseLandmarker, detectVideoPose } from '@/lib/pose/detector';
@@ -50,7 +49,6 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     const sessionState = getSessionPoseState();
     return suggestNextPose(sessionState.lastVec, sessionState.usedIds, DEFAULT_POSES, 1);
   });
-  const [showGhost, setShowGhost] = useState(false);
   const [detectedPeople, setDetectedPeople] = useState(1);
   const [isPoseMatched, setIsPoseMatched] = useState(false);
   const [poseMatchScore, setPoseMatchScore] = useState(0);
@@ -314,10 +312,6 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     };
   }, [ready, countdown, capturing, selectedPose, detectedPeople]);
 
-  const handleToggleGhost = useCallback(() => {
-    setShowGhost((prev) => !prev);
-  }, []);
-
   const handleSelectPose = useCallback((pose: PoseReference) => {
     setSelectedPose(pose);
   }, []);
@@ -426,13 +420,23 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                 }} />
               ))}
 
-              {/* Ghost Silhouette Overlay */}
-              {showGhost && selectedPose && (
-                <GhostOverlay
-                  skeleton={selectedPose.skeleton}
+              {/* Subtle Ambient Match Glow Border - only at outer edges, NEVER blocking people */}
+              {isPoseMatched && (
+                <div className="absolute inset-0 pointer-events-none rounded-sm border-4 border-emerald-400 shadow-[inset_0_0_24px_rgba(52,211,153,0.35)] animate-pulse transition-all duration-300 z-10" />
+              )}
+
+              {/* Floating Aesthetic Pose Guide PiP in the top-right corner */}
+              {ready && (
+                <PoseGuidePiP
+                  currentPose={selectedPose}
                   isMatched={isPoseMatched}
                   matchScore={poseMatchScore}
-                  poseName={selectedPose.name}
+                  photoIndex={photoIndex}
+                  detectedPeople={detectedPeople}
+                  onSelectPose={handleSelectPose}
+                  onNextSuggestion={handleNextSuggestion}
+                  countdownActive={countdown !== null}
+                  capturing={capturing}
                 />
               )}
 
@@ -473,20 +477,6 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                 </span>
               </div>
             </div>
-
-            {/* Pose Recommender & Guide Control */}
-            {ready && (
-              <PoseRecommender
-                currentPose={selectedPose}
-                detectedPeople={detectedPeople}
-                showGhost={showGhost}
-                onToggleGhost={handleToggleGhost}
-                onSelectPose={handleSelectPose}
-                onNextSuggestion={handleNextSuggestion}
-                isCapturing={capturing}
-                countdownActive={countdown !== null}
-              />
-            )}
 
             {/* Shutter button */}
             <div className="flex flex-col items-center mt-8 gap-4">
