@@ -2,6 +2,20 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import GhostOverlay from '@/components/GhostOverlay';
+import PoseRecommender from '@/components/PoseRecommender';
+import { PoseReference } from '@/lib/pose/types';
+import { DEFAULT_POSES } from '@/lib/pose/defaultPoses';
+import { getPoseLandmarker, detectVideoPose } from '@/lib/pose/detector';
+import {
+  extractPose,
+  suggestNextPose,
+  checkPoseMatch,
+  recordShotPose,
+  getSessionPoseState,
+  resetSessionPoseState,
+} from '@/lib/pose/vector';
+import type { PoseLandmarker as PoseLandmarkerType } from '@mediapipe/tasks-vision';
 
 interface Props {
   frame: Frame;
@@ -27,6 +41,22 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
   const liveFramesRef = useRef<string[]>([]);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMobile = useIsMobile();
+
+  // Pose Recommender & Ghost Overlay states
+  const [selectedPose, setSelectedPose] = useState<PoseReference | null>(() => {
+    if (photoIndex === 0 && !isRetake) {
+      resetSessionPoseState();
+    }
+    const sessionState = getSessionPoseState();
+    return suggestNextPose(sessionState.lastVec, sessionState.usedIds, DEFAULT_POSES, 1);
+  });
+  const [showGhost, setShowGhost] = useState(false);
+  const [detectedPeople, setDetectedPeople] = useState(1);
+  const [isPoseMatched, setIsPoseMatched] = useState(false);
+  const [poseMatchScore, setPoseMatchScore] = useState(0);
+  const landmarkerRef = useRef<PoseLandmarkerType | null>(null);
+  const lastExtractedPoseRef = useRef<ReturnType<typeof extractPose> | null>(null);
+  const poseDetectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const activeIndex = isRetake && retakeIndex !== undefined ? retakeIndex : photoIndex;
   
@@ -180,8 +210,11 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
       : null;
     liveFramesRef.current = [];
 
+    // Record current pose into session history for next shot suggestion
+    recordShotPose(selectedPose?.id, lastExtractedPoseRef.current?.vec);
+
     onCapture(photoDataUrl, frames);
-  }, [frame, currentAspectRatio, onCapture, stopFrameCapture]);
+  }, [frame, currentAspectRatio, onCapture, stopFrameCapture, selectedPose]);
 
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const captureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -221,6 +254,85 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
       }
     }, 1000);
   }, [countdown, capturing, capture, startFrameCapture]);
+
+  // Lazy-load MediaPipe PoseLandmarker
+  useEffect(() => {
+    let cancelled = false;
+    getPoseLandmarker().then((lm) => {
+      if (!cancelled && lm) {
+        landmarkerRef.current = lm;
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Throttled live video pose detection loop (~350ms)
+  useEffect(() => {
+    if (!ready || countdown !== null || capturing) {
+      if (poseDetectionIntervalRef.current) {
+        clearInterval(poseDetectionIntervalRef.current);
+        poseDetectionIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const runPoseCheck = () => {
+      if (!videoRef.current || !landmarkerRef.current) return;
+      const video = videoRef.current;
+      if (video.readyState < 2 || video.videoWidth === 0) return;
+
+      const res = detectVideoPose(landmarkerRef.current, video);
+      if (res && res.landmarks && res.landmarks.length > 0) {
+        const extracted = extractPose(res.landmarks, true);
+        if (extracted) {
+          lastExtractedPoseRef.current = extracted;
+          if (extracted.people !== detectedPeople) {
+            setDetectedPeople(extracted.people);
+          }
+
+          if (selectedPose) {
+            const match = checkPoseMatch(extracted.vec, selectedPose.vec);
+            setIsPoseMatched(match.isMatched);
+            setPoseMatchScore(match.score);
+          }
+        }
+      } else {
+        setIsPoseMatched(false);
+        setPoseMatchScore(0);
+      }
+    };
+
+    poseDetectionIntervalRef.current = setInterval(runPoseCheck, 350);
+
+    return () => {
+      if (poseDetectionIntervalRef.current) {
+        clearInterval(poseDetectionIntervalRef.current);
+        poseDetectionIntervalRef.current = null;
+      }
+    };
+  }, [ready, countdown, capturing, selectedPose, detectedPeople]);
+
+  const handleToggleGhost = useCallback(() => {
+    setShowGhost((prev) => !prev);
+  }, []);
+
+  const handleSelectPose = useCallback((pose: PoseReference) => {
+    setSelectedPose(pose);
+  }, []);
+
+  const handleNextSuggestion = useCallback(() => {
+    const sessionState = getSessionPoseState();
+    const currentId = selectedPose?.id ? [selectedPose.id] : [];
+    const next = suggestNextPose(
+      sessionState.lastVec,
+      [...sessionState.usedIds, ...currentId],
+      DEFAULT_POSES,
+      detectedPeople || 1
+    );
+    if (next) setSelectedPose(next);
+  }, [selectedPose, detectedPeople]);
 
   return (
     <div className="w-full animate-fadeIn">
@@ -314,6 +426,16 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                 }} />
               ))}
 
+              {/* Ghost Silhouette Overlay */}
+              {showGhost && selectedPose && (
+                <GhostOverlay
+                  skeleton={selectedPose.skeleton}
+                  isMatched={isPoseMatched}
+                  matchScore={poseMatchScore}
+                  poseName={selectedPose.name}
+                />
+              )}
+
               {/* Loading overlay */}
               {!ready && (
                 <div className="absolute inset-0 flex items-center justify-center"
@@ -351,6 +473,20 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                 </span>
               </div>
             </div>
+
+            {/* Pose Recommender & Guide Control */}
+            {ready && (
+              <PoseRecommender
+                currentPose={selectedPose}
+                detectedPeople={detectedPeople}
+                showGhost={showGhost}
+                onToggleGhost={handleToggleGhost}
+                onSelectPose={handleSelectPose}
+                onNextSuggestion={handleNextSuggestion}
+                isCapturing={capturing}
+                countdownActive={countdown !== null}
+              />
+            )}
 
             {/* Shutter button */}
             <div className="flex flex-col items-center mt-8 gap-4">
