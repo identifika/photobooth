@@ -19,6 +19,7 @@ export interface PoseReference {
   skeleton: NormalizedKeypoint[][];
   thumb?: string; // Image thumbnail or emoji
   emoji?: string;
+  isCustom?: boolean;
 }
 
 export interface ExtractedPose {
