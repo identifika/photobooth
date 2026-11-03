@@ -13,6 +13,7 @@ interface DualCameraViewProps {
   countdown: number | null;
   isCapturing: boolean;
   photoCount: number;
+  isAiProcessing?: boolean;
 }
 
 export default function DualCameraView({
@@ -25,8 +26,11 @@ export default function DualCameraView({
   remoteVideoRef,
   countdown,
   isCapturing,
-  photoCount
+  photoCount,
+  isAiProcessing = false,
 }: DualCameraViewProps) {
+  const isDual = captureMode === 'merged' || captureMode === 'together';
+
   return (
     <div className="relative overflow-hidden rounded-sm shadow-2xl transition-all duration-300 flex"
       style={{
@@ -38,7 +42,7 @@ export default function DualCameraView({
         background: activeFrame.color,
       }}
     >
-      <div className="w-1/2 h-full relative" style={{ display: captureMode === 'right' ? 'none' : 'block', width: captureMode === 'merged' ? '50%' : '100%' }}>
+      <div className="w-1/2 h-full relative" style={{ display: captureMode === 'right' ? 'none' : 'block', width: isDual ? '50%' : '100%' }}>
         <video
           ref={isMe === "left" ? localVideoRef : remoteVideoRef}
           autoPlay
@@ -51,7 +55,7 @@ export default function DualCameraView({
           {isMe === "left" ? "YOU" : "DATE"}
         </div>
       </div>
-      <div className="w-1/2 h-full relative" style={{ display: captureMode === 'left' ? 'none' : 'block', width: captureMode === 'merged' ? '50%' : '100%', borderLeft: captureMode === 'merged' ? `2px solid ${activeFrame.borderColor}` : 'none' }}>
+      <div className="w-1/2 h-full relative" style={{ display: captureMode === 'left' ? 'none' : 'block', width: isDual ? '50%' : '100%', borderLeft: isDual ? `2px solid ${activeFrame.borderColor}` : 'none' }}>
         <video
           ref={isMe === "left" ? remoteVideoRef : localVideoRef}
           autoPlay
@@ -64,6 +68,26 @@ export default function DualCameraView({
           {isMe === "left" ? "DATE" : "YOU"}
         </div>
       </div>
+
+      {/* Mode Badge indicator */}
+      {captureMode === 'together' && countdown === null && !isCapturing && !isAiProcessing && (
+        <div className="absolute top-2 right-2 bg-gradient-to-r from-pink-500/90 to-purple-500/90 backdrop-blur-sm text-white text-[10px] font-semibold px-2.5 py-0.5 rounded-full shadow-lg z-10 flex items-center gap-1">
+          <span>✨ Satu Frame AI</span>
+        </div>
+      )}
+
+      {/* AI Processing Overlay */}
+      {isAiProcessing && (
+        <div className="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center text-center p-4 z-30 animate-fadeIn">
+          <div className="w-12 h-12 rounded-full border-4 border-pink-400 border-t-transparent animate-spin mb-3 shadow-lg" />
+          <h4 className="font-semibold text-white text-sm sm:text-base mb-1">
+            ✨ Menyatukan Kalian Berdua...
+          </h4>
+          <p className="text-white/60 text-xs max-w-xs leading-relaxed">
+            AI sedang menghapus background dan menggabungkan foto kalian dalam satu frame
+          </p>
+        </div>
+      )}
 
       {/* Live / Capturing indicator */}
       {countdown !== null && (

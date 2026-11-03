@@ -10,8 +10,9 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import PhotoReview from "./PhotoReview";
 import ChatPanel, { ChatMessage } from "./ChatPanel";
 import DualCameraView from "./DualCameraView";
+import { removeBg } from "@/lib/remove-bg";
 
-export type CaptureMode = "left" | "right" | "merged";
+export type CaptureMode = "left" | "right" | "merged" | "together";
 
   type SyncPayload =
   | { kind: "sync-frame"; frame: Frame; mode: CaptureMode }
@@ -50,6 +51,7 @@ export default function DatePhotobooth({
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
   
   const [photos, setPhotos] = useState<string[]>([]);
   
@@ -88,6 +90,7 @@ export default function DatePhotobooth({
   }, []);
 
   const activeFrame = frame || { ...DEFAULT_FRAME, config: layoutToConfig(DEFAULT_FRAME.layout, DEFAULT_FRAME.photoCount) };
+  const currentAspectRatio = activeFrame.layout === 'grid-2x2' ? 1 : 4 / 3;
   const isMobile = useIsMobile();
 
   const { status, localStream, remoteStream, sendSync, credentialExpiresAt } = useDatePeerConnection({
@@ -181,7 +184,6 @@ export default function DatePhotobooth({
   const [credentialSecondsLeft, setCredentialSecondsLeft] = useState<number | null>(null);
   useEffect(() => {
     if (!credentialExpiresAt || status !== "waiting-for-peer") {
-      setCredentialSecondsLeft(null);
       return;
     }
     const tick = () => {
@@ -190,7 +192,10 @@ export default function DatePhotobooth({
     };
     tick();
     const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+      setCredentialSecondsLeft(null);
+    };
   }, [credentialExpiresAt, status]);
 
   function handleModeChange(mode: CaptureMode) {
@@ -276,6 +281,97 @@ export default function DatePhotobooth({
     });
   }
 
+  function loadImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  async function stitchVirtualTogetherSnapshot(
+    leftDataUrl: string,
+    rightDataUrl: string,
+    targetAspectRatio: number = 4 / 3
+  ): Promise<string> {
+    const canvas = canvasRef.current;
+    if (!canvas) return "";
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+
+    const W = 1600;
+    const H = Math.round(W / targetAspectRatio);
+    canvas.width = W;
+    canvas.height = H;
+
+    // Run AI segmentation on both snapshots in parallel
+    let cutoutLeft = leftDataUrl;
+    let cutoutRight = rightDataUrl;
+    try {
+      const [cL, cR] = await Promise.all([
+        removeBg(leftDataUrl),
+        removeBg(rightDataUrl),
+      ]);
+      cutoutLeft = cL;
+      cutoutRight = cR;
+    } catch (err) {
+      console.warn("removeBg failed, stitching with original snapshots:", err);
+      return stitchCompositeSnapshot(leftDataUrl, rightDataUrl);
+    }
+
+    const [imgL, imgR] = await Promise.all([
+      loadImage(cutoutLeft),
+      loadImage(cutoutRight),
+    ]);
+
+    // Studio background: soft warm aesthetic studio lighting
+    const grad = ctx.createRadialGradient(W / 2, H * 0.45, 80, W / 2, H / 2, W * 0.75);
+    grad.addColorStop(0, "#fdfcf9");
+    grad.addColorStop(0.45, "#f7f2ea");
+    grad.addColorStop(1, "#ece4d8");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Soft studio floor gradient
+    const floorGrad = ctx.createLinearGradient(0, H * 0.65, 0, H);
+    floorGrad.addColorStop(0, "rgba(0,0,0,0)");
+    floorGrad.addColorStop(1, "rgba(0,0,0,0.06)");
+    ctx.fillStyle = floorGrad;
+    ctx.fillRect(0, H * 0.65, W, H * 0.35);
+
+    // Target height for each person (fill ~88% of vertical frame)
+    const targetPersonH = H * 0.88;
+
+    // Calculate proportional dimensions
+    const scaleL = targetPersonH / (imgL.height || 1);
+    const personW_L = (imgL.width || 1) * scaleL;
+    const posL_X = W * 0.37 - personW_L / 2;
+    const posL_Y = H - targetPersonH;
+
+    const scaleR = targetPersonH / (imgR.height || 1);
+    const personW_R = (imgR.width || 1) * scaleR;
+    const posR_X = W * 0.63 - personW_R / 2;
+    const posR_Y = H - targetPersonH;
+
+    // 1. Draw subtle natural ambient shadow behind both people
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.16)";
+    ctx.shadowBlur = 32;
+    ctx.shadowOffsetY = 14;
+
+    ctx.drawImage(imgL, posL_X, posL_Y, personW_L, targetPersonH);
+    ctx.drawImage(imgR, posR_X, posR_Y, personW_R, targetPersonH);
+    ctx.restore();
+
+    // 2. Draw actual crisp figures
+    ctx.drawImage(imgL, posL_X, posL_Y, personW_L, targetPersonH);
+    ctx.drawImage(imgR, posR_X, posR_Y, personW_R, targetPersonH);
+
+    return canvas.toDataURL("image/jpeg", 0.92);
+  }
+
   async function handleReceivedSnapshot(index: number, from: "left" | "right", dataUrl: string) {
     pendingSnapshots.current[from] = dataUrl;
     checkAndFinalizeSnapshot(index);
@@ -290,6 +386,17 @@ export default function DatePhotobooth({
     if (currentMode === "merged") {
       if (!left || !right) return; // Wait for both
       finalSnapshotUrl = await stitchCompositeSnapshot(left, right);
+    } else if (currentMode === "together") {
+      if (!left || !right) return; // Wait for both
+      setIsAiProcessing(true);
+      try {
+        finalSnapshotUrl = await stitchVirtualTogetherSnapshot(left, right, currentAspectRatio);
+      } catch (err) {
+        console.error("AI together merge failed:", err);
+        finalSnapshotUrl = await stitchCompositeSnapshot(left, right);
+      } finally {
+        setIsAiProcessing(false);
+      }
     } else {
       if (currentMode === "left" && !left) return;
       if (currentMode === "right" && !right) return;
@@ -502,7 +609,6 @@ export default function DatePhotobooth({
       </div>
     );
   } else {
-    const currentAspectRatio = activeFrame.layout === 'grid-2x2' ? 1 : 4 / 3;
     mainContent = (
       <div className="w-full animate-fadeIn max-w-3xl mx-auto flex flex-col items-center">
         <div className="text-center mb-8">
@@ -565,6 +671,7 @@ export default function DatePhotobooth({
           countdown={countdown}
           isCapturing={isCapturing}
           photoCount={photos.length}
+          isAiProcessing={isAiProcessing}
         />
 
         {/* Controls & Shutter */}
@@ -573,21 +680,29 @@ export default function DatePhotobooth({
             <div className="flex bg-[var(--surface-3)] rounded-full p-1 gap-1 border border-[var(--border)] mb-2 shadow-sm">
               <button
                 onClick={() => handleModeChange("left")}
-                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                className={`py-1.5 px-3 rounded-full text-xs font-mono transition-colors ${captureMode === "left" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                   }`}
               >
                 You
               </button>
               <button
                 onClick={() => handleModeChange("merged")}
-                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                className={`py-1.5 px-3 rounded-full text-xs font-mono transition-colors ${captureMode === "merged" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                   }`}
               >
-                Both
+                Split
+              </button>
+              <button
+                onClick={() => handleModeChange("together")}
+                className={`py-1.5 px-3 rounded-full text-xs font-mono transition-all flex items-center gap-1 ${captureMode === "together" ? "bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-sm font-semibold" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                title="Mode Bersama: Otomatis hapus background dan satukan berdua dalam satu frame studio"
+              >
+                <span>✨ Bersama (AI)</span>
               </button>
               <button
                 onClick={() => handleModeChange("right")}
-                className={`py-1.5 px-4 rounded-full text-xs font-mono transition-colors ${captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                className={`py-1.5 px-3 rounded-full text-xs font-mono transition-colors ${captureMode === "right" ? "bg-[var(--surface-1)] text-[var(--text-primary)] shadow-sm" : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                   }`}
               >
                 Date
