@@ -2,7 +2,8 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { Frame } from '@/lib/frames';
 import { useIsMobile } from '@/hooks/useIsMobile';
-import PoseGuidePiP from '@/components/PoseGuidePiP';
+import PoseSideGuide from '@/components/PoseSideGuide';
+import CameraPoseShadow from '@/components/CameraPoseShadow';
 import { PoseReference } from '@/lib/pose/types';
 import { DEFAULT_POSES } from '@/lib/pose/defaultPoses';
 import { getPoseLandmarker, detectVideoPose } from '@/lib/pose/detector';
@@ -50,8 +51,8 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     return suggestNextPose(sessionState.lastVec, sessionState.usedIds, DEFAULT_POSES, 1);
   });
   const [detectedPeople, setDetectedPeople] = useState(1);
+  const [showShadowOnCamera, setShowShadowOnCamera] = useState(false);
   const [isPoseMatched, setIsPoseMatched] = useState(false);
-  const [poseMatchScore, setPoseMatchScore] = useState(0);
   const landmarkerRef = useRef<PoseLandmarkerType | null>(null);
   const lastExtractedPoseRef = useRef<ReturnType<typeof extractPose> | null>(null);
   const poseDetectionIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -288,17 +289,24 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
           lastExtractedPoseRef.current = extracted;
           if (extracted.people !== detectedPeople) {
             setDetectedPeople(extracted.people);
+            // Auto-switch pose to match new group size (1 or 2), or clear if >= 3
+            if (extracted.people <= 2) {
+              const matchedCategory = DEFAULT_POSES.filter((p) => p.people === extracted.people);
+              if (matchedCategory.length > 0) {
+                setSelectedPose(matchedCategory[0]);
+              }
+            } else {
+              setSelectedPose(null);
+            }
           }
 
           if (selectedPose) {
             const match = checkPoseMatch(extracted.vec, selectedPose.vec);
             setIsPoseMatched(match.isMatched);
-            setPoseMatchScore(match.score);
           }
         }
       } else {
         setIsPoseMatched(false);
-        setPoseMatchScore(0);
       }
     };
 
@@ -315,18 +323,6 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
   const handleSelectPose = useCallback((pose: PoseReference) => {
     setSelectedPose(pose);
   }, []);
-
-  const handleNextSuggestion = useCallback(() => {
-    const sessionState = getSessionPoseState();
-    const currentId = selectedPose?.id ? [selectedPose.id] : [];
-    const next = suggestNextPose(
-      sessionState.lastVec,
-      [...sessionState.usedIds, ...currentId],
-      DEFAULT_POSES,
-      detectedPeople || 1
-    );
-    if (next) setSelectedPose(next);
-  }, [selectedPose, detectedPeople]);
 
   return (
     <div className="w-full animate-fadeIn">
@@ -365,117 +361,127 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
           </div>
         ) : (
           <>
-            {/* Camera viewfinder */}
-            <div className="relative overflow-hidden rounded-sm shadow-2xl transition-all duration-300"
-              style={{
-                aspectRatio: String(currentAspectRatio),
-                width: '100%',
-                maxWidth: isMobile ? `min(100%, 60vh * ${currentAspectRatio})` : `min(32rem, 55vh * ${currentAspectRatio})`,
-                border: `4px solid ${frame.borderColor}`,
-                boxShadow: `0 20px 60px ${frame.borderColor}30`,
-              }}
-            >
-              <video
-                ref={videoRef}
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)', display: 'block' }}
-              />
+            {/* Main Stage: Viewfinder + Side Pose Guide */}
+            <div className="w-full flex flex-col lg:flex-row items-center justify-center gap-4 lg:gap-8 px-2 max-w-5xl">
+              {/* Camera viewfinder */}
+              <div className="relative overflow-hidden rounded-sm shadow-2xl transition-all duration-300 shrink-0"
+                style={{
+                  aspectRatio: String(currentAspectRatio),
+                  width: '100%',
+                  maxWidth: isMobile ? `min(100%, 60vh * ${currentAspectRatio})` : `min(32rem, 55vh * ${currentAspectRatio})`,
+                  border: `4px solid ${frame.borderColor}`,
+                  boxShadow: `0 20px 60px ${frame.borderColor}30`,
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)', display: 'block' }}
+                />
 
-              {/* Live recording indicator */}
-              {ready && !capturing && countdown === null && (
-                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                  <span className="text-white text-[10px] font-medium tracking-wide">READY</span>
+                {/* Optional Soft Shadow Silhouette on Camera */}
+                {showShadowOnCamera && selectedPose && (
+                  <CameraPoseShadow
+                    skeleton={selectedPose.skeleton}
+                    isMatched={isPoseMatched}
+                  />
+                )}
+
+                {/* Live recording indicator */}
+                {ready && !capturing && countdown === null && (
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    <span className="text-white text-[10px] font-medium tracking-wide">READY</span>
+                  </div>
+                )}
+
+                {/* Recording indicator during countdown */}
+                {countdown !== null && (
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-white text-[10px] font-medium tracking-wide">LIVE</span>
+                  </div>
+                )}
+
+                {/* Capturing indicator */}
+                {capturing && (
+                  <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
+                    style={{ background: 'rgba(251,191,36,0.3)', border: '1px solid rgba(251,191,36,0.6)' }}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                    <span className="text-yellow-200 text-[10px] font-medium tracking-wide">RECORDING</span>
+                  </div>
+                )}
+
+                {/* Viewfinder corners */}
+                {['top-2 left-2', 'top-2 right-2', 'bottom-2 left-2', 'bottom-2 right-2'].map((pos, i) => (
+                  <div key={i} className={`absolute ${pos} w-6 h-6`} style={{
+                    borderTop: i < 2 ? `3px solid ${frame.accentColor}` : 'none',
+                    borderBottom: i >= 2 ? `3px solid ${frame.accentColor}` : 'none',
+                    borderLeft: i % 2 === 0 ? `3px solid ${frame.accentColor}` : 'none',
+                    borderRight: i % 2 === 1 ? `3px solid ${frame.accentColor}` : 'none',
+                  }} />
+                ))}
+
+                {/* Subtle Ambient Match Glow Border - only at outer edges, NEVER blocking people */}
+                {isPoseMatched && (
+                  <div className="absolute inset-0 pointer-events-none rounded-sm border-4 border-emerald-400 shadow-[inset_0_0_24px_rgba(52,211,153,0.35)] animate-pulse transition-all duration-300 z-10" />
+                )}
+
+                {/* Loading overlay */}
+                {!ready && (
+                  <div className="absolute inset-0 flex items-center justify-center"
+                    style={{ background: `${frame.color}ee` }}>
+                    <div className="text-center">
+                      <div className="w-10 h-10 border-4 border-t-transparent rounded-full mx-auto mb-3 animate-spin"
+                        style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
+                      <p className="text-sm opacity-60">Starting camera...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Flash effect */}
+                {flash && (
+                  <div className="absolute inset-0 animate-flash pointer-events-none"
+                    style={{ background: 'white' }} />
+                )}
+
+                {/* Countdown */}
+                {countdown !== null && (
+                  <div className="absolute inset-0 flex items-center justify-center"
+                    style={{ background: 'rgba(0,0,0,0.3)' }}>
+                    <div className={`text-white font-display font-black ${isMobile ? 'text-6xl' : 'text-9xl'}`}
+                      style={{ textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+                      {countdown}
+                    </div>
+                  </div>
+                )}
+
+                {/* Photo label */}
+                <div className="absolute bottom-3 left-0 right-0 text-center">
+                  <span className="text-xs px-3 py-1 rounded-full"
+                    style={{ background: `${frame.borderColor}cc`, color: frame.color, letterSpacing: '0.15em' }}>
+                    PHOTO {photoIndex + 1}/{totalPhotos}
+                  </span>
                 </div>
-              )}
+              </div>
 
-              {/* Recording indicator during countdown */}
-              {countdown !== null && (
-                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }}>
-                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                  <span className="text-white text-[10px] font-medium tracking-wide">LIVE</span>
-                </div>
-              )}
-
-              {/* Capturing indicator */}
-              {capturing && (
-                <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(251,191,36,0.3)', border: '1px solid rgba(251,191,36,0.6)' }}>
-                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                  <span className="text-yellow-200 text-[10px] font-medium tracking-wide">RECORDING</span>
-                </div>
-              )}
-
-              {/* Viewfinder corners */}
-              {['top-2 left-2', 'top-2 right-2', 'bottom-2 left-2', 'bottom-2 right-2'].map((pos, i) => (
-                <div key={i} className={`absolute ${pos} w-6 h-6`} style={{
-                  borderTop: i < 2 ? `3px solid ${frame.accentColor}` : 'none',
-                  borderBottom: i >= 2 ? `3px solid ${frame.accentColor}` : 'none',
-                  borderLeft: i % 2 === 0 ? `3px solid ${frame.accentColor}` : 'none',
-                  borderRight: i % 2 === 1 ? `3px solid ${frame.accentColor}` : 'none',
-                }} />
-              ))}
-
-              {/* Subtle Ambient Match Glow Border - only at outer edges, NEVER blocking people */}
-              {isPoseMatched && (
-                <div className="absolute inset-0 pointer-events-none rounded-sm border-4 border-emerald-400 shadow-[inset_0_0_24px_rgba(52,211,153,0.35)] animate-pulse transition-all duration-300 z-10" />
-              )}
-
-              {/* Floating Aesthetic Pose Guide PiP in the top-right corner */}
+              {/* Side Pose Guide (Auto-detected: 1P or 2P; hidden for 3+ people) */}
               {ready && (
-                <PoseGuidePiP
-                  currentPose={selectedPose}
-                  isMatched={isPoseMatched}
-                  matchScore={poseMatchScore}
-                  photoIndex={photoIndex}
+                <PoseSideGuide
                   detectedPeople={detectedPeople}
+                  currentPose={selectedPose}
                   onSelectPose={handleSelectPose}
-                  onNextSuggestion={handleNextSuggestion}
+                  showShadowOnCamera={showShadowOnCamera}
+                  onToggleShadow={() => setShowShadowOnCamera(!showShadowOnCamera)}
+                  isMatched={isPoseMatched}
                   countdownActive={countdown !== null}
-                  capturing={capturing}
+                  isCapturing={capturing}
                 />
               )}
-
-              {/* Loading overlay */}
-              {!ready && (
-                <div className="absolute inset-0 flex items-center justify-center"
-                  style={{ background: `${frame.color}ee` }}>
-                  <div className="text-center">
-                    <div className="w-10 h-10 border-4 border-t-transparent rounded-full mx-auto mb-3 animate-spin"
-                      style={{ borderColor: frame.borderColor, borderTopColor: 'transparent' }} />
-                    <p className="text-sm opacity-60">Starting camera...</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Flash effect */}
-              {flash && (
-                <div className="absolute inset-0 animate-flash pointer-events-none"
-                  style={{ background: 'white' }} />
-              )}
-
-              {/* Countdown */}
-              {countdown !== null && (
-                <div className="absolute inset-0 flex items-center justify-center"
-                  style={{ background: 'rgba(0,0,0,0.3)' }}>
-                  <div className={`text-white font-display font-black ${isMobile ? 'text-6xl' : 'text-9xl'}`}
-                    style={{ textShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
-                    {countdown}
-                  </div>
-                </div>
-              )}
-
-              {/* Photo label */}
-              <div className="absolute bottom-3 left-0 right-0 text-center">
-                <span className="text-xs px-3 py-1 rounded-full"
-                  style={{ background: `${frame.borderColor}cc`, color: frame.color, letterSpacing: '0.15em' }}>
-                  PHOTO {photoIndex + 1}/{totalPhotos}
-                </span>
-              </div>
             </div>
 
             {/* Shutter button */}
