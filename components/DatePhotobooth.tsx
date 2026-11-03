@@ -10,7 +10,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import PhotoReview from "./PhotoReview";
 import ChatPanel, { ChatMessage } from "./ChatPanel";
 import DualCameraView from "./DualCameraView";
-import { removeBg } from "@/lib/remove-bg";
+import { fastRemoveBg, preloadFastSegmenter } from "@/lib/segmentation/fastSegment";
 
 export type CaptureMode = "left" | "right" | "merged" | "together";
 
@@ -84,6 +84,7 @@ export default function DatePhotobooth({
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
+    preloadFastSegmenter();
     return () => {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
@@ -281,16 +282,6 @@ export default function DatePhotobooth({
     });
   }
 
-  function loadImage(src: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = src;
-    });
-  }
-
   async function stitchVirtualTogetherSnapshot(
     leftDataUrl: string,
     rightDataUrl: string,
@@ -306,25 +297,20 @@ export default function DatePhotobooth({
     canvas.width = W;
     canvas.height = H;
 
-    // Run AI segmentation on both snapshots in parallel
-    let cutoutLeft = leftDataUrl;
-    let cutoutRight = rightDataUrl;
+    // Run ultra-fast MediaPipe segmentation on both snapshots in parallel (~30-50ms)
+    let imgL: HTMLCanvasElement | HTMLImageElement;
+    let imgR: HTMLCanvasElement | HTMLImageElement;
     try {
       const [cL, cR] = await Promise.all([
-        removeBg(leftDataUrl),
-        removeBg(rightDataUrl),
+        fastRemoveBg(leftDataUrl),
+        fastRemoveBg(rightDataUrl),
       ]);
-      cutoutLeft = cL;
-      cutoutRight = cR;
+      imgL = cL;
+      imgR = cR;
     } catch (err) {
-      console.warn("removeBg failed, stitching with original snapshots:", err);
+      console.warn("fastRemoveBg failed, stitching with original snapshots:", err);
       return stitchCompositeSnapshot(leftDataUrl, rightDataUrl);
     }
-
-    const [imgL, imgR] = await Promise.all([
-      loadImage(cutoutLeft),
-      loadImage(cutoutRight),
-    ]);
 
     // Studio background: soft warm aesthetic studio lighting
     const grad = ctx.createRadialGradient(W / 2, H * 0.45, 80, W / 2, H / 2, W * 0.75);
