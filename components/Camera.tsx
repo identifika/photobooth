@@ -52,6 +52,16 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
   });
   const [detectedPeople, setDetectedPeople] = useState(1);
   const [showShadowOnCamera, setShowShadowOnCamera] = useState(false);
+  const [shadowOpacity, setShadowOpacity] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('photobooth_shadow_opacity');
+      if (saved) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val >= 0.1 && val <= 0.8) return val;
+      }
+    }
+    return 0.3; // Default 30%
+  });
   const [isPoseMatched, setIsPoseMatched] = useState(false);
   const landmarkerRef = useRef<PoseLandmarkerType | null>(null);
   const lastExtractedPoseRef = useRef<ReturnType<typeof extractPose> | null>(null);
@@ -324,6 +334,13 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
     setSelectedPose(pose);
   }, []);
 
+  const handleShadowOpacityChange = useCallback((val: number) => {
+    setShadowOpacity(val);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('photobooth_shadow_opacity', val.toString());
+    }
+  }, []);
+
   return (
     <div className="w-full animate-fadeIn">
     <div className="text-center mb-8">
@@ -385,6 +402,7 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                 {showShadowOnCamera && selectedPose && (
                   <CameraPoseShadow
                     skeleton={selectedPose.skeleton}
+                    opacity={shadowOpacity}
                     isMatched={isPoseMatched}
                   />
                 )}
@@ -477,6 +495,8 @@ export default function Camera({ frame, photoIndex, totalPhotos, onCapture, isRe
                   onSelectPose={handleSelectPose}
                   showShadowOnCamera={showShadowOnCamera}
                   onToggleShadow={() => setShowShadowOnCamera(!showShadowOnCamera)}
+                  shadowOpacity={shadowOpacity}
+                  onShadowOpacityChange={handleShadowOpacityChange}
                   isMatched={isPoseMatched}
                   countdownActive={countdown !== null}
                   isCapturing={capturing}

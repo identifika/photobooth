@@ -12,6 +12,8 @@ interface PoseSideGuideProps {
   onSelectPose: (pose: PoseReference) => void;
   showShadowOnCamera: boolean;
   onToggleShadow: () => void;
+  shadowOpacity?: number;
+  onShadowOpacityChange?: (opacity: number) => void;
   isMatched?: boolean;
   countdownActive?: boolean;
   isCapturing?: boolean;
@@ -23,6 +25,8 @@ export default function PoseSideGuide({
   onSelectPose,
   showShadowOnCamera,
   onToggleShadow,
+  shadowOpacity = 0.3,
+  onShadowOpacityChange,
   isMatched = false,
   countdownActive = false,
   isCapturing = false,
@@ -236,28 +240,50 @@ export default function PoseSideGuide({
           })}
         </div>
 
-        {/* Bottom Toggle for Camera Shadow */}
-        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs">
-          <span className="text-[11px] text-white/60">Bayangan di Kamera</span>
-          <button
-            type="button"
-            onClick={onToggleShadow}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
-              showShadowOnCamera
-                ? 'bg-pink-500 text-white shadow-sm'
-                : 'bg-white/10 text-white/70 hover:bg-white/20'
-            }`}
-          >
-            {showShadowOnCamera ? (
-              <>
-                <Eye className="w-3 h-3" /> Aktif
-              </>
-            ) : (
-              <>
-                <EyeOff className="w-3 h-3 opacity-60" /> Mati
-              </>
-            )}
-          </button>
+        {/* Bottom Toggle & Thickness Slider for Camera Shadow */}
+        <div className="pt-2.5 border-t border-white/10 flex flex-col gap-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-white/70 font-medium">Bayangan di Kamera</span>
+            <button
+              type="button"
+              onClick={onToggleShadow}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
+                showShadowOnCamera
+                  ? 'bg-pink-500 text-white shadow-sm'
+                  : 'bg-white/10 text-white/70 hover:bg-white/20'
+              }`}
+            >
+              {showShadowOnCamera ? (
+                <>
+                  <Eye className="w-3 h-3" /> Aktif
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3 h-3 opacity-60" /> Mati
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Slider Ketebalan / Opacity Bayangan */}
+          {showShadowOnCamera && onShadowOpacityChange && (
+            <div className="flex items-center gap-2 pt-1 animate-fadeIn">
+              <span className="text-[10px] text-white/50 shrink-0">Ketebalan:</span>
+              <input
+                type="range"
+                min="10"
+                max="80"
+                step="5"
+                value={Math.round(shadowOpacity * 100)}
+                onChange={(e) => onShadowOpacityChange(Number(e.target.value) / 100)}
+                className="w-full h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-pink-500"
+                title={`Ketebalan bayangan: ${Math.round(shadowOpacity * 100)}%`}
+              />
+              <span className="text-[10px] font-mono text-white/80 w-8 text-right shrink-0">
+                {Math.round(shadowOpacity * 100)}%
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

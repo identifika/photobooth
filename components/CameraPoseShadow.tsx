@@ -11,7 +11,7 @@ interface CameraPoseShadowProps {
 export default function CameraPoseShadow({
   skeleton,
   isMatched = false,
-  opacity = 0.24,
+  opacity = 0.3,
 }: CameraPoseShadowProps) {
   if (!skeleton || skeleton.length === 0) return null;
 
@@ -21,7 +21,7 @@ export default function CameraPoseShadow({
         skeleton={skeleton}
         className="w-full h-full"
         fillColor={isMatched ? '#34d399' : '#ffffff'}
-        opacity={isMatched ? 0.35 : opacity}
+        opacity={isMatched ? Math.min(1, opacity + 0.15) : opacity}
         glow={isMatched}
       />
     </div>
