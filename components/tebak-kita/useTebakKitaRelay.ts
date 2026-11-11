@@ -20,6 +20,7 @@ export type GameSyncMessage =
       fromRole: "host" | "guest";
       choice: "player1" | "player2";
     }
+  | { type: "next-question"; questionIndex: number }
   | { type: "restart-game" };
 
 interface UseTebakKitaRelayOpts {

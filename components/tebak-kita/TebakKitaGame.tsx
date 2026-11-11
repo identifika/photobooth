@@ -152,6 +152,12 @@ export default function TebakKitaGame() {
           break;
         }
 
+        case "next-question": {
+          console.log("[TebakKita Game] next-question received for index:", msg.questionIndex);
+          advanceToNextQuestion(msg.questionIndex);
+          break;
+        }
+
         case "restart-game": {
           setAnswers({});
           setCurrentQIndex(0);
@@ -189,6 +195,34 @@ export default function TebakKitaGame() {
     },
   });
 
+  const advanceTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const advanceToNextQuestion = useCallback((nextIdx: number) => {
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+    setRevealPopup(null);
+    setMyLocked(false);
+    setPartnerLocked(false);
+    setMyChoice(null);
+
+    if (nextIdx < DEFAULT_QUESTIONS.length) {
+      setCurrentQIndex(nextIdx);
+    } else {
+      setStage("result");
+    }
+  }, []);
+
+  const handleNextQuestion = useCallback(() => {
+    const nextIdx = currentQIndex + 1;
+    sendMessage({
+      type: "next-question",
+      questionIndex: nextIdx,
+    });
+    advanceToNextQuestion(nextIdx);
+  }, [currentQIndex, sendMessage, advanceToNextQuestion]);
+
   // Re-broadcast player name when partner connects or when name changes in lobby
   useEffect(() => {
     if (mode === "online" && partnerConnected && myName.trim()) {
@@ -207,8 +241,8 @@ export default function TebakKitaGame() {
     const qAns = answers[currentQ.id];
     if (qAns && qAns.player1 && qAns.player2 && !revealPopup) {
       const isMatch = qAns.player1 === qAns.player2;
-      const p1ChoiceName = qAns.player1 === "player1" ? player1 : player2;
-      const p2ChoiceName = qAns.player2 === "player1" ? player1 : player2;
+      const p1ChoiceName = qAns.player1 === "player1" ? p1Display : p2Display;
+      const p2ChoiceName = qAns.player2 === "player1" ? p1Display : p2Display;
 
       setRevealPopup({
         matched: isMatch,
@@ -220,23 +254,19 @@ export default function TebakKitaGame() {
         navigator.vibrate(isMatch ? [40, 60, 40] : 30);
       }
 
-      // Auto advance to next question after 2 seconds
-      const timer = setTimeout(() => {
-        setRevealPopup(null);
-        setMyLocked(false);
-        setPartnerLocked(false);
-        setMyChoice(null);
-
-        if (currentQIndex < DEFAULT_QUESTIONS.length - 1) {
-          setCurrentQIndex((prev) => prev + 1);
-        } else {
-          setStage("result");
-        }
-      }, 2000);
-
-      return () => clearTimeout(timer);
+      // Auto advance timer (3 seconds), skippable via button
+      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = setTimeout(() => {
+        handleNextQuestion();
+      }, 3000);
     }
-  }, [answers, currentQ, currentQIndex, mode, player1, player2, revealPopup, stage]);
+  }, [answers, currentQ, mode, p1Display, p2Display, revealPopup, stage, handleNextQuestion]);
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+    };
+  }, []);
 
   // --- Handlers ---
 
@@ -1002,13 +1032,22 @@ export default function TebakKitaGame() {
                   <div className="text-2xl font-black text-[#FFD138] mb-1">
                     {revealPopup.matched ? "Kompak Banget!" : "Beda Pilihan!"}
                   </div>
-                  <p className="text-xs text-white/90 leading-relaxed mb-3">
-                    {player1} pilih <strong>{revealPopup.p1ChoiceName}</strong>
+                  <p className="text-xs text-white/90 leading-relaxed mb-4">
+                    {p1Display} pilih <strong>{revealPopup.p1ChoiceName}</strong>
                     <br />
-                    {player2} pilih <strong>{revealPopup.p2ChoiceName}</strong>
+                    {p2Display} pilih <strong>{revealPopup.p2ChoiceName}</strong>
                   </p>
-                  <div className="text-[11px] text-white/60 font-medium">
-                    Lanjut ke soal berikutnya... ✨
+
+                  <button
+                    onClick={handleNextQuestion}
+                    className="w-full bg-[#FFD138] hover:bg-[#FFE066] active:scale-95 text-[#1C1827] font-black text-sm py-3.5 px-5 rounded-2xl shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <span>Lanjut ke Soal Berikutnya</span>
+                    <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                  </button>
+
+                  <div className="text-[11px] text-white/60 font-medium mt-2">
+                    Otomatis lanjut dalam 3 detik... ✨
                   </div>
                 </div>
               )}
