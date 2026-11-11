@@ -298,22 +298,25 @@ export default function DatePhotobooth({
     canvas.height = H;
 
     // Run ultra-fast MediaPipe segmentation on both snapshots in parallel (~30-50ms)
-    let imgL: HTMLCanvasElement | HTMLImageElement;
-    let imgR: HTMLCanvasElement | HTMLImageElement;
+    let resL: { canvas: HTMLCanvasElement; bounds: { centerX: number; hasPerson: boolean } };
+    let resR: { canvas: HTMLCanvasElement; bounds: { centerX: number; hasPerson: boolean } };
     try {
       const [cL, cR] = await Promise.all([
         fastRemoveBg(leftDataUrl),
         fastRemoveBg(rightDataUrl),
       ]);
-      imgL = cL;
-      imgR = cR;
+      resL = cL;
+      resR = cR;
     } catch (err) {
       console.warn("fastRemoveBg failed, stitching with original snapshots:", err);
       return stitchCompositeSnapshot(leftDataUrl, rightDataUrl);
     }
 
+    const imgL = resL.canvas;
+    const imgR = resR.canvas;
+
     // Studio background: soft warm aesthetic studio lighting
-    const grad = ctx.createRadialGradient(W / 2, H * 0.45, 80, W / 2, H / 2, W * 0.75);
+    const grad = ctx.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H / 2, W * 0.8);
     grad.addColorStop(0, "#fdfcf9");
     grad.addColorStop(0.45, "#f7f2ea");
     grad.addColorStop(1, "#ece4d8");
@@ -327,25 +330,35 @@ export default function DatePhotobooth({
     ctx.fillStyle = floorGrad;
     ctx.fillRect(0, H * 0.65, W, H * 0.35);
 
-    // Target height for each person (fill ~88% of vertical frame)
-    const targetPersonH = H * 0.88;
+    // Comfortable natural headroom (~22% margin from top, 78% height)
+    const targetPersonH = H * 0.78;
 
     // Calculate proportional dimensions
     const scaleL = targetPersonH / (imgL.height || 1);
     const personW_L = (imgL.width || 1) * scaleL;
-    const posL_X = W * 0.37 - personW_L / 2;
-    const posL_Y = H - targetPersonH;
 
     const scaleR = targetPersonH / (imgR.height || 1);
     const personW_R = (imgR.width || 1) * scaleR;
-    const posR_X = W * 0.63 - personW_R / 2;
+
+    // Align people by their detected centers to avoid overlapping or clipping
+    const centerL_ratio = resL.bounds.hasPerson ? resL.bounds.centerX : 0.5;
+    const centerR_ratio = resR.bounds.hasPerson ? resR.bounds.centerX : 0.5;
+
+    // Place them comfortably side-by-side with breathing room (32% and 68%)
+    const targetCenterL = W * 0.32;
+    const targetCenterR = W * 0.68;
+
+    const posL_X = targetCenterL - (imgL.width * centerL_ratio) * scaleL;
+    const posL_Y = H - targetPersonH;
+
+    const posR_X = targetCenterR - (imgR.width * centerR_ratio) * scaleR;
     const posR_Y = H - targetPersonH;
 
     // 1. Draw subtle natural ambient shadow behind both people
     ctx.save();
-    ctx.shadowColor = "rgba(0, 0, 0, 0.16)";
-    ctx.shadowBlur = 32;
-    ctx.shadowOffsetY = 14;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.12)";
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetY = 10;
 
     ctx.drawImage(imgL, posL_X, posL_Y, personW_L, targetPersonH);
     ctx.drawImage(imgR, posR_X, posR_Y, personW_R, targetPersonH);
