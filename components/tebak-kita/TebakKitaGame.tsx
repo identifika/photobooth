@@ -54,12 +54,14 @@ export default function TebakKitaGame() {
   const [peerId] = useState<string>(() => (isHost ? `host-${generateShortId()}` : `guest-${generateShortId()}`));
 
   // Player Names
-  const [player1, setPlayer1] = useState(isHost ? "Dinda" : "Pasangan"); // Host name
-  const [player2, setPlayer2] = useState(isHost ? "Raka" : "Aku"); // Guest name
+  const [player1, setPlayer1] = useState(""); // Host / Player 1 name
+  const [player2, setPlayer2] = useState(""); // Guest / Player 2 name
 
   const myRole = isHost ? "host" : "guest";
   const myName = myRole === "host" ? player1 : player2;
-  const partnerName = myRole === "host" ? player2 : player1;
+  const partnerName = myRole === "host" ? (player2.trim() || "Pasangan") : (player1.trim() || "Pasangan");
+  const p1Display = player1.trim() || (isHost ? "Aku" : "Pasangan");
+  const p2Display = player2.trim() || (!isHost ? "Aku" : "Pasangan");
 
   // Game Progress
   const [stage, setStage] = useState<GameStage>(roomParam ? "lobby-waiting" : "start");
@@ -665,7 +667,7 @@ export default function TebakKitaGame() {
                         type="text"
                         value={player1}
                         onChange={(e) => setPlayer1(e.target.value)}
-                        placeholder="Dinda"
+                        placeholder="Contoh: Dinda"
                         maxLength={15}
                         className="w-full bg-white text-[#1C1827] font-bold text-base px-4 py-3 rounded-2xl outline-none shadow-md border-2 border-transparent focus:border-[#FFD138] transition-all"
                       />
@@ -679,7 +681,7 @@ export default function TebakKitaGame() {
                         type="text"
                         value={player2}
                         onChange={(e) => setPlayer2(e.target.value)}
-                        placeholder="Raka"
+                        placeholder="Contoh: Raka"
                         maxLength={15}
                         className="w-full bg-white text-[#1C1827] font-bold text-base px-4 py-3 rounded-2xl outline-none shadow-md border-2 border-transparent focus:border-[#FFD138] transition-all"
                       />
@@ -706,7 +708,7 @@ export default function TebakKitaGame() {
                       type="text"
                       value={player1}
                       onChange={(e) => setPlayer1(e.target.value)}
-                      placeholder="Dinda"
+                      placeholder="Contoh: Dinda"
                       maxLength={15}
                       className="w-full bg-white text-[#1C1827] font-bold text-base px-4 py-3 rounded-2xl outline-none shadow-md border-2 border-transparent focus:border-[#FFD138] transition-all"
                     />
@@ -778,7 +780,7 @@ export default function TebakKitaGame() {
               </h2>
               <p className="text-xs md:text-sm text-white/80 max-w-xs leading-relaxed">
                 {partnerConnected
-                  ? `${player1} & ${player2} sudah berada di dalam room yang sama.`
+                  ? `${p1Display} & ${p2Display} sudah berada di dalam room yang sama.`
                   : "Kirim link di bawah ke WhatsApp atau DM pasanganmu untuk mulai main bareng."}
               </p>
 
@@ -802,7 +804,7 @@ export default function TebakKitaGame() {
                         });
                       }
                     }}
-                    placeholder="Nama kamu"
+                    placeholder="Contoh: Raka"
                     maxLength={15}
                     className="w-full bg-white text-[#1C1827] font-bold text-sm px-4 py-2.5 rounded-xl outline-none shadow-md"
                   />
@@ -874,7 +876,7 @@ export default function TebakKitaGame() {
                     <span>Kamu sudah bergabung!</span>
                   </div>
                   <p className="text-xs text-white/80">
-                    Tunggu <strong>{player1}</strong> menekan tombol mulai di HP-nya ya...
+                    Tunggu <strong>{player1.trim() || "Host"}</strong> menekan tombol mulai di HP-nya ya...
                   </p>
                 </div>
               )}
@@ -1118,10 +1120,10 @@ export default function TebakKitaGame() {
               <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-3xl p-6 max-w-xs shadow-xl">
                 <span className="text-3xl mb-2 block">🔒</span>
                 <h3 className="text-xl font-black text-white mb-2">
-                  Jawaban {player1} Dikunci!
+                  Jawaban {p1Display} Dikunci!
                 </h3>
                 <p className="text-sm text-white/80 leading-relaxed">
-                  Sekarang giliran <strong>{player2}</strong> yang menjawab. Oper HP ini ke {player2} ya!
+                  Sekarang giliran <strong>{p2Display}</strong> yang menjawab. Oper HP ini ke {p2Display} ya!
                 </p>
               </div>
             </div>
@@ -1132,7 +1134,7 @@ export default function TebakKitaGame() {
                 onClick={handlePassPhoneConfirm}
                 className="w-full bg-[#FFD138] hover:bg-[#FFE066] active:scale-[0.98] text-[#1C1827] font-extrabold text-lg py-4 px-6 rounded-2xl shadow-lg flex items-center justify-between transition-all group"
               >
-                <span>Siap! Giliran {player2}</span>
+                <span>Siap! Giliran {p2Display}</span>
                 <span className="w-9 h-9 rounded-full bg-[#1C1827] text-white flex items-center justify-center group-hover:translate-x-1 transition-transform">
                   <ArrowRight className="w-5 h-5 stroke-[2.5]" />
                 </span>
@@ -1176,7 +1178,7 @@ export default function TebakKitaGame() {
                 cocok banget!
               </div>
               <div className="text-xs font-semibold text-[#0B1D5C]/80 mt-1">
-                {player1} ❤️ {player2}
+                {p1Display} ❤️ {p2Display}
               </div>
             </div>
 
