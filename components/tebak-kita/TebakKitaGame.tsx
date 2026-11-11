@@ -97,6 +97,7 @@ export default function TebakKitaGame() {
   // --- Realtime Relay Hook Setup ---
   const handleRelayMessage = useCallback(
     (msg: GameSyncMessage) => {
+      console.log("[TebakKita Game] Handling relay message:", msg);
       switch (msg.type) {
         case "player-info": {
           if (msg.role === "guest") {
@@ -110,6 +111,7 @@ export default function TebakKitaGame() {
         }
 
         case "start-game": {
+          console.log("[TebakKita Game] start-game received! Transitioning to playing...");
           setPlayer1(msg.hostName);
           setPlayer2(msg.guestName);
           setAnswers({});
@@ -124,20 +126,19 @@ export default function TebakKitaGame() {
         }
 
         case "lock-answer": {
-          if (msg.questionIndex === currentQIndex) {
-            setPartnerLocked(true);
-            showToast(`${partnerName} sudah mengunci jawaban! ⚡`);
-          }
+          setPartnerLocked(true);
+          showToast(`${partnerName} sudah mengunci jawaban! ⚡`);
           break;
         }
 
         case "reveal-answer": {
-          if (msg.questionIndex === currentQIndex) {
+          const targetQ = DEFAULT_QUESTIONS[msg.questionIndex];
+          if (targetQ) {
             const partnerRole = msg.fromRole;
             const partnerAnswer = msg.choice;
 
             setAnswers((prev) => {
-              const qId = DEFAULT_QUESTIONS[msg.questionIndex].id;
+              const qId = targetQ.id;
               const cur = prev[qId] || {};
               const updated = {
                 ...cur,
@@ -163,7 +164,7 @@ export default function TebakKitaGame() {
         }
       }
     },
-    [currentQIndex, partnerName]
+    [partnerName]
   );
 
   const { status: relayStatus, partnerConnected, sendMessage } = useTebakKitaRelay({
@@ -790,10 +791,20 @@ export default function TebakKitaGame() {
                   <input
                     type="text"
                     value={player2}
-                    onChange={(e) => setPlayer2(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPlayer2(val);
+                      if (val.trim()) {
+                        sendMessage({
+                          type: "player-info",
+                          name: val.trim(),
+                          role: "guest",
+                        });
+                      }
+                    }}
                     placeholder="Nama kamu"
                     maxLength={15}
-                    className="w-full bg-white text-[#1C1827] font-bold text-sm px-4 py-2.5 rounded-xl outline-none"
+                    className="w-full bg-white text-[#1C1827] font-bold text-sm px-4 py-2.5 rounded-xl outline-none shadow-md"
                   />
                 </div>
               )}
