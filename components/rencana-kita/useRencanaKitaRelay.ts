@@ -10,6 +10,8 @@ export type RelayStatus =
   | "partner-left"
   | "error";
 
+export type PlanChoiceType = "A" | "B" | "CUSTOM" | "SKIP";
+
 export type PlanSyncMessage =
   | { type: "player-info"; name: string; role: "host" | "guest" }
   | { type: "start-game"; hostName: string; guestName: string }
@@ -18,7 +20,8 @@ export type PlanSyncMessage =
       type: "reveal-answer";
       questionIndex: number;
       fromRole: "host" | "guest";
-      choice: "A" | "B";
+      choice: PlanChoiceType;
+      customText?: string;
     }
   | { type: "next-question"; questionIndex: number }
   | { type: "restart-game" };
