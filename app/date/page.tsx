@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { createRoomSession, getOrJoinRoomSession, inviteLinkFor, type RoomSession } from "@/lib/roomSession";
 import { useAuth } from "@/hooks/useAuth";
 import { useDialog } from "@/components/ui/dialog-provider";
@@ -173,11 +174,20 @@ function StartDatePage() {
       />
 
       <main className="flex-1 flex flex-col" style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '20px 12px 80px' : '32px 24px 80px', width: '100%' }}>
-        <div className="text-center max-w-md mx-auto mb-12">
+        <div className="text-center max-w-md mx-auto mb-8">
           <h1 className={`font-display font-bold ${isMobile ? 'text-2xl' : 'text-3xl'}`}>Photobooth for Two</h1>
           <p className={`opacity-60 mt-2 ${isMobile ? 'text-xs' : 'text-sm'}`}>
             Pick a frame, start a session, send your date the link, and take a photo together — wherever you both are.
           </p>
+
+          <Link
+            href="/roulette"
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#FF2E93]/15 to-[#8B5CF6]/15 hover:from-[#FF2E93]/25 hover:to-[#8B5CF6]/25 border border-[#FF2E93]/30 text-xs font-bold text-foreground transition-all group shadow-xs"
+          >
+            <span className="text-base group-hover:rotate-12 transition-transform">🎰</span>
+            <span>Mode Baru: <strong>Reaction Photo Roulette</strong> (Pose Spontan saat Call)</span>
+            <span className="text-[#FF2E93] group-hover:translate-x-1 transition-transform">→</span>
+          </Link>
         </div>
 
         <FrameSelector
